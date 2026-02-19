@@ -7,7 +7,6 @@ import (
 	"testing"
 	"time"
 
-	"guarch/pkg/cover"
 	"guarch/pkg/transport"
 )
 
@@ -41,11 +40,14 @@ func setupPair(t *testing.T) (*Interleaver, *Interleaver) {
 
 func TestInterleaverSendRecv(t *testing.T) {
 	client, server := setupPair(t)
+	defer client.Close()
+	defer server.Close()
 
 	msg := []byte("hello through interleaver")
 
+	errCh := make(chan error, 1)
 	go func() {
-		client.SendDirect(msg)
+		errCh <- client.SendDirect(msg)
 	}()
 
 	data, err := server.Recv()
@@ -53,18 +55,21 @@ func TestInterleaverSendRecv(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	if sendErr := <-errCh; sendErr != nil {
+		t.Fatal(sendErr)
+	}
+
 	if !bytes.Equal(data, msg) {
 		t.Errorf("got %q want %q", data, msg)
 	}
-
-	client.Close()
-	server.Close()
 
 	t.Logf("OK: sent and received %d bytes", len(msg))
 }
 
 func TestInterleaverBidirectional(t *testing.T) {
 	client, server := setupPair(t)
+	defer client.Close()
+	defer server.Close()
 
 	msg1 := []byte("client to server")
 	msg2 := []byte("server to client")
@@ -93,9 +98,6 @@ func TestInterleaverBidirectional(t *testing.T) {
 		t.Error("msg2 mismatch")
 	}
 
-	client.Close()
-	server.Close()
-
 	t.Log("OK: bidirectional works")
 }
 
@@ -120,6 +122,8 @@ func TestInterleaverPaddingSkipped(t *testing.T) {
 
 	sender := New(sc1, nil)
 	receiver := New(sc2, nil)
+	defer sender.Close()
+	defer receiver.Close()
 
 	go func() {
 		sender.sendPadding()
@@ -136,14 +140,13 @@ func TestInterleaverPaddingSkipped(t *testing.T) {
 		t.Errorf("got %q want 'real data'", data)
 	}
 
-	sender.Close()
-	receiver.Close()
-
 	t.Log("OK: padding packets skipped, real data received")
 }
 
 func TestInterleaverMultiple(t *testing.T) {
 	client, server := setupPair(t)
+	defer client.Close()
+	defer server.Close()
 
 	count := 20
 	sendDone := make(chan struct{})
@@ -163,13 +166,10 @@ func TestInterleaverMultiple(t *testing.T) {
 	}
 	<-sendDone
 
-	client.Close()
-	server.Close()
-
 	t.Logf("OK: sent and received %d messages", count)
 }
 
-func TestInterleaverWithCover(t *testing.T) {
+func TestInterleaverWithContext(t *testing.T) {
 	c1, c2 := net.Pipe()
 
 	var sc1 *transport.SecureConn
@@ -188,22 +188,20 @@ func TestInterleaverWithCover(t *testing.T) {
 		t.Fatal("handshake failed")
 	}
 
-	stats := cover.NewStats(10)
-	stats.Record(500)
-	stats.Record(500)
-
 	sender := New(sc1, nil)
 	receiver := New(sc2, nil)
+	defer sender.Close()
+	defer receiver.Close()
 
 	ctx, cancel := context.WithTimeout(
-		context.Background(), 3*time.Second,
+		context.Background(), 2*time.Second,
 	)
 	defer cancel()
 
 	sender.Run(ctx)
 
 	go func() {
-		sender.SendDirect([]byte("covered message"))
+		sender.SendDirect([]byte("with context"))
 	}()
 
 	data, err := receiver.Recv()
@@ -211,13 +209,11 @@ func TestInterleaverWithCover(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if !bytes.Equal(data, []byte("covered message")) {
+	if !bytes.Equal(data, []byte("with context")) {
 		t.Errorf("got %q", data)
 	}
 
 	cancel()
-	sender.Close()
-	receiver.Close()
 
-	t.Log("OK: interleaver with cover context works")
+	t.Log("OK: interleaver with context works")
 }
