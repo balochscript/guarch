@@ -12,15 +12,29 @@ import (
 	"log"
 	"math/big"
 	"net"
+	"net/http"
 	"time"
 
+	"guarch/pkg/antidetect"
+	"guarch/pkg/interleave"
 	"guarch/pkg/protocol"
 	"guarch/pkg/transport"
 )
 
+var (
+	probeDetector *antidetect.ProbeDetector
+	decoyServer   *antidetect.DecoyServer
+)
+
 func main() {
 	addr := flag.String("addr", ":8443", "listen address")
+	decoyAddr := flag.String("decoy", ":8080", "decoy web server address")
 	flag.Parse()
+
+	probeDetector = antidetect.NewProbeDetector(10, time.Minute)
+	decoyServer = antidetect.NewDecoyServer()
+
+	go startDecoy(*decoyAddr)
 
 	cert, err := generateCert()
 	if err != nil {
@@ -37,7 +51,8 @@ func main() {
 		log.Fatal("listen:", err)
 	}
 
-	log.Printf("guarch server listening on %s", *addr)
+	log.Printf("[guarch] server listening on %s", *addr)
+	log.Printf("[guarch] decoy web server on %s", *decoyAddr)
 
 	for {
 		conn, err := ln.Accept()
@@ -49,14 +64,34 @@ func main() {
 	}
 }
 
+func startDecoy(addr string) {
+	log.Printf("[decoy] starting fake website on %s", addr)
+	if err := http.ListenAndServe(addr, decoyServer); err != nil {
+		log.Printf("[decoy] error: %v", err)
+	}
+}
+
 func handleConn(raw net.Conn) {
 	defer raw.Close()
 
-	sc, err := transport.Handshake(raw, true)
-	if err != nil {
-		log.Println("handshake:", err)
+	remoteAddr := raw.RemoteAddr().String()
+
+	if probeDetector.Check(remoteAddr) {
+		log.Printf("[probe] suspicious connection from %s, serving decoy", remoteAddr)
+		serveDecoyToRaw(raw)
 		return
 	}
+
+	raw.SetDeadline(time.Now().Add(30 * time.Second))
+
+	sc, err := transport.Handshake(raw, true)
+	if err != nil {
+		log.Printf("[guarch] handshake failed from %s: %v", remoteAddr, err)
+		serveDecoyToRaw(raw)
+		return
+	}
+
+	raw.SetDeadline(time.Time{})
 
 	pkt, err := sc.RecvPacket()
 	if err != nil {
@@ -65,7 +100,7 @@ func handleConn(raw net.Conn) {
 	}
 
 	if pkt.Type != protocol.PacketTypeControl {
-		log.Println("expected CONTROL packet")
+		log.Printf("[guarch] expected CONTROL got %s", pkt.Type)
 		return
 	}
 
@@ -76,11 +111,11 @@ func handleConn(raw net.Conn) {
 	}
 
 	target := req.Address()
-	log.Printf("connecting to %s", target)
+	log.Printf("[guarch] connecting to %s for %s", target, remoteAddr)
 
 	targetConn, err := net.DialTimeout("tcp", target, 10*time.Second)
 	if err != nil {
-		log.Printf("dial %s: %v", target, err)
+		log.Printf("[guarch] dial %s: %v", target, err)
 		resp := &protocol.ConnectResponse{Status: protocol.ConnectFailed}
 		respPkt, _ := protocol.NewDataPacket(resp.Marshal(), 0)
 		respPkt.Type = protocol.PacketTypeControl
@@ -97,9 +132,24 @@ func handleConn(raw net.Conn) {
 		return
 	}
 
-	log.Printf("relaying %s", target)
-	transport.Relay(sc, targetConn)
-	log.Printf("done %s", target)
+	il := interleave.New(sc, nil)
+
+	log.Printf("[guarch] relaying %s", target)
+	interleave.Relay(il, targetConn)
+	log.Printf("[guarch] done %s", target)
+}
+
+func serveDecoyToRaw(conn net.Conn) {
+	response := "HTTP/1.1 200 OK\r\n" +
+		"Server: nginx/1.24.0\r\n" +
+		"Content-Type: text/html\r\n" +
+		"Connection: close\r\n\r\n"
+
+	conn.Write([]byte(response))
+
+	ds := antidetect.NewDecoyServer()
+	page := ds.GenerateHomePage()
+	conn.Write([]byte(page))
 }
 
 func generateCert() (tls.Certificate, error) {
@@ -137,6 +187,6 @@ func generateCert() (tls.Certificate, error) {
 		Type: "EC PRIVATE KEY", Bytes: keyDER,
 	})
 
-	fmt.Println("TLS certificate generated (self-signed)")
+	fmt.Println("[guarch] TLS certificate generated")
 	return tls.X509KeyPair(certPEM, keyPEM)
 }
