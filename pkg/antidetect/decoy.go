@@ -16,7 +16,7 @@ func NewDecoyServer() *DecoyServer {
 	ds := &DecoyServer{
 		pages: make(map[string]string),
 	}
-	ds.pages["/"] = ds.generateHomePage()
+	ds.pages["/"] = ds.GenerateHomePage()
 	ds.pages["/about"] = ds.generateAboutPage()
 	ds.pages["/contact"] = ds.generateContactPage()
 	ds.pages["/blog"] = ds.generateBlogPage()
@@ -46,7 +46,7 @@ func (ds *DecoyServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte(page))
 }
 
-func (ds *DecoyServer) generateHomePage() string {
+func (ds *DecoyServer) GenerateHomePage() string {
 	return fmt.Sprintf(`<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -91,9 +91,9 @@ p{color:#666;line-height:1.6}
 <body>
 <div class="container">
 <h1>About Us</h1>
-<p>CloudFront CDN has been providing content delivery services since 2015. Our mission is to make the internet faster for everyone.</p>
-<p>We currently serve over %d million requests per day across our global network.</p>
-<p><a href="/">Back to Home</a> | <a href="/contact">Contact Us</a></p>
+<p>CloudFront CDN has been providing content delivery services since 2015.</p>
+<p>We currently serve over %d million requests per day.</p>
+<p><a href="/">Back to Home</a></p>
 </div>
 </body>
 </html>`, rand.Intn(500)+100)
@@ -115,8 +115,7 @@ p{color:#666;line-height:1.6}
 <body>
 <div class="container">
 <h1>Contact Us</h1>
-<p>For technical support: support@cloudfront-cdn.example.com</p>
-<p>For sales inquiries: sales@cloudfront-cdn.example.com</p>
+<p>Email: support@cloudfront-cdn.example.com</p>
 <p><a href="/">Back to Home</a></p>
 </div>
 </body>
@@ -133,10 +132,8 @@ func (ds *DecoyServer) generateBlogPage() string {
 body{font-family:Arial,sans-serif;margin:40px;background:#f5f5f5}
 .container{max-width:800px;margin:0 auto;background:#fff;padding:30px;border-radius:8px;box-shadow:0 2px 4px rgba(0,0,0,0.1)}
 h1{color:#232f3e}
-h2{color:#333}
 p{color:#666;line-height:1.6}
 .post{margin-bottom:30px;padding-bottom:20px;border-bottom:1px solid #eee}
-.date{color:#999;font-size:14px}
 </style>
 </head>
 <body>
@@ -144,20 +141,14 @@ p{color:#666;line-height:1.6}
 <h1>Blog</h1>
 <div class="post">
 <h2>Improving Cache Hit Ratios</h2>
-<p class="date">%s</p>
-<p>Learn how to optimize your CDN configuration for better cache performance and reduced origin load.</p>
-</div>
-<div class="post">
-<h2>New Edge Locations in Asia Pacific</h2>
-<p class="date">%s</p>
-<p>We are excited to announce new edge locations in Tokyo, Singapore, and Mumbai.</p>
+<p>Published: %s</p>
+<p>Learn how to optimize your CDN configuration.</p>
 </div>
 <p><a href="/">Back to Home</a></p>
 </div>
 </body>
 </html>`,
 		time.Now().AddDate(0, 0, -rand.Intn(30)).Format("January 2, 2006"),
-		time.Now().AddDate(0, 0, -rand.Intn(60)-30).Format("January 2, 2006"),
 	)
 }
 
@@ -175,7 +166,7 @@ p{color:#666}
 </head>
 <body>
 <h1>404</h1>
-<p>The requested resource was not found on this server.</p>
+<p>The requested resource was not found.</p>
 <p><a href="/">Return to homepage</a></p>
 </body>
 </html>`
