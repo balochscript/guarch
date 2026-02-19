@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"guarch/pkg/cover"
+	"guarch/pkg/interleave"
 	"guarch/pkg/protocol"
 	"guarch/pkg/socks5"
 	"guarch/pkg/transport"
@@ -28,13 +29,13 @@ func main() {
 	var coverMgr *cover.Manager
 
 	if *coverEnabled {
-		log.Println("[guarch] starting cover traffic (Guarch camouflage)...")
+		log.Println("[guarch] starting cover traffic...")
 		coverMgr = cover.NewManager(cover.DefaultConfig())
 		coverMgr.Start(ctx)
 
-		log.Println("[guarch] waiting for cover traffic pattern...")
+		log.Println("[guarch] building traffic pattern...")
 		time.Sleep(3 * time.Second)
-		log.Printf("[guarch] cover stats: avg_size=%d samples=%d",
+		log.Printf("[guarch] cover ready: avg_size=%d samples=%d",
 			coverMgr.Stats().AvgPacketSize(),
 			coverMgr.Stats().SampleCount(),
 		)
@@ -47,6 +48,7 @@ func main() {
 
 	log.Printf("[guarch] client ready on socks5://%s", *listenAddr)
 	log.Printf("[guarch] server: %s", *serverAddr)
+	log.Println("[guarch] Guarch protocol active - hidden like a Balochi hunter")
 
 	go func() {
 		for {
@@ -56,11 +58,10 @@ func main() {
 				case <-ctx.Done():
 					return
 				default:
-					log.Println("accept:", err)
 					continue
 				}
 			}
-			go handleClient(conn, *serverAddr, coverMgr)
+			go handleClient(conn, *serverAddr, coverMgr, ctx)
 		}
 	}()
 
@@ -73,7 +74,7 @@ func main() {
 	ln.Close()
 }
 
-func handleClient(socksConn net.Conn, serverAddr string, coverMgr *cover.Manager) {
+func handleClient(socksConn net.Conn, serverAddr string, coverMgr *cover.Manager, ctx context.Context) {
 	defer socksConn.Close()
 
 	target, err := socks5.Handshake(socksConn)
@@ -155,8 +156,11 @@ func handleClient(socksConn net.Conn, serverAddr string, coverMgr *cover.Manager
 
 	socks5.SendReply(socksConn, 0x00)
 
-	log.Printf("[guarch] connected: %s", target)
-	transport.Relay(sc, socksConn)
+	il := interleave.New(sc, coverMgr)
+	il.Run(ctx)
+
+	log.Printf("[guarch] connected: %s (interleaved)", target)
+	interleave.Relay(il, socksConn)
 	log.Printf("[guarch] done: %s", target)
 }
 
