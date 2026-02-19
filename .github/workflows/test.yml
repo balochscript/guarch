@@ -20,8 +20,14 @@ jobs:
       - name: Download Dependencies
         run: go mod tidy
 
+      - name: Build Client
+        run: go build ./cmd/guarch-client/
+
+      - name: Build Server
+        run: go build ./cmd/guarch-server/
+
       - name: Run Tests
-        run: go test ./pkg/... -v
+        run: go test ./pkg/... -v -count=1
 
       - name: Run Tests with Race Detector
-        run: go test ./pkg/... -race
+        run: go test ./pkg/... -race -count=1
