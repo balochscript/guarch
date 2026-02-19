@@ -89,7 +89,9 @@ func (il *Interleaver) sendWithCover(data []byte) {
 
 	if il.shaper != nil {
 		delay := il.shaper.Delay()
-		time.Sleep(delay)
+		if delay > 0 {
+			time.Sleep(delay)
+		}
 	}
 
 	il.mu.Lock()
@@ -116,11 +118,6 @@ func (il *Interleaver) sendWithCover(data []byte) {
 	if err := il.sc.SendPacket(pkt); err != nil {
 		log.Printf("[interleave] send error: %v", err)
 		return
-	}
-
-	if il.shaper != nil {
-		delay := il.shaper.Delay()
-		time.Sleep(delay / 2)
 	}
 
 	if il.coverMgr != nil {
@@ -201,12 +198,5 @@ func (il *Interleaver) Recv() ([]byte, error) {
 }
 
 func (il *Interleaver) Close() error {
-	il.mu.Lock()
-	il.seq++
-	seq := il.seq
-	il.mu.Unlock()
-
-	closePkt := protocol.NewClosePacket(seq)
-	il.sc.SendPacket(closePkt)
 	return il.sc.Close()
 }
