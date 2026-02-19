@@ -1,11 +1,16 @@
 package main
 
 import (
+	"context"
 	"crypto/tls"
 	"flag"
 	"log"
 	"net"
+	"os"
+	"os/signal"
+	"time"
 
+	"guarch/pkg/cover"
 	"guarch/pkg/protocol"
 	"guarch/pkg/socks5"
 	"guarch/pkg/transport"
@@ -14,27 +19,61 @@ import (
 func main() {
 	listenAddr := flag.String("listen", "127.0.0.1:1080", "local SOCKS5 address")
 	serverAddr := flag.String("server", "127.0.0.1:8443", "guarch server address")
+	coverEnabled := flag.Bool("cover", true, "enable cover traffic")
 	flag.Parse()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	var coverMgr *cover.Manager
+
+	if *coverEnabled {
+		log.Println("[guarch] starting cover traffic (Guarch camouflage)...")
+		coverMgr = cover.NewManager(cover.DefaultConfig())
+		coverMgr.Start(ctx)
+
+		log.Println("[guarch] waiting for cover traffic pattern...")
+		time.Sleep(3 * time.Second)
+		log.Printf("[guarch] cover stats: avg_size=%d samples=%d",
+			coverMgr.Stats().AvgPacketSize(),
+			coverMgr.Stats().SampleCount(),
+		)
+	}
 
 	ln, err := net.Listen("tcp", *listenAddr)
 	if err != nil {
 		log.Fatal("listen:", err)
 	}
 
-	log.Printf("guarch client listening on %s", *listenAddr)
-	log.Printf("server: %s", *serverAddr)
+	log.Printf("[guarch] client ready on socks5://%s", *listenAddr)
+	log.Printf("[guarch] server: %s", *serverAddr)
 
-	for {
-		conn, err := ln.Accept()
-		if err != nil {
-			log.Println("accept:", err)
-			continue
+	go func() {
+		for {
+			conn, err := ln.Accept()
+			if err != nil {
+				select {
+				case <-ctx.Done():
+					return
+				default:
+					log.Println("accept:", err)
+					continue
+				}
+			}
+			go handleClient(conn, *serverAddr, coverMgr)
 		}
-		go handleClient(conn, *serverAddr)
-	}
+	}()
+
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, os.Interrupt)
+	<-sigCh
+
+	log.Println("[guarch] shutting down...")
+	cancel()
+	ln.Close()
 }
 
-func handleClient(socksConn net.Conn, serverAddr string) {
+func handleClient(socksConn net.Conn, serverAddr string, coverMgr *cover.Manager) {
 	defer socksConn.Close()
 
 	target, err := socks5.Handshake(socksConn)
@@ -43,7 +82,11 @@ func handleClient(socksConn net.Conn, serverAddr string) {
 		return
 	}
 
-	log.Printf("request: %s", target)
+	log.Printf("[guarch] request: %s", target)
+
+	if coverMgr != nil {
+		coverMgr.SendOne()
+	}
 
 	tlsConn, err := tls.Dial("tcp", serverAddr, &tls.Config{
 		InsecureSkipVerify: true,
@@ -90,6 +133,10 @@ func handleClient(socksConn net.Conn, serverAddr string) {
 		return
 	}
 
+	if coverMgr != nil {
+		coverMgr.SendOne()
+	}
+
 	respPkt, err := sc.RecvPacket()
 	if err != nil {
 		log.Printf("recv response: %v", err)
@@ -108,9 +155,9 @@ func handleClient(socksConn net.Conn, serverAddr string) {
 
 	socks5.SendReply(socksConn, 0x00)
 
-	log.Printf("connected: %s", target)
+	log.Printf("[guarch] connected: %s", target)
 	transport.Relay(sc, socksConn)
-	log.Printf("done: %s", target)
+	log.Printf("[guarch] done: %s", target)
 }
 
 func parsePort(s string) uint16 {
