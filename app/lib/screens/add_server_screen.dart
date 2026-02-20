@@ -112,14 +112,16 @@ class _AddServerScreenState extends State<AddServerScreen> {
             ),
             const SizedBox(height: 12),
             Card(
-              child: SwitchListTile(
+              child: ListTile(
                 title: const Text('Enable Cover Traffic'),
                 subtitle: const Text(
                   'Send real requests to popular sites to blend in',
                 ),
-                value: _coverEnabled,
-                onChanged: (v) => setState(() => _coverEnabled = v),
-                activeColor: const Color(0xFF6C5CE7),
+                trailing: Switch(
+                  value: _coverEnabled,
+                  onChanged: (v) => setState(() => _coverEnabled = v),
+                  activeColor: const Color(0xFF6C5CE7),
+                ),
               ),
             ),
             if (_coverEnabled) ...[
