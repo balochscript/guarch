@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+import 'package:guarch/app.dart';
 import 'package:guarch/providers/app_provider.dart';
 
 class ImportScreen extends StatefulWidget {
@@ -61,35 +62,42 @@ class _ImportScreenState extends State<ImportScreen>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const Text(
-            '🔗 Import from Guarch Link',
-            style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+          const Row(
+            children: [
+              Text('🔗', style: TextStyle(fontSize: 24)),
+              SizedBox(width: 8),
+              Text(
+                'Import from Guarch Link',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w600,
+                  color: kGold,
+                ),
+              ),
+            ],
           ),
           const SizedBox(height: 8),
-          const Text(
+          Text(
             'Paste a guarch:// link shared with you',
-            style: TextStyle(color: Colors.grey),
+            style: TextStyle(color: kGold.withOpacity(0.5)),
           ),
           const SizedBox(height: 24),
           TextField(
             controller: _linkController,
             maxLines: 3,
-            decoration: InputDecoration(
+            style: const TextStyle(color: kGoldLight, fontFamily: 'monospace', fontSize: 13),
+            decoration: const InputDecoration(
               hintText: 'guarch://eyJuYW1lIjoi...',
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
-              prefixIcon: const Icon(Icons.link),
+              prefixIcon: Icon(Icons.link),
             ),
           ),
           const SizedBox(height: 16),
           FilledButton(
             onPressed: () => _importData(_linkController.text),
             style: FilledButton.styleFrom(
-              backgroundColor: const Color(0xFF6C5CE7),
               padding: const EdgeInsets.symmetric(vertical: 16),
             ),
-            child: const Text('Import'),
+            child: const Text('Import', style: TextStyle(fontSize: 16)),
           ),
         ],
       ),
@@ -102,14 +110,24 @@ class _ImportScreenState extends State<ImportScreen>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const Text(
-            '📋 Import from JSON',
-            style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+          const Row(
+            children: [
+              Text('📋', style: TextStyle(fontSize: 24)),
+              SizedBox(width: 8),
+              Text(
+                'Import from JSON',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w600,
+                  color: kGold,
+                ),
+              ),
+            ],
           ),
           const SizedBox(height: 8),
-          const Text(
+          Text(
             'Paste the JSON configuration',
-            style: TextStyle(color: Colors.grey),
+            style: TextStyle(color: kGold.withOpacity(0.5)),
           ),
           const SizedBox(height: 24),
           Expanded(
@@ -118,12 +136,13 @@ class _ImportScreenState extends State<ImportScreen>
               maxLines: null,
               expands: true,
               textAlignVertical: TextAlignVertical.top,
-              style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
-              decoration: InputDecoration(
+              style: const TextStyle(
+                fontFamily: 'monospace',
+                fontSize: 12,
+                color: kGoldLight,
+              ),
+              decoration: const InputDecoration(
                 hintText: '{\n  "name": "My Server",\n  "address": "1.2.3.4",\n  "port": 8443\n}',
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
               ),
             ),
           ),
@@ -131,10 +150,9 @@ class _ImportScreenState extends State<ImportScreen>
           FilledButton(
             onPressed: () => _importData(_jsonController.text),
             style: FilledButton.styleFrom(
-              backgroundColor: const Color(0xFF6C5CE7),
               padding: const EdgeInsets.symmetric(vertical: 16),
             ),
-            child: const Text('Import'),
+            child: const Text('Import', style: TextStyle(fontSize: 16)),
           ),
         ],
       ),
@@ -150,25 +168,29 @@ class _ImportScreenState extends State<ImportScreen>
           Container(
             padding: const EdgeInsets.all(24),
             decoration: BoxDecoration(
-              color: const Color(0xFF6C5CE7).withOpacity(0.1),
+              color: kGold.withOpacity(0.1),
               shape: BoxShape.circle,
             ),
             child: const Icon(
               Icons.content_paste,
               size: 48,
-              color: Color(0xFF6C5CE7),
+              color: kGold,
             ),
           ),
           const SizedBox(height: 24),
           const Text(
             'Import from Clipboard',
-            style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.w600,
+              color: kGold,
+            ),
           ),
           const SizedBox(height: 8),
-          const Text(
+          Text(
             'Copy a guarch:// link or JSON config,\nthen tap the button below',
             textAlign: TextAlign.center,
-            style: TextStyle(color: Colors.grey),
+            style: TextStyle(color: kGold.withOpacity(0.5)),
           ),
           const SizedBox(height: 24),
           FilledButton.icon(
@@ -176,11 +198,7 @@ class _ImportScreenState extends State<ImportScreen>
             icon: const Icon(Icons.content_paste),
             label: const Text('Paste & Import'),
             style: FilledButton.styleFrom(
-              backgroundColor: const Color(0xFF6C5CE7),
-              padding: const EdgeInsets.symmetric(
-                horizontal: 32,
-                vertical: 16,
-              ),
+              padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
             ),
           ),
         ],
@@ -208,17 +226,14 @@ class _ImportScreenState extends State<ImportScreen>
       );
       return;
     }
-
     final provider = context.read<AppProvider>();
     provider.importConfig(data.trim());
-
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
         content: Text('Config imported successfully!'),
         backgroundColor: Colors.green,
       ),
     );
-
     Navigator.pop(context);
   }
 }
