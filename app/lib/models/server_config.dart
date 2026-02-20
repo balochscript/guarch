@@ -31,13 +31,13 @@ class ServerConfig {
   String get fullAddress => '$address:$port';
 
   String get pingText {
-    if (ping == null) return '--';
+    if (ping == null) return 'testing...';
     if (ping! < 0) return 'timeout';
     return '${ping}ms';
   }
 
   String get pingEmoji {
-    if (ping == null) return '⚪';
+    if (ping == null) return '⏳';
     if (ping! < 0) return '🔴';
     if (ping! < 100) return '🟢';
     if (ping! < 300) return '🟡';
@@ -86,6 +86,7 @@ class ServerConfig {
       'address': address,
       'port': port,
       'cover_enabled': coverEnabled,
+      'cover_domains': coverDomains.map((d) => d.toJson()).toList(),
     };
     final jsonStr = jsonEncode(data);
     final encoded = base64Encode(utf8.encode(jsonStr));
@@ -108,6 +109,7 @@ class ServerConfig {
     String? address,
     int? port,
     bool? coverEnabled,
+    List<CoverDomain>? coverDomains,
     bool? isActive,
     int? ping,
   }) {
@@ -117,7 +119,7 @@ class ServerConfig {
       address: address ?? this.address,
       port: port ?? this.port,
       coverEnabled: coverEnabled ?? this.coverEnabled,
-      coverDomains: coverDomains,
+      coverDomains: coverDomains ?? this.coverDomains,
       shapingPattern: shapingPattern,
       maxPadding: maxPadding,
       ping: ping ?? this.ping,
@@ -128,46 +130,33 @@ class ServerConfig {
 
   static List<CoverDomain> defaultCoverDomains() {
     return [
-      CoverDomain(
-        domain: 'www.google.com',
-        paths: ['/', '/search?q=weather'],
-        weight: 30,
-      ),
-      CoverDomain(
-        domain: 'www.microsoft.com',
-        paths: ['/', '/en-us'],
-        weight: 20,
-      ),
-      CoverDomain(
-        domain: 'github.com',
-        paths: ['/', '/explore'],
-        weight: 15,
-      ),
+      CoverDomain(domain: 'www.google.com', weight: 30),
+      CoverDomain(domain: 'www.microsoft.com', weight: 20),
+      CoverDomain(domain: 'github.com', weight: 15),
+      CoverDomain(domain: 'stackoverflow.com', weight: 15),
+      CoverDomain(domain: 'www.wikipedia.org', weight: 10),
+      CoverDomain(domain: 'www.amazon.com', weight: 10),
     ];
   }
 }
 
 class CoverDomain {
   String domain;
-  List<String> paths;
   int weight;
 
   CoverDomain({
     required this.domain,
-    required this.paths,
     this.weight = 10,
   });
 
   Map<String, dynamic> toJson() => {
         'domain': domain,
-        'paths': paths,
         'weight': weight,
       };
 
   factory CoverDomain.fromJson(Map<String, dynamic> json) {
     return CoverDomain(
       domain: json['domain'] ?? '',
-      paths: List<String>.from(json['paths'] ?? ['/']),
       weight: json['weight'] ?? 10,
     );
   }
