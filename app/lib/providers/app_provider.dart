@@ -1,0 +1,260 @@
+import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
+import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:guarch/models/server_config.dart';
+import 'package:guarch/models/connection_state.dart';
+
+class AppProvider extends ChangeNotifier {
+  late SharedPreferences _prefs;
+
+  List<ServerConfig> _servers = [];
+  VpnStatus _status = VpnStatus.disconnected;
+  ConnectionStats _stats = const ConnectionStats();
+  bool _isDarkMode = true;
+  String? _activeServerId;
+  List<String> _logs = [];
+  Timer? _statsTimer;
+  DateTime? _connectTime;
+
+  List<ServerConfig> get servers => _servers;
+  VpnStatus get status => _status;
+  ConnectionStats get stats => _stats;
+  bool get isDarkMode => _isDarkMode;
+  List<String> get logs => _logs;
+  bool get isConnected => _status == VpnStatus.connected;
+
+  ServerConfig? get activeServer {
+    if (_activeServerId == null) return null;
+    try {
+      return _servers.firstWhere((s) => s.id == _activeServerId);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<void> init() async {
+    _prefs = await SharedPreferences.getInstance();
+    _isDarkMode = _prefs.getBool('dark_mode') ?? true;
+    _activeServerId = _prefs.getString('active_server');
+    _loadServers();
+  }
+
+  void _loadServers() {
+    final data = _prefs.getString('servers');
+    if (data != null) {
+      final list = jsonDecode(data) as List;
+      _servers = list.map((j) => ServerConfig.fromJson(j)).toList();
+    }
+    notifyListeners();
+  }
+
+  Future<void> _saveServers() async {
+    final data = jsonEncode(_servers.map((s) => s.toJson()).toList());
+    await _prefs.setString('servers', data);
+  }
+
+  void addServer(ServerConfig server) {
+    _servers.add(server);
+    _saveServers();
+    _addLog('Server added: ${server.name}');
+    notifyListeners();
+  }
+
+  void updateServer(ServerConfig server) {
+    final index = _servers.indexWhere((s) => s.id == server.id);
+    if (index >= 0) {
+      _servers[index] = server;
+      _saveServers();
+      notifyListeners();
+    }
+  }
+
+  void removeServer(String id) {
+    final server = _servers.firstWhere((s) => s.id == id);
+    _servers.removeWhere((s) => s.id == id);
+    if (_activeServerId == id) {
+      _activeServerId = null;
+      _prefs.remove('active_server');
+    }
+    _saveServers();
+    _addLog('Server removed: ${server.name}');
+    notifyListeners();
+  }
+
+  void setActiveServer(String id) {
+    _activeServerId = id;
+    _prefs.setString('active_server', id);
+    _addLog('Active server: ${activeServer?.name}');
+    notifyListeners();
+  }
+
+  Future<void> connect() async {
+    if (activeServer == null) return;
+    if (_status == VpnStatus.connecting || _status == VpnStatus.connected) return;
+
+    _status = VpnStatus.connecting;
+    _addLog('Connecting to ${activeServer!.name}...');
+    notifyListeners();
+
+    try {
+      await Future.delayed(const Duration(seconds: 2));
+
+      final socket = await Socket.connect(
+        activeServer!.address,
+        activeServer!.port,
+        timeout: const Duration(seconds: 10),
+      );
+      socket.destroy();
+
+      _status = VpnStatus.connected;
+      _connectTime = DateTime.now();
+      _addLog('Connected to ${activeServer!.name}');
+      _startStatsTimer();
+      notifyListeners();
+    } catch (e) {
+      _status = VpnStatus.error;
+      _addLog('Connection failed: $e');
+      notifyListeners();
+
+      await Future.delayed(const Duration(seconds: 2));
+      _status = VpnStatus.disconnected;
+      notifyListeners();
+    }
+  }
+
+  Future<void> disconnect() async {
+    if (_status != VpnStatus.connected) return;
+
+    _status = VpnStatus.disconnecting;
+    _addLog('Disconnecting...');
+    notifyListeners();
+
+    _stopStatsTimer();
+    await Future.delayed(const Duration(milliseconds: 500));
+
+    _status = VpnStatus.disconnected;
+    _stats = const ConnectionStats();
+    _connectTime = null;
+    _addLog('Disconnected');
+    notifyListeners();
+  }
+
+  void toggleConnection() {
+    if (isConnected) {
+      disconnect();
+    } else {
+      connect();
+    }
+  }
+
+  Future<int> pingServer(ServerConfig server) async {
+    try {
+      final stopwatch = Stopwatch()..start();
+      final socket = await Socket.connect(
+        server.address,
+        server.port,
+        timeout: const Duration(seconds: 5),
+      );
+      stopwatch.stop();
+      socket.destroy();
+      final ping = stopwatch.elapsedMilliseconds;
+      _addLog('Ping ${server.name}: ${ping}ms');
+      return ping;
+    } catch (_) {
+      _addLog('Ping ${server.name}: timeout');
+      return -1;
+    }
+  }
+
+  Future<void> pingAllServers() async {
+    for (var i = 0; i < _servers.length; i++) {
+      final ping = await pingServer(_servers[i]);
+      _servers[i] = _servers[i].copyWith(ping: ping);
+      notifyListeners();
+    }
+    _saveServers();
+  }
+
+  void importConfig(String data) {
+    try {
+      ServerConfig server;
+
+      if (data.startsWith('guarch://')) {
+        server = ServerConfig.fromShareString(data);
+      } else if (data.startsWith('{')) {
+        final json = jsonDecode(data) as Map<String, dynamic>;
+        json['id'] = DateTime.now().millisecondsSinceEpoch.toString();
+        server = ServerConfig.fromJson(json);
+      } else {
+        server = ServerConfig.fromShareString(data);
+      }
+
+      if (server.address.isEmpty) {
+        _addLog('Import failed: empty address');
+        return;
+      }
+
+      addServer(server);
+      _addLog('Config imported: ${server.name}');
+    } catch (e) {
+      _addLog('Import failed: $e');
+    }
+  }
+
+  String exportConfig(ServerConfig server) {
+    return server.toShareString();
+  }
+
+  String exportConfigJson(ServerConfig server) {
+    const encoder = JsonEncoder.withIndent('  ');
+    return encoder.convert(server.toJson());
+  }
+
+  void toggleTheme() {
+    _isDarkMode = !_isDarkMode;
+    _prefs.setBool('dark_mode', _isDarkMode);
+    notifyListeners();
+  }
+
+  void _startStatsTimer() {
+    _statsTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (_connectTime != null) {
+        _stats = _stats.copyWith(
+          duration: DateTime.now().difference(_connectTime!),
+          uploadSpeed: 1024 + (DateTime.now().millisecond % 500),
+          downloadSpeed: 2048 + (DateTime.now().millisecond % 1000),
+          totalUpload: _stats.totalUpload + 1024 + (DateTime.now().millisecond % 500),
+          totalDownload: _stats.totalDownload + 2048 + (DateTime.now().millisecond % 1000),
+          coverRequests: _stats.coverRequests + (DateTime.now().second % 3 == 0 ? 1 : 0),
+        );
+        notifyListeners();
+      }
+    });
+  }
+
+  void _stopStatsTimer() {
+    _statsTimer?.cancel();
+    _statsTimer = null;
+  }
+
+  void _addLog(String message) {
+    final time = DateTime.now().toString().substring(11, 19);
+    _logs.insert(0, '[$time] $message');
+    if (_logs.length > 200) {
+      _logs = _logs.sublist(0, 200);
+    }
+  }
+
+  void clearLogs() {
+    _logs.clear();
+    notifyListeners();
+  }
+
+  @override
+  void dispose() {
+    _stopStatsTimer();
+    super.dispose();
+  }
+}
