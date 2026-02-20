@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+import 'package:guarch/app.dart';
 import 'package:guarch/providers/app_provider.dart';
 
 class LogsScreen extends StatelessWidget {
@@ -41,11 +42,11 @@ class LogsScreen extends StatelessWidget {
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       Icon(Icons.article_outlined,
-                          size: 80, color: Colors.grey.shade600),
+                          size: 80, color: kGold.withOpacity(0.2)),
                       const SizedBox(height: 16),
-                      const Text(
+                      Text(
                         'No logs yet',
-                        style: TextStyle(color: Colors.grey),
+                        style: TextStyle(color: kGold.withOpacity(0.4)),
                       ),
                     ],
                   ),
@@ -55,22 +56,27 @@ class LogsScreen extends StatelessWidget {
                   itemCount: provider.logs.length,
                   itemBuilder: (context, index) {
                     final log = provider.logs[index];
-                    Color textColor = Colors.grey.shade300;
+                    Color textColor = kGold.withOpacity(0.6);
 
-                    if (log.contains('Connected')) {
+                    if (log.contains('Connected') || log.contains('complete')) {
                       textColor = Colors.green;
                     } else if (log.contains('failed') ||
                         log.contains('error') ||
                         log.contains('timeout')) {
                       textColor = Colors.red;
                     } else if (log.contains('Connecting') ||
-                        log.contains('Disconnecting')) {
-                      textColor = Colors.orange;
+                        log.contains('Disconnecting') ||
+                        log.contains('Pinging')) {
+                      textColor = kGold;
                     } else if (log.contains('Ping')) {
-                      textColor = Colors.cyan;
+                      textColor = kGoldLight;
                     } else if (log.contains('Cover') ||
-                        log.contains('cover')) {
-                      textColor = const Color(0xFF6C5CE7);
+                        log.contains('cover') ||
+                        log.contains('domain')) {
+                      textColor = kGoldDim;
+                    } else if (log.contains('added') ||
+                        log.contains('imported')) {
+                      textColor = Colors.green.shade300;
                     }
 
                     return Padding(
