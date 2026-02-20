@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+import 'package:guarch/app.dart';
 import 'package:guarch/providers/app_provider.dart';
 import 'package:guarch/models/server_config.dart';
 import 'package:guarch/screens/add_server_screen.dart';
@@ -34,8 +35,7 @@ class ServersScreen extends StatelessWidget {
               : _buildList(context, provider),
           floatingActionButton: FloatingActionButton(
             onPressed: () => _openAddServer(context),
-            backgroundColor: const Color(0xFF6C5CE7),
-            child: const Icon(Icons.add, color: Colors.white),
+            child: const Icon(Icons.add),
           ),
         );
       },
@@ -47,18 +47,16 @@ class ServersScreen extends StatelessWidget {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(Icons.dns_outlined, size: 80, color: Colors.grey.shade600),
+          Icon(Icons.dns_outlined, size: 80, color: kGold.withOpacity(0.3)),
           const SizedBox(height: 16),
           Text(
             'No servers yet',
-            style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                  color: Colors.grey,
-                ),
+            style: TextStyle(color: kGold.withOpacity(0.5), fontSize: 18),
           ),
           const SizedBox(height: 8),
-          const Text(
+          Text(
             'Add a server or import a config',
-            style: TextStyle(color: Colors.grey),
+            style: TextStyle(color: kGold.withOpacity(0.3)),
           ),
           const SizedBox(height: 24),
           FilledButton.icon(
@@ -84,7 +82,7 @@ class ServersScreen extends StatelessWidget {
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(16),
             side: isActive
-                ? const BorderSide(color: Color(0xFF6C5CE7), width: 2)
+                ? const BorderSide(color: kGold, width: 2)
                 : BorderSide.none,
           ),
           child: InkWell(
@@ -110,25 +108,23 @@ class ServersScreen extends StatelessWidget {
                                   style: const TextStyle(
                                     fontWeight: FontWeight.w600,
                                     fontSize: 16,
+                                    color: kGoldLight,
                                   ),
                                 ),
                                 if (isActive) ...[
                                   const SizedBox(width: 8),
                                   Container(
                                     padding: const EdgeInsets.symmetric(
-                                      horizontal: 8,
-                                      vertical: 2,
-                                    ),
+                                      horizontal: 8, vertical: 2),
                                     decoration: BoxDecoration(
-                                      color: const Color(0xFF6C5CE7)
-                                          .withOpacity(0.2),
+                                      color: kGold.withOpacity(0.2),
                                       borderRadius: BorderRadius.circular(8),
                                     ),
                                     child: const Text(
                                       'Active',
                                       style: TextStyle(
                                         fontSize: 10,
-                                        color: Color(0xFF6C5CE7),
+                                        color: kGold,
                                         fontWeight: FontWeight.w600,
                                       ),
                                     ),
@@ -139,8 +135,8 @@ class ServersScreen extends StatelessWidget {
                             const SizedBox(height: 4),
                             Text(
                               server.fullAddress,
-                              style: const TextStyle(
-                                color: Colors.grey,
+                              style: TextStyle(
+                                color: kGold.withOpacity(0.4),
                                 fontSize: 13,
                               ),
                             ),
@@ -157,9 +153,12 @@ class ServersScreen extends StatelessWidget {
                             ),
                           ),
                           if (server.coverEnabled)
-                            const Text(
-                              '🎭 Cover',
-                              style: TextStyle(fontSize: 10),
+                            Text(
+                              '🎭 ${server.coverDomains.length} sites',
+                              style: TextStyle(
+                                fontSize: 10,
+                                color: kGold.withOpacity(0.4),
+                              ),
                             ),
                         ],
                       ),
@@ -169,43 +168,26 @@ class ServersScreen extends StatelessWidget {
                   Row(
                     mainAxisAlignment: MainAxisAlignment.end,
                     children: [
-                      _actionButton(
-                        Icons.speed,
-                        'Ping',
-                        () async {
-                          final ping = await provider.pingServer(server);
-                          provider.updateServer(server.copyWith(ping: ping));
-                        },
-                      ),
-                      _actionButton(
-                        Icons.share,
-                        'Share',
-                        () {
-                          final config = provider.exportConfig(server);
-                          Share.share(config);
-                        },
-                      ),
-                      _actionButton(
-                        Icons.copy,
-                        'Copy',
-                        () {
-                          final config = provider.exportConfigJson(server);
-                          Clipboard.setData(ClipboardData(text: config));
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text('Config copied')),
-                          );
-                        },
-                      ),
-                      _actionButton(
-                        Icons.edit,
-                        'Edit',
-                        () => _openEditServer(context, server),
-                      ),
-                      _actionButton(
-                        Icons.delete_outline,
-                        'Delete',
-                        () => _confirmDelete(context, provider, server),
-                      ),
+                      _actionButton(Icons.speed, 'Ping', () async {
+                        final ping = await provider.pingServer(server);
+                        provider.updateServer(server.copyWith(ping: ping));
+                      }),
+                      _actionButton(Icons.share, 'Share', () {
+                        Share.share(provider.exportConfig(server));
+                      }),
+                      _actionButton(Icons.copy, 'Copy', () {
+                        Clipboard.setData(ClipboardData(
+                            text: provider.exportConfigJson(server)));
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('Config copied')),
+                        );
+                      }),
+                      _actionButton(Icons.edit, 'Edit', () {
+                        _openEditServer(context, server);
+                      }),
+                      _actionButton(Icons.delete_outline, 'Delete', () {
+                        _confirmDelete(context, provider, server);
+                      }),
                     ],
                   ),
                 ],
@@ -219,7 +201,7 @@ class ServersScreen extends StatelessWidget {
 
   Widget _actionButton(IconData icon, String tooltip, VoidCallback onTap) {
     return IconButton(
-      icon: Icon(icon, size: 18),
+      icon: Icon(icon, size: 18, color: kGold.withOpacity(0.6)),
       tooltip: tooltip,
       onPressed: onTap,
       visualDensity: VisualDensity.compact,
@@ -227,25 +209,21 @@ class ServersScreen extends StatelessWidget {
   }
 
   Color _pingColor(int? ping) {
-    if (ping == null) return Colors.grey;
+    if (ping == null) return kGold.withOpacity(0.4);
     if (ping < 0) return Colors.red;
     if (ping < 100) return Colors.green;
-    if (ping < 300) return Colors.orange;
+    if (ping < 300) return kGold;
     return Colors.red;
   }
 
   void _openAddServer(BuildContext context) {
     Navigator.push(
-      context,
-      MaterialPageRoute(builder: (_) => const AddServerScreen()),
-    );
+        context, MaterialPageRoute(builder: (_) => const AddServerScreen()));
   }
 
   void _openEditServer(BuildContext context, ServerConfig server) {
-    Navigator.push(
-      context,
-      MaterialPageRoute(builder: (_) => AddServerScreen(server: server)),
-    );
+    Navigator.push(context,
+        MaterialPageRoute(builder: (_) => AddServerScreen(server: server)));
   }
 
   void _importFromClipboard(BuildContext context, AppProvider provider) async {
@@ -265,12 +243,13 @@ class ServersScreen extends StatelessWidget {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Delete Server'),
-        content: Text('Delete "${server.name}"?'),
+        title: Text('Delete Server', style: TextStyle(color: kGold)),
+        content: Text('Delete "${server.name}"?',
+            style: TextStyle(color: kGoldLight)),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: const Text('Cancel'),
+            child: Text('Cancel', style: TextStyle(color: kGold.withOpacity(0.5))),
           ),
           TextButton(
             onPressed: () {
