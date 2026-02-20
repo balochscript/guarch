@@ -1,0 +1,17 @@
+version: "3.8"
+
+services:
+  guarch-server:
+    build: .
+    container_name: guarch-server
+    ports:
+      - "8443:8443"
+      - "8080:8080"
+    restart: unless-stopped
+    volumes:
+      - ./configs:/etc/guarch
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
