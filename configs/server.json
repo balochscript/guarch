@@ -1,0 +1,8 @@
+{
+  "listen": ":8443",
+  "decoy_addr": ":8080",
+  "probe": {
+    "max_rate": 10,
+    "window": "1m"
+  }
+}
