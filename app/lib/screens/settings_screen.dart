@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:guarch/providers/app_provider.dart';
+import 'package:guarch/screens/import_screen.dart';
+import 'package:guarch/screens/about_screen.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 class SettingsScreen extends StatelessWidget {
@@ -34,19 +36,23 @@ class SettingsScreen extends StatelessWidget {
                 child: Column(
                   children: [
                     ListTile(
-                      leading: const Icon(Icons.content_paste),
-                      title: const Text('Import from Clipboard'),
-                      subtitle: const Text('Paste guarch:// or JSON config'),
+                      leading: const Icon(Icons.input),
+                      title: const Text('Import Config'),
+                      subtitle: const Text('From link, JSON, or clipboard'),
                       trailing: const Icon(Icons.arrow_forward_ios, size: 16),
-                      onTap: () => _importClipboard(context, provider),
+                      onTap: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => const ImportScreen(),
+                        ),
+                      ),
                     ),
                     const Divider(height: 1),
                     ListTile(
-                      leading: const Icon(Icons.input),
-                      title: const Text('Import from Text'),
-                      subtitle: const Text('Enter config manually'),
+                      leading: const Icon(Icons.content_paste),
+                      title: const Text('Quick Import from Clipboard'),
                       trailing: const Icon(Icons.arrow_forward_ios, size: 16),
-                      onTap: () => _showImportDialog(context, provider),
+                      onTap: () => _importClipboard(context, provider),
                     ),
                   ],
                 ),
@@ -63,7 +69,9 @@ class SettingsScreen extends StatelessWidget {
                       onTap: () {
                         provider.pingAllServers();
                         ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('Pinging all servers...')),
+                          const SnackBar(
+                            content: Text('Pinging all servers...'),
+                          ),
                         );
                       },
                     ),
@@ -75,10 +83,17 @@ class SettingsScreen extends StatelessWidget {
               Card(
                 child: Column(
                   children: [
-                    const ListTile(
-                      leading: Text('🎯', style: TextStyle(fontSize: 24)),
-                      title: Text('Guarch Protocol'),
-                      subtitle: Text('Version 1.0.0'),
+                    ListTile(
+                      leading: const Text('🎯', style: TextStyle(fontSize: 24)),
+                      title: const Text('About Guarch'),
+                      subtitle: const Text('Learn about the protocol'),
+                      trailing: const Icon(Icons.arrow_forward_ios, size: 16),
+                      onTap: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => const AboutScreen(),
+                        ),
+                      ),
                     ),
                     const Divider(height: 1),
                     ListTile(
@@ -92,11 +107,9 @@ class SettingsScreen extends StatelessWidget {
                     ),
                     const Divider(height: 1),
                     const ListTile(
-                      leading: Text('🏹', style: TextStyle(fontSize: 24)),
-                      title: Text('Name Origin'),
-                      subtitle: Text(
-                        'Guarch is a Balochi hunting technique where a hunter hides behind a cloth to approach prey undetected.',
-                      ),
+                      leading: Text('📱', style: TextStyle(fontSize: 24)),
+                      title: Text('Version'),
+                      trailing: Text('1.0.0'),
                     ),
                   ],
                 ),
@@ -129,7 +142,10 @@ class SettingsScreen extends StatelessWidget {
       provider.importConfig(data.text!);
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Config imported from clipboard')),
+          const SnackBar(
+            content: Text('Config imported from clipboard'),
+            backgroundColor: Colors.green,
+          ),
         );
       }
     } else {
@@ -139,44 +155,5 @@ class SettingsScreen extends StatelessWidget {
         );
       }
     }
-  }
-
-  void _showImportDialog(BuildContext context, AppProvider provider) {
-    final controller = TextEditingController();
-
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Import Config'),
-        content: TextField(
-          controller: controller,
-          maxLines: 5,
-          decoration: InputDecoration(
-            hintText: 'Paste guarch:// link or JSON config here',
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-            ),
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () {
-              if (controller.text.isNotEmpty) {
-                provider.importConfig(controller.text);
-                Navigator.pop(ctx);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Config imported')),
-                );
-              }
-            },
-            child: const Text('Import'),
-          ),
-        ],
-      ),
-    );
   }
 }
