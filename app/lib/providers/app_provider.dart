@@ -86,6 +86,12 @@ class AppProvider extends ChangeNotifier {
       _addLog(msg);
       notifyListeners();
     });
+
+    // پینگ همه سرورها هنگام شروع
+    if (_servers.isNotEmpty) {
+      _addLog('Auto-pinging all servers...');
+      pingAllServers();
+    }
   }
 
   void _loadServers() {
@@ -105,8 +111,19 @@ class AppProvider extends ChangeNotifier {
   void addServer(ServerConfig server) {
     _servers.add(server);
     _saveServers();
-    _addLog('Server added: ${server.name}');
+    _addLog('Server added: ${server.name} (${server.fullAddress})');
+    _addLog('Cover domains: ${server.coverDomains.map((d) => d.domain).join(", ")}');
     notifyListeners();
+
+    // پینگ خودکار
+    pingServer(server).then((ping) {
+      final index = _servers.indexWhere((s) => s.id == server.id);
+      if (index >= 0) {
+        _servers[index] = _servers[index].copyWith(ping: ping);
+        _saveServers();
+        notifyListeners();
+      }
+    });
   }
 
   void updateServer(ServerConfig server) {
@@ -143,6 +160,10 @@ class AppProvider extends ChangeNotifier {
 
     _status = VpnStatus.connecting;
     _addLog('Connecting to ${activeServer!.name}...');
+    _addLog('Cover traffic: ${activeServer!.coverEnabled ? "ON" : "OFF"}');
+    if (activeServer!.coverEnabled) {
+      _addLog('Cover domains: ${activeServer!.coverDomains.map((d) => d.domain).join(", ")}');
+    }
     notifyListeners();
 
     final success = await _engine.connect(
@@ -187,13 +208,19 @@ class AppProvider extends ChangeNotifier {
   }
 
   Future<int> pingServer(ServerConfig server) async {
+    _addLog('Pinging ${server.name} (${server.fullAddress})...');
     final ping = await _engine.ping(server.address, server.port);
-    _addLog('Ping ${server.name}: ${ping > 0 ? "${ping}ms" : "timeout"}');
+    if (ping > 0) {
+      _addLog('Ping ${server.name}: ${ping}ms');
+    } else {
+      _addLog('Ping ${server.name}: timeout');
+    }
+    notifyListeners();
     return ping;
   }
 
   Future<void> pingAllServers() async {
-    _addLog('Pinging all servers...');
+    _addLog('Pinging ${_servers.length} servers...');
     for (var i = 0; i < _servers.length; i++) {
       final ping = await pingServer(_servers[i]);
       _servers[i] = _servers[i].copyWith(ping: ping);
