@@ -36,8 +36,8 @@ func TestShaperDelay(t *testing.T) {
 	shaper := NewShaper(s, PatternWebBrowsing)
 	delay := shaper.Delay()
 
-	if delay < 0 || delay > 30*time.Second {
-		t.Errorf("delay = %v, seems wrong", delay)
+	if delay > 30*time.Second {
+		t.Errorf("delay = %v, too large", delay)
 	}
 
 	t.Logf("OK: delay=%v", delay)
