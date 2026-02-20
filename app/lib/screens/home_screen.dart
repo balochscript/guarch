@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:guarch/app.dart';
 import 'package:guarch/providers/app_provider.dart';
 import 'package:guarch/models/connection_state.dart';
 import 'package:guarch/screens/servers_screen.dart';
@@ -76,7 +77,7 @@ class _HomeTab extends StatelessWidget {
             child: Column(
               children: [
                 const SizedBox(height: 20),
-                _buildHeader(context, provider),
+                _buildHeader(context),
                 const SizedBox(height: 16),
                 _buildServerInfo(context, server),
                 const Spacer(),
@@ -112,19 +113,16 @@ class _HomeTab extends StatelessWidget {
     );
   }
 
-  Widget _buildHeader(BuildContext context, AppProvider provider) {
+  Widget _buildHeader(BuildContext context) {
     return Row(
       children: [
         Container(
           padding: const EdgeInsets.all(10),
           decoration: BoxDecoration(
-            color: const Color(0xFF6C5CE7).withOpacity(0.15),
+            color: kGold.withOpacity(0.15),
             borderRadius: BorderRadius.circular(12),
           ),
-          child: const Text(
-            '🎯',
-            style: TextStyle(fontSize: 24),
-          ),
+          child: const Text('🎯', style: TextStyle(fontSize: 24)),
         ),
         const SizedBox(width: 12),
         Column(
@@ -134,12 +132,13 @@ class _HomeTab extends StatelessWidget {
               'Guarch',
               style: Theme.of(context).textTheme.titleLarge?.copyWith(
                     fontWeight: FontWeight.bold,
+                    color: kGold,
                   ),
             ),
             Text(
               'Hidden like a Balochi hunter',
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: Colors.grey,
+                    color: kGold.withOpacity(0.5),
                   ),
             ),
           ],
@@ -152,10 +151,12 @@ class _HomeTab extends StatelessWidget {
     if (server == null) {
       return Card(
         child: ListTile(
-          leading: const Icon(Icons.add_circle_outline, color: Color(0xFF6C5CE7)),
-          title: const Text('No server selected'),
-          subtitle: const Text('Go to Servers tab to add one'),
-          trailing: const Icon(Icons.arrow_forward_ios, size: 16),
+          leading: Icon(Icons.add_circle_outline, color: kGold),
+          title: Text('No server selected',
+              style: TextStyle(color: kGoldLight)),
+          subtitle: Text('Go to Servers tab to add one',
+              style: TextStyle(color: kGold.withOpacity(0.5))),
+          trailing: Icon(Icons.arrow_forward_ios, size: 16, color: kGold),
         ),
       );
     }
@@ -163,14 +164,23 @@ class _HomeTab extends StatelessWidget {
     return Card(
       child: ListTile(
         leading: Text(server.pingEmoji, style: const TextStyle(fontSize: 24)),
-        title: Text(server.name, style: const TextStyle(fontWeight: FontWeight.w600)),
-        subtitle: Text(server.fullAddress),
+        title: Text(
+          server.name,
+          style: const TextStyle(
+            fontWeight: FontWeight.w600,
+            color: kGoldLight,
+          ),
+        ),
+        subtitle: Text(
+          server.fullAddress,
+          style: TextStyle(color: kGold.withOpacity(0.5)),
+        ),
         trailing: Text(
           server.pingText,
           style: TextStyle(
             color: server.ping != null && server.ping! > 0 && server.ping! < 100
                 ? Colors.green
-                : Colors.grey,
+                : kGold.withOpacity(0.5),
             fontWeight: FontWeight.w600,
           ),
         ),
@@ -185,11 +195,11 @@ class _HomeTab extends StatelessWidget {
     switch (status) {
       case VpnStatus.disconnected:
         text = 'Tap to connect';
-        color = Colors.grey;
+        color = kGold.withOpacity(0.5);
         break;
       case VpnStatus.connecting:
         text = 'Connecting...';
-        color = Colors.orange;
+        color = kGold;
         break;
       case VpnStatus.connected:
         text = 'Connected & Protected';
@@ -197,7 +207,7 @@ class _HomeTab extends StatelessWidget {
         break;
       case VpnStatus.disconnecting:
         text = 'Disconnecting...';
-        color = Colors.orange;
+        color = kGold;
         break;
       case VpnStatus.error:
         text = 'Connection failed';
@@ -207,11 +217,7 @@ class _HomeTab extends StatelessWidget {
 
     return Text(
       text,
-      style: TextStyle(
-        color: color,
-        fontSize: 16,
-        fontWeight: FontWeight.w500,
-      ),
+      style: TextStyle(color: color, fontSize: 16, fontWeight: FontWeight.w500),
     );
   }
 
@@ -229,11 +235,11 @@ class _HomeTab extends StatelessWidget {
                 children: [
                   const Text(
                     'Cover Traffic Active',
-                    style: TextStyle(fontWeight: FontWeight.w600),
+                    style: TextStyle(fontWeight: FontWeight.w600, color: kGoldLight),
                   ),
                   Text(
                     '${stats.coverRequests} cover requests sent',
-                    style: const TextStyle(color: Colors.grey, fontSize: 12),
+                    style: TextStyle(color: kGold.withOpacity(0.5), fontSize: 12),
                   ),
                 ],
               ),
