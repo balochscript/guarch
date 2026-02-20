@@ -1,0 +1,57 @@
+name: Guarch Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.22"
+
+      - name: Download Dependencies
+        run: go mod tidy
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Build Client
+        run: go build ./cmd/guarch-client/
+
+      - name: Build Server
+        run: go build ./cmd/guarch-server/
+
+      - name: Test Protocol
+        run: go test ./pkg/protocol/... -v -count=1 -timeout=60s
+
+      - name: Test Crypto
+        run: go test ./pkg/crypto/... -v -count=1 -timeout=60s
+
+      - name: Test Transport
+        run: go test ./pkg/transport/... -v -count=1 -timeout=60s
+
+      - name: Test Cover
+        run: go test ./pkg/cover/... -v -count=1 -timeout=120s
+
+      - name: Test Antidetect
+        run: go test ./pkg/antidetect/... -v -count=1 -timeout=60s
+
+      - name: Test Config
+        run: go test ./pkg/config/... -v -count=1 -timeout=60s
+
+      - name: Test Health
+        run: go test ./pkg/health/... -v -count=1 -timeout=60s
+
+      - name: Test Interleave
+        run: go test ./pkg/interleave/... -v -count=1 -timeout=60s
+
+      - name: Race Detector
+        run: go test ./pkg/protocol/... ./pkg/crypto/... ./pkg/config/... ./pkg/health/... -race -count=1 -timeout=60s
