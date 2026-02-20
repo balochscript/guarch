@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:guarch/app.dart';
 import 'package:guarch/providers/app_provider.dart';
 import 'package:guarch/models/server_config.dart';
 
@@ -32,8 +33,8 @@ class _AddServerScreenState extends State<AddServerScreen> {
     _portController =
         TextEditingController(text: (widget.server?.port ?? 8443).toString());
     _coverEnabled = widget.server?.coverEnabled ?? true;
-    _coverDomains = widget.server?.coverDomains ??
-        ServerConfig.defaultCoverDomains();
+    _coverDomains =
+        widget.server?.coverDomains ?? ServerConfig.defaultCoverDomains();
   }
 
   @override
@@ -56,27 +57,27 @@ class _AddServerScreenState extends State<AddServerScreen> {
         child: ListView(
           padding: const EdgeInsets.all(24),
           children: [
-            // بخش اطلاعات سرور
             const Row(
               children: [
                 Text('🎯', style: TextStyle(fontSize: 24)),
                 SizedBox(width: 8),
                 Text(
                   'Server Information',
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w600,
+                    color: kGold,
+                  ),
                 ),
               ],
             ),
             const SizedBox(height: 20),
             TextFormField(
               controller: _nameController,
-              decoration: InputDecoration(
+              decoration: const InputDecoration(
                 labelText: 'Server Name',
                 hintText: 'e.g. Germany Server',
-                prefixIcon: const Icon(Icons.label_outline),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
+                prefixIcon: Icon(Icons.label_outline),
               ),
               validator: (v) =>
                   v == null || v.isEmpty ? 'Name required' : null,
@@ -84,13 +85,10 @@ class _AddServerScreenState extends State<AddServerScreen> {
             const SizedBox(height: 16),
             TextFormField(
               controller: _addressController,
-              decoration: InputDecoration(
+              decoration: const InputDecoration(
                 labelText: 'Server Address',
                 hintText: 'IP or domain (e.g. 1.2.3.4)',
-                prefixIcon: const Icon(Icons.dns_outlined),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
+                prefixIcon: Icon(Icons.dns_outlined),
               ),
               keyboardType: TextInputType.url,
               validator: (v) =>
@@ -99,13 +97,10 @@ class _AddServerScreenState extends State<AddServerScreen> {
             const SizedBox(height: 16),
             TextFormField(
               controller: _portController,
-              decoration: InputDecoration(
+              decoration: const InputDecoration(
                 labelText: 'Port',
                 hintText: '8443',
-                prefixIcon: const Icon(Icons.numbers),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
+                prefixIcon: Icon(Icons.numbers),
               ),
               keyboardType: TextInputType.number,
               validator: (v) {
@@ -117,10 +112,9 @@ class _AddServerScreenState extends State<AddServerScreen> {
                 return null;
               },
             ),
-
             const SizedBox(height: 32),
 
-            // بخش Cover Traffic
+            // Cover Traffic
             Row(
               children: [
                 const Text('🎭', style: TextStyle(fontSize: 24)),
@@ -128,26 +122,27 @@ class _AddServerScreenState extends State<AddServerScreen> {
                 const Expanded(
                   child: Text(
                     'Cover Traffic',
-                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w600,
+                      color: kGold,
+                    ),
                   ),
                 ),
                 Switch(
                   value: _coverEnabled,
                   onChanged: (v) => setState(() => _coverEnabled = v),
-                  activeColor: const Color(0xFF6C5CE7),
                 ),
               ],
             ),
             const SizedBox(height: 4),
-            const Text(
+            Text(
               'Send real requests to popular sites to hide your traffic',
-              style: TextStyle(color: Colors.grey, fontSize: 13),
+              style: TextStyle(color: kGold.withOpacity(0.5), fontSize: 13),
             ),
 
             if (_coverEnabled) ...[
               const SizedBox(height: 16),
-
-              // اضافه کردن دامنه جدید
               Card(
                 child: Padding(
                   padding: const EdgeInsets.all(16),
@@ -156,32 +151,35 @@ class _AddServerScreenState extends State<AddServerScreen> {
                     children: [
                       const Text(
                         'Cover Domains',
-                        style: TextStyle(fontWeight: FontWeight.w600),
+                        style: TextStyle(
+                          fontWeight: FontWeight.w600,
+                          color: kGoldLight,
+                        ),
                       ),
                       const SizedBox(height: 4),
-                      const Text(
-                        'Add websites that you normally visit. Your traffic will be mixed with requests to these sites.',
-                        style: TextStyle(color: Colors.grey, fontSize: 12),
+                      Text(
+                        'Add websites you normally visit',
+                        style: TextStyle(
+                          color: kGold.withOpacity(0.4),
+                          fontSize: 12,
+                        ),
                       ),
                       const SizedBox(height: 16),
 
-                      // فیلد اضافه کردن دامنه
+                      // فیلد اضافه کردن
                       Row(
                         children: [
                           Expanded(
                             child: TextField(
                               controller: _domainController,
-                              decoration: InputDecoration(
+                              decoration: const InputDecoration(
                                 hintText: 'e.g. google.com',
-                                prefixIcon: const Icon(Icons.public, size: 20),
-                                border: OutlineInputBorder(
-                                  borderRadius: BorderRadius.circular(12),
-                                ),
-                                contentPadding: const EdgeInsets.symmetric(
+                                prefixIcon: Icon(Icons.public, size: 20),
+                                isDense: true,
+                                contentPadding: EdgeInsets.symmetric(
                                   horizontal: 12,
                                   vertical: 12,
                                 ),
-                                isDense: true,
                               ),
                               keyboardType: TextInputType.url,
                               onSubmitted: (_) => _addDomain(),
@@ -191,16 +189,12 @@ class _AddServerScreenState extends State<AddServerScreen> {
                           IconButton.filled(
                             onPressed: _addDomain,
                             icon: const Icon(Icons.add),
-                            style: IconButton.styleFrom(
-                              backgroundColor: const Color(0xFF6C5CE7),
-                            ),
                           ),
                         ],
                       ),
-
                       const SizedBox(height: 12),
 
-                      // پیشنهادات سریع
+                      // پیشنهادات
                       Wrap(
                         spacing: 8,
                         runSpacing: 8,
@@ -217,17 +211,16 @@ class _AddServerScreenState extends State<AddServerScreen> {
                           _quickAddChip('netflix.com'),
                         ],
                       ),
-
                       const SizedBox(height: 16),
-                      const Divider(),
+                      Divider(color: kGold.withOpacity(0.1)),
                       const SizedBox(height: 8),
 
-                      // لیست دامنه‌ها
-                      const Text(
+                      Text(
                         'Active Cover Domains:',
                         style: TextStyle(
                           fontWeight: FontWeight.w600,
                           fontSize: 13,
+                          color: kGoldLight,
                         ),
                       ),
                       const SizedBox(height: 8),
@@ -239,27 +232,23 @@ class _AddServerScreenState extends State<AddServerScreen> {
                           padding: const EdgeInsets.only(bottom: 4),
                           child: Row(
                             children: [
-                              const Icon(
-                                Icons.check_circle,
-                                size: 16,
-                                color: Colors.green,
-                              ),
+                              const Icon(Icons.check_circle,
+                                  size: 16, color: Colors.green),
                               const SizedBox(width: 8),
                               Expanded(
                                 child: Text(
                                   domain.domain,
-                                  style: const TextStyle(fontSize: 14),
+                                  style: const TextStyle(
+                                    fontSize: 14,
+                                    color: kGoldLight,
+                                  ),
                                 ),
                               ),
-                              SizedBox(
-                                width: 50,
-                                child: Text(
-                                  '${domain.weight}%',
-                                  style: const TextStyle(
-                                    color: Colors.grey,
-                                    fontSize: 12,
-                                  ),
-                                  textAlign: TextAlign.right,
+                              Text(
+                                '${domain.weight}%',
+                                style: TextStyle(
+                                  color: kGold.withOpacity(0.4),
+                                  fontSize: 12,
                                 ),
                               ),
                               const SizedBox(width: 4),
@@ -272,11 +261,8 @@ class _AddServerScreenState extends State<AddServerScreen> {
                                 },
                                 child: const Padding(
                                   padding: EdgeInsets.all(4),
-                                  child: Icon(
-                                    Icons.close,
-                                    size: 16,
-                                    color: Colors.red,
-                                  ),
+                                  child: Icon(Icons.close,
+                                      size: 16, color: Colors.red),
                                 ),
                               ),
                             ],
@@ -288,8 +274,9 @@ class _AddServerScreenState extends State<AddServerScreen> {
                         const Padding(
                           padding: EdgeInsets.symmetric(vertical: 8),
                           child: Text(
-                            'No domains added. Add at least one domain.',
-                            style: TextStyle(color: Colors.orange, fontSize: 12),
+                            'No domains added. Add at least one.',
+                            style:
+                                TextStyle(color: Colors.orange, fontSize: 12),
                           ),
                         ),
                     ],
@@ -299,16 +286,10 @@ class _AddServerScreenState extends State<AddServerScreen> {
             ],
 
             const SizedBox(height: 32),
-
-            // دکمه ذخیره
             FilledButton(
               onPressed: _save,
               style: FilledButton.styleFrom(
-                backgroundColor: const Color(0xFF6C5CE7),
                 padding: const EdgeInsets.symmetric(vertical: 16),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
               ),
               child: Text(
                 isEditing ? 'Save Changes' : 'Add Server',
@@ -326,20 +307,13 @@ class _AddServerScreenState extends State<AddServerScreen> {
     final exists = _coverDomains.any(
       (d) => d.domain == domain || d.domain == 'www.$domain',
     );
-
     return ActionChip(
       avatar: Icon(
         exists ? Icons.check : Icons.add,
         size: 16,
-        color: exists ? Colors.green : const Color(0xFF6C5CE7),
+        color: exists ? Colors.green : kGold,
       ),
-      label: Text(
-        domain,
-        style: TextStyle(
-          fontSize: 12,
-          color: exists ? Colors.grey : null,
-        ),
-      ),
+      label: Text(domain, style: const TextStyle(fontSize: 12)),
       onPressed: exists
           ? null
           : () {
@@ -354,25 +328,16 @@ class _AddServerScreenState extends State<AddServerScreen> {
   void _addDomain() {
     final domain = _domainController.text.trim().toLowerCase();
     if (domain.isEmpty) return;
-
-    // حذف https:// و http:// و / آخر
-    String cleanDomain = domain
-        .replaceAll('https://', '')
-        .replaceAll('http://', '');
-    if (cleanDomain.endsWith('/')) {
-      cleanDomain = cleanDomain.substring(0, cleanDomain.length - 1);
-    }
-
-    // بررسی تکراری نبودن
-    if (_coverDomains.any((d) => d.domain == cleanDomain)) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('$cleanDomain already exists')),
-      );
+    String clean =
+        domain.replaceAll('https://', '').replaceAll('http://', '');
+    if (clean.endsWith('/')) clean = clean.substring(0, clean.length - 1);
+    if (_coverDomains.any((d) => d.domain == clean)) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('$clean already exists')));
       return;
     }
-
     setState(() {
-      _coverDomains.add(CoverDomain(domain: cleanDomain));
+      _coverDomains.add(CoverDomain(domain: clean));
       _recalculateWeights();
       _domainController.clear();
     });
@@ -380,38 +345,33 @@ class _AddServerScreenState extends State<AddServerScreen> {
 
   void _recalculateWeights() {
     if (_coverDomains.isEmpty) return;
-    final weightPerDomain = 100 ~/ _coverDomains.length;
-    final remainder = 100 % _coverDomains.length;
-
+    final w = 100 ~/ _coverDomains.length;
+    final r = 100 % _coverDomains.length;
     for (var i = 0; i < _coverDomains.length; i++) {
-      _coverDomains[i].weight = weightPerDomain + (i < remainder ? 1 : 0);
+      _coverDomains[i].weight = w + (i < r ? 1 : 0);
     }
   }
 
   void _save() {
     if (!_formKey.currentState!.validate()) return;
-
     if (_coverEnabled && _coverDomains.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Please add at least one cover domain'),
+          content: Text('Add at least one cover domain'),
           backgroundColor: Colors.orange,
         ),
       );
       return;
     }
-
     final provider = context.read<AppProvider>();
-
     if (isEditing) {
-      final updated = widget.server!.copyWith(
+      provider.updateServer(widget.server!.copyWith(
         name: _nameController.text.trim(),
         address: _addressController.text.trim(),
         port: int.parse(_portController.text.trim()),
         coverEnabled: _coverEnabled,
         coverDomains: List.from(_coverDomains),
-      );
-      provider.updateServer(updated);
+      ));
     } else {
       final server = ServerConfig(
         id: DateTime.now().millisecondsSinceEpoch.toString(),
@@ -423,13 +383,7 @@ class _AddServerScreenState extends State<AddServerScreen> {
       );
       provider.addServer(server);
       provider.setActiveServer(server.id);
-
-      // پینگ خودکار بعد از اضافه شدن
-      provider.pingServer(server).then((ping) {
-        provider.updateServer(server.copyWith(ping: ping));
-      });
     }
-
     Navigator.pop(context);
   }
 }
