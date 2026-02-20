@@ -55,17 +55,25 @@ func (s *Shaper) PaddingSize(dataSize int) int {
 func (s *Shaper) Delay() time.Duration {
 	base := s.stats.AvgInterval()
 
+	var delay time.Duration
+
 	switch s.pattern {
 	case PatternWebBrowsing:
-		jitter := time.Duration(randomInt(-50, 50)) * time.Millisecond
-		return base + jitter
+		jitter := time.Duration(randomInt(0, 100)) * time.Millisecond
+		delay = base + jitter
 	case PatternVideoStream:
-		return time.Duration(randomInt(20, 80)) * time.Millisecond
+		delay = time.Duration(randomInt(20, 80)) * time.Millisecond
 	case PatternFileDownload:
-		return time.Duration(randomInt(5, 20)) * time.Millisecond
+		delay = time.Duration(randomInt(5, 20)) * time.Millisecond
 	default:
-		return base
+		delay = base
 	}
+
+	if delay < 0 {
+		delay = 10 * time.Millisecond
+	}
+
+	return delay
 }
 
 func (s *Shaper) ShouldSendPadding() bool {
