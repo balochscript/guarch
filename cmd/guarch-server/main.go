@@ -13,9 +13,12 @@ import (
 	"math/big"
 	"net"
 	"net/http"
+	"os"
+	"os/signal"
 	"time"
 
 	"guarch/pkg/antidetect"
+	"guarch/pkg/health"
 	"guarch/pkg/interleave"
 	"guarch/pkg/protocol"
 	"guarch/pkg/transport"
@@ -24,17 +27,22 @@ import (
 var (
 	probeDetector *antidetect.ProbeDetector
 	decoyServer   *antidetect.DecoyServer
+	healthCheck   *health.Checker
 )
 
 func main() {
 	addr := flag.String("addr", ":8443", "listen address")
 	decoyAddr := flag.String("decoy", ":8080", "decoy web server address")
+	healthAddr := flag.String("health", "127.0.0.1:9090", "health check address")
 	flag.Parse()
 
+	healthCheck = health.New()
 	probeDetector = antidetect.NewProbeDetector(10, time.Minute)
 	decoyServer = antidetect.NewDecoyServer()
 
 	go startDecoy(*decoyAddr)
+	healthCheck.StartServer(*healthAddr)
+	log.Printf("[guarch] health check on %s", *healthAddr)
 
 	cert, err := generateCert()
 	if err != nil {
@@ -51,21 +59,38 @@ func main() {
 		log.Fatal("listen:", err)
 	}
 
+	log.Println("")
+	log.Println("  ██████  ██    ██  █████  ██████   ██████ ██   ██")
+	log.Println(" ██       ██    ██ ██   ██ ██   ██ ██      ██   ██")
+	log.Println(" ██   ███ ██    ██ ███████ ██████  ██      ███████")
+	log.Println(" ██    ██ ██    ██ ██   ██ ██   ██ ██      ██   ██")
+	log.Println("  ██████   ██████  ██   ██ ██   ██  ██████ ██   ██")
+	log.Println("")
 	log.Printf("[guarch] server listening on %s", *addr)
 	log.Printf("[guarch] decoy web server on %s", *decoyAddr)
+	log.Println("[guarch] ready to accept connections")
 
-	for {
-		conn, err := ln.Accept()
-		if err != nil {
-			log.Println("accept:", err)
-			continue
+	go func() {
+		for {
+			conn, err := ln.Accept()
+			if err != nil {
+				log.Println("accept:", err)
+				continue
+			}
+			go handleConn(conn)
 		}
-		go handleConn(conn)
-	}
+	}()
+
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, os.Interrupt)
+	<-sigCh
+
+	log.Println("[guarch] shutting down...")
+	ln.Close()
 }
 
 func startDecoy(addr string) {
-	log.Printf("[decoy] starting fake website on %s", addr)
+	log.Printf("[decoy] fake website on %s", addr)
 	if err := http.ListenAndServe(addr, decoyServer); err != nil {
 		log.Printf("[decoy] error: %v", err)
 	}
@@ -75,9 +100,12 @@ func handleConn(raw net.Conn) {
 	defer raw.Close()
 
 	remoteAddr := raw.RemoteAddr().String()
+	healthCheck.AddConn()
+	defer healthCheck.RemoveConn()
 
 	if probeDetector.Check(remoteAddr) {
-		log.Printf("[probe] suspicious connection from %s, serving decoy", remoteAddr)
+		log.Printf("[probe] suspicious: %s -> serving decoy", remoteAddr)
+		healthCheck.AddError()
 		serveDecoyToRaw(raw)
 		return
 	}
@@ -86,7 +114,8 @@ func handleConn(raw net.Conn) {
 
 	sc, err := transport.Handshake(raw, true)
 	if err != nil {
-		log.Printf("[guarch] handshake failed from %s: %v", remoteAddr, err)
+		log.Printf("[guarch] handshake failed %s: %v", remoteAddr, err)
+		healthCheck.AddError()
 		serveDecoyToRaw(raw)
 		return
 	}
@@ -111,7 +140,7 @@ func handleConn(raw net.Conn) {
 	}
 
 	target := req.Address()
-	log.Printf("[guarch] connecting to %s for %s", target, remoteAddr)
+	log.Printf("[guarch] %s -> %s", remoteAddr, target)
 
 	targetConn, err := net.DialTimeout("tcp", target, 10*time.Second)
 	if err != nil {
