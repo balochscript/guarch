@@ -5,9 +5,11 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:guarch/models/server_config.dart';
 import 'package:guarch/models/connection_state.dart';
+import 'package:guarch/services/guarch_engine.dart';
 
 class AppProvider extends ChangeNotifier {
   late SharedPreferences _prefs;
+  final GuarchEngine _engine = GuarchEngine();
 
   List<ServerConfig> _servers = [];
   VpnStatus _status = VpnStatus.disconnected;
@@ -17,6 +19,9 @@ class AppProvider extends ChangeNotifier {
   List<String> _logs = [];
   Timer? _statsTimer;
   DateTime? _connectTime;
+  StreamSubscription? _statusSub;
+  StreamSubscription? _statsSub;
+  StreamSubscription? _logSub;
 
   List<ServerConfig> get servers => _servers;
   VpnStatus get status => _status;
@@ -39,6 +44,48 @@ class AppProvider extends ChangeNotifier {
     _isDarkMode = _prefs.getBool('dark_mode') ?? true;
     _activeServerId = _prefs.getString('active_server');
     _loadServers();
+
+    await _engine.init();
+
+    _statusSub = _engine.statusStream.listen((status) {
+      switch (status) {
+        case 'connected':
+          _status = VpnStatus.connected;
+          _connectTime = DateTime.now();
+          _startStatsTimer();
+          break;
+        case 'connecting':
+          _status = VpnStatus.connecting;
+          break;
+        case 'disconnecting':
+          _status = VpnStatus.disconnecting;
+          break;
+        case 'disconnected':
+          _status = VpnStatus.disconnected;
+          _stopStatsTimer();
+          _connectTime = null;
+          _stats = const ConnectionStats();
+          break;
+        default:
+          _status = VpnStatus.disconnected;
+      }
+      notifyListeners();
+    });
+
+    _statsSub = _engine.statsStream.listen((data) {
+      _stats = _stats.copyWith(
+        totalUpload: data['total_upload'] as int? ?? 0,
+        totalDownload: data['total_download'] as int? ?? 0,
+        coverRequests: data['cover_requests'] as int? ?? 0,
+        duration: Duration(seconds: data['duration_seconds'] as int? ?? 0),
+      );
+      notifyListeners();
+    });
+
+    _logSub = _engine.logStream.listen((msg) {
+      _addLog(msg);
+      notifyListeners();
+    });
   }
 
   void _loadServers() {
@@ -98,24 +145,15 @@ class AppProvider extends ChangeNotifier {
     _addLog('Connecting to ${activeServer!.name}...');
     notifyListeners();
 
-    try {
-      await Future.delayed(const Duration(seconds: 2));
+    final success = await _engine.connect(
+      serverAddr: activeServer!.address,
+      serverPort: activeServer!.port,
+      coverEnabled: activeServer!.coverEnabled,
+    );
 
-      final socket = await Socket.connect(
-        activeServer!.address,
-        activeServer!.port,
-        timeout: const Duration(seconds: 10),
-      );
-      socket.destroy();
-
-      _status = VpnStatus.connected;
-      _connectTime = DateTime.now();
-      _addLog('Connected to ${activeServer!.name}');
-      _startStatsTimer();
-      notifyListeners();
-    } catch (e) {
+    if (!success) {
       _status = VpnStatus.error;
-      _addLog('Connection failed: $e');
+      _addLog('Connection failed');
       notifyListeners();
 
       await Future.delayed(const Duration(seconds: 2));
@@ -131,8 +169,7 @@ class AppProvider extends ChangeNotifier {
     _addLog('Disconnecting...');
     notifyListeners();
 
-    _stopStatsTimer();
-    await Future.delayed(const Duration(milliseconds: 500));
+    await _engine.disconnect();
 
     _status = VpnStatus.disconnected;
     _stats = const ConnectionStats();
@@ -150,31 +187,20 @@ class AppProvider extends ChangeNotifier {
   }
 
   Future<int> pingServer(ServerConfig server) async {
-    try {
-      final stopwatch = Stopwatch()..start();
-      final socket = await Socket.connect(
-        server.address,
-        server.port,
-        timeout: const Duration(seconds: 5),
-      );
-      stopwatch.stop();
-      socket.destroy();
-      final ping = stopwatch.elapsedMilliseconds;
-      _addLog('Ping ${server.name}: ${ping}ms');
-      return ping;
-    } catch (_) {
-      _addLog('Ping ${server.name}: timeout');
-      return -1;
-    }
+    final ping = await _engine.ping(server.address, server.port);
+    _addLog('Ping ${server.name}: ${ping > 0 ? "${ping}ms" : "timeout"}');
+    return ping;
   }
 
   Future<void> pingAllServers() async {
+    _addLog('Pinging all servers...');
     for (var i = 0; i < _servers.length; i++) {
       final ping = await pingServer(_servers[i]);
       _servers[i] = _servers[i].copyWith(ping: ping);
       notifyListeners();
     }
     _saveServers();
+    _addLog('Ping complete');
   }
 
   void importConfig(String data) {
@@ -219,15 +245,10 @@ class AppProvider extends ChangeNotifier {
   }
 
   void _startStatsTimer() {
-    _statsTimer = Timer.periodic(const Duration(seconds: 1), (_) {
-      if (_connectTime != null) {
+    _statsTimer = Timer.periodic(const Duration(seconds: 1), (_) async {
+      if (_connectTime != null && _status == VpnStatus.connected) {
         _stats = _stats.copyWith(
           duration: DateTime.now().difference(_connectTime!),
-          uploadSpeed: 1024 + (DateTime.now().millisecond % 500),
-          downloadSpeed: 2048 + (DateTime.now().millisecond % 1000),
-          totalUpload: _stats.totalUpload + 1024 + (DateTime.now().millisecond % 500),
-          totalDownload: _stats.totalDownload + 2048 + (DateTime.now().millisecond % 1000),
-          coverRequests: _stats.coverRequests + (DateTime.now().second % 3 == 0 ? 1 : 0),
         );
         notifyListeners();
       }
@@ -255,6 +276,10 @@ class AppProvider extends ChangeNotifier {
   @override
   void dispose() {
     _stopStatsTimer();
+    _statusSub?.cancel();
+    _statsSub?.cancel();
+    _logSub?.cancel();
+    _engine.dispose();
     super.dispose();
   }
 }
