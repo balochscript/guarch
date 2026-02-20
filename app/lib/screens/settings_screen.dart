@@ -20,14 +20,16 @@ class SettingsScreen extends StatelessWidget {
             children: [
               _sectionTitle('Appearance'),
               Card(
-                child: SwitchListTile(
+                child: ListTile(
                   leading: Icon(
                     provider.isDarkMode ? Icons.dark_mode : Icons.light_mode,
                   ),
                   title: const Text('Dark Mode'),
-                  value: provider.isDarkMode,
-                  onChanged: (_) => provider.toggleTheme(),
-                  activeColor: const Color(0xFF6C5CE7),
+                  trailing: Switch(
+                    value: provider.isDarkMode,
+                    onChanged: (_) => provider.toggleTheme(),
+                    activeColor: const Color(0xFF6C5CE7),
+                  ),
                 ),
               ),
               const SizedBox(height: 24),
