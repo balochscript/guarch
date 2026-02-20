@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+import 'package:guarch/app.dart';
 import 'package:guarch/models/server_config.dart';
 import 'package:guarch/providers/app_provider.dart';
 import 'package:share_plus/share_plus.dart';
@@ -21,14 +22,24 @@ class ExportScreen extends StatelessWidget {
       body: ListView(
         padding: const EdgeInsets.all(24),
         children: [
-          const Text(
-            '🔗 Guarch Link',
-            style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+          const Row(
+            children: [
+              Text('🔗', style: TextStyle(fontSize: 24)),
+              SizedBox(width: 8),
+              Text(
+                'Guarch Link',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w600,
+                  color: kGold,
+                ),
+              ),
+            ],
           ),
           const SizedBox(height: 8),
-          const Text(
+          Text(
             'Share this link with others',
-            style: TextStyle(color: Colors.grey),
+            style: TextStyle(color: kGold.withOpacity(0.5)),
           ),
           const SizedBox(height: 12),
           Card(
@@ -42,6 +53,7 @@ class ExportScreen extends StatelessWidget {
                     style: const TextStyle(
                       fontFamily: 'monospace',
                       fontSize: 12,
+                      color: kGoldLight,
                     ),
                   ),
                   const SizedBox(height: 12),
@@ -65,9 +77,6 @@ class ExportScreen extends StatelessWidget {
                           onPressed: () => Share.share(link),
                           icon: const Icon(Icons.share, size: 18),
                           label: const Text('Share'),
-                          style: FilledButton.styleFrom(
-                            backgroundColor: const Color(0xFF6C5CE7),
-                          ),
                         ),
                       ),
                     ],
@@ -77,14 +86,24 @@ class ExportScreen extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 32),
-          const Text(
-            '📋 JSON Config',
-            style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+          const Row(
+            children: [
+              Text('📋', style: TextStyle(fontSize: 24)),
+              SizedBox(width: 8),
+              Text(
+                'JSON Config',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w600,
+                  color: kGold,
+                ),
+              ),
+            ],
           ),
           const SizedBox(height: 8),
-          const Text(
+          Text(
             'Full configuration in JSON format',
-            style: TextStyle(color: Colors.grey),
+            style: TextStyle(color: kGold.withOpacity(0.5)),
           ),
           const SizedBox(height: 12),
           Card(
@@ -98,6 +117,7 @@ class ExportScreen extends StatelessWidget {
                     style: const TextStyle(
                       fontFamily: 'monospace',
                       fontSize: 11,
+                      color: kGoldLight,
                     ),
                   ),
                   const SizedBox(height: 12),
@@ -121,9 +141,6 @@ class ExportScreen extends StatelessWidget {
                           onPressed: () => Share.share(json),
                           icon: const Icon(Icons.share, size: 18),
                           label: const Text('Share'),
-                          style: FilledButton.styleFrom(
-                            backgroundColor: const Color(0xFF6C5CE7),
-                          ),
                         ),
                       ),
                     ],
