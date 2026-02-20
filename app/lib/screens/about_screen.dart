@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:guarch/app.dart';
 
 class AboutScreen extends StatelessWidget {
   const AboutScreen({super.key});
@@ -17,14 +18,18 @@ class AboutScreen extends StatelessWidget {
           const Center(
             child: Text(
               'Guarch Protocol',
-              style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold),
+              style: TextStyle(
+                fontSize: 28,
+                fontWeight: FontWeight.bold,
+                color: kGold,
+              ),
             ),
           ),
           const SizedBox(height: 8),
-          const Center(
+          Center(
             child: Text(
               'Version 1.0.0',
-              style: TextStyle(color: Colors.grey),
+              style: TextStyle(color: kGold.withOpacity(0.4)),
             ),
           ),
           const SizedBox(height: 32),
@@ -58,10 +63,10 @@ class AboutScreen extends StatelessWidget {
                 'Suspicious connection attempts are rate-limited and served decoy content.',
           ),
           const SizedBox(height: 32),
-          const Center(
+          Center(
             child: Text(
               'Made with ❤️ for internet freedom',
-              style: TextStyle(color: Colors.grey),
+              style: TextStyle(color: kGold.withOpacity(0.4)),
             ),
           ),
           const SizedBox(height: 32),
@@ -86,6 +91,7 @@ class AboutScreen extends StatelessWidget {
                   style: const TextStyle(
                     fontSize: 16,
                     fontWeight: FontWeight.w600,
+                    color: kGold,
                   ),
                 ),
               ],
@@ -93,7 +99,10 @@ class AboutScreen extends StatelessWidget {
             const SizedBox(height: 8),
             Text(
               description,
-              style: const TextStyle(color: Colors.grey, height: 1.5),
+              style: TextStyle(
+                color: kGold.withOpacity(0.6),
+                height: 1.5,
+              ),
             ),
           ],
         ),
