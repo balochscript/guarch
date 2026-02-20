@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:guarch/models/connection_state.dart';
+import 'package:guarch/app.dart';
 
 class ConnectionButton extends StatefulWidget {
   final VpnStatus status;
@@ -44,11 +45,11 @@ class _ConnectionButtonState extends State<ConnectionButton>
         return Colors.green;
       case VpnStatus.connecting:
       case VpnStatus.disconnecting:
-        return Colors.orange;
+        return kGold;
       case VpnStatus.error:
         return Colors.red;
       case VpnStatus.disconnected:
-        return const Color(0xFF6C5CE7);
+        return kGold;
     }
   }
 
@@ -116,16 +117,16 @@ class _ConnectionButtonState extends State<ConnectionButton>
                 ],
               ),
               child: _isLoading
-                  ? const Padding(
-                      padding: EdgeInsets.all(35),
+                  ? Padding(
+                      padding: const EdgeInsets.all(35),
                       child: CircularProgressIndicator(
-                        color: Colors.white,
+                        color: kDarkBg,
                         strokeWidth: 3,
                       ),
                     )
                   : Icon(
                       _icon,
-                      color: Colors.white,
+                      color: kDarkBg,
                       size: 48,
                     ),
             ),
