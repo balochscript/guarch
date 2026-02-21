@@ -18,8 +18,12 @@ class _AddServerScreenState extends State<AddServerScreen> {
   late TextEditingController _nameController;
   late TextEditingController _addressController;
   late TextEditingController _portController;
+  late TextEditingController _pskController;
+  late TextEditingController _pinController;
+  late TextEditingController _listenPortController;
   final _domainController = TextEditingController();
   bool _coverEnabled = true;
+  bool _pskVisible = false;
   late List<CoverDomain> _coverDomains;
 
   bool get isEditing => widget.server != null;
@@ -32,6 +36,10 @@ class _AddServerScreenState extends State<AddServerScreen> {
         TextEditingController(text: widget.server?.address ?? '');
     _portController =
         TextEditingController(text: (widget.server?.port ?? 8443).toString());
+    _pskController = TextEditingController(text: widget.server?.psk ?? '');
+    _pinController = TextEditingController(text: widget.server?.certPin ?? '');
+    _listenPortController = TextEditingController(
+        text: (widget.server?.listenPort ?? 1080).toString());
     _coverEnabled = widget.server?.coverEnabled ?? true;
     _coverDomains =
         widget.server?.coverDomains ?? ServerConfig.defaultCoverDomains();
@@ -42,6 +50,9 @@ class _AddServerScreenState extends State<AddServerScreen> {
     _nameController.dispose();
     _addressController.dispose();
     _portController.dispose();
+    _pskController.dispose();
+    _pinController.dispose();
+    _listenPortController.dispose();
     _domainController.dispose();
     super.dispose();
   }
@@ -57,6 +68,7 @@ class _AddServerScreenState extends State<AddServerScreen> {
         child: ListView(
           padding: const EdgeInsets.all(24),
           children: [
+            // ═══ Server Information ═══
             const Row(
               children: [
                 Text('🎯', style: TextStyle(fontSize: 24)),
@@ -98,7 +110,7 @@ class _AddServerScreenState extends State<AddServerScreen> {
             TextFormField(
               controller: _portController,
               decoration: const InputDecoration(
-                labelText: 'Port',
+                labelText: 'Server Port',
                 hintText: '8443',
                 prefixIcon: Icon(Icons.numbers),
               ),
@@ -112,9 +124,109 @@ class _AddServerScreenState extends State<AddServerScreen> {
                 return null;
               },
             ),
-            const SizedBox(height: 32),
 
-            // Cover Traffic
+            // ═══ Security ═══
+            const SizedBox(height: 32),
+            const Row(
+              children: [
+                Text('🔐', style: TextStyle(fontSize: 24)),
+                SizedBox(width: 8),
+                Text(
+                  'Security',
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w600,
+                    color: kGold,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'PSK is required for secure connection',
+              style: TextStyle(color: kGold.withOpacity(0.5), fontSize: 13),
+            ),
+            const SizedBox(height: 16),
+            TextFormField(
+              controller: _pskController,
+              obscureText: !_pskVisible,
+              decoration: InputDecoration(
+                labelText: 'Pre-Shared Key (PSK)',
+                hintText: 'Must match server PSK',
+                prefixIcon: const Icon(Icons.key),
+                suffixIcon: IconButton(
+                  icon: Icon(
+                    _pskVisible ? Icons.visibility_off : Icons.visibility,
+                    color: kGold.withOpacity(0.5),
+                  ),
+                  onPressed: () =>
+                      setState(() => _pskVisible = !_pskVisible),
+                ),
+              ),
+              validator: (v) {
+                if (v == null || v.isEmpty) return 'PSK is required';
+                if (v.length < 8) return 'PSK must be at least 8 characters';
+                return null;
+              },
+            ),
+            const SizedBox(height: 16),
+            TextFormField(
+              controller: _pinController,
+              decoration: InputDecoration(
+                labelText: 'Certificate PIN (optional)',
+                hintText: 'SHA-256 hash from server output',
+                prefixIcon: const Icon(Icons.verified_user_outlined),
+                helperText: 'Protects against man-in-the-middle attacks',
+                helperStyle: TextStyle(
+                  color: kGold.withOpacity(0.4),
+                  fontSize: 11,
+                ),
+              ),
+              style: const TextStyle(
+                fontFamily: 'monospace',
+                fontSize: 12,
+              ),
+            ),
+
+            // ═══ Advanced ═══
+            const SizedBox(height: 32),
+            ExpansionTile(
+              leading: Icon(Icons.tune, color: kGold.withOpacity(0.7)),
+              title: Text(
+                'Advanced Settings',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                  color: kGold.withOpacity(0.7),
+                ),
+              ),
+              children: [
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  child: TextFormField(
+                    controller: _listenPortController,
+                    decoration: const InputDecoration(
+                      labelText: 'Local SOCKS5 Port',
+                      hintText: '1080',
+                      prefixIcon: Icon(Icons.settings_ethernet),
+                    ),
+                    keyboardType: TextInputType.number,
+                    validator: (v) {
+                      if (v == null || v.isEmpty) return null;
+                      final port = int.tryParse(v);
+                      if (port == null || port < 1 || port > 65535) {
+                        return 'Invalid port';
+                      }
+                      return null;
+                    },
+                  ),
+                ),
+                const SizedBox(height: 16),
+              ],
+            ),
+
+            // ═══ Cover Traffic ═══
+            const SizedBox(height: 24),
             Row(
               children: [
                 const Text('🎭', style: TextStyle(fontSize: 24)),
@@ -165,8 +277,6 @@ class _AddServerScreenState extends State<AddServerScreen> {
                         ),
                       ),
                       const SizedBox(height: 16),
-
-                      // فیلد اضافه کردن
                       Row(
                         children: [
                           Expanded(
@@ -193,28 +303,25 @@ class _AddServerScreenState extends State<AddServerScreen> {
                         ],
                       ),
                       const SizedBox(height: 12),
-
-                      // پیشنهادات
                       Wrap(
                         spacing: 8,
                         runSpacing: 8,
                         children: [
                           _quickAddChip('google.com'),
+                          _quickAddChip('microsoft.com'),
+                          _quickAddChip('github.com'),
+                          _quickAddChip('stackoverflow.com'),
+                          _quickAddChip('cloudflare.com'),
                           _quickAddChip('youtube.com'),
-                          _quickAddChip('instagram.com'),
-                          _quickAddChip('twitter.com'),
-                          _quickAddChip('facebook.com'),
                           _quickAddChip('reddit.com'),
                           _quickAddChip('linkedin.com'),
                           _quickAddChip('apple.com'),
-                          _quickAddChip('cloudflare.com'),
                           _quickAddChip('netflix.com'),
                         ],
                       ),
                       const SizedBox(height: 16),
                       Divider(color: kGold.withOpacity(0.1)),
                       const SizedBox(height: 8),
-
                       Text(
                         'Active Cover Domains:',
                         style: TextStyle(
@@ -224,7 +331,6 @@ class _AddServerScreenState extends State<AddServerScreen> {
                         ),
                       ),
                       const SizedBox(height: 8),
-
                       ..._coverDomains.asMap().entries.map((entry) {
                         final index = entry.key;
                         final domain = entry.value;
@@ -269,7 +375,6 @@ class _AddServerScreenState extends State<AddServerScreen> {
                           ),
                         );
                       }),
-
                       if (_coverDomains.isEmpty)
                         const Padding(
                           padding: EdgeInsets.symmetric(vertical: 8),
@@ -285,6 +390,7 @@ class _AddServerScreenState extends State<AddServerScreen> {
               ),
             ],
 
+            // ═══ Save Button ═══
             const SizedBox(height: 32),
             FilledButton(
               onPressed: _save,
@@ -363,12 +469,20 @@ class _AddServerScreenState extends State<AddServerScreen> {
       );
       return;
     }
+
     final provider = context.read<AppProvider>();
+    final psk = _pskController.text.trim();
+    final pin = _pinController.text.trim();
+    final listenPort = int.tryParse(_listenPortController.text.trim()) ?? 1080;
+
     if (isEditing) {
       provider.updateServer(widget.server!.copyWith(
         name: _nameController.text.trim(),
         address: _addressController.text.trim(),
         port: int.parse(_portController.text.trim()),
+        psk: psk,
+        certPin: pin.isEmpty ? null : pin,
+        listenPort: listenPort,
         coverEnabled: _coverEnabled,
         coverDomains: List.from(_coverDomains),
       ));
@@ -378,6 +492,9 @@ class _AddServerScreenState extends State<AddServerScreen> {
         name: _nameController.text.trim(),
         address: _addressController.text.trim(),
         port: int.parse(_portController.text.trim()),
+        psk: psk,
+        certPin: pin.isEmpty ? null : pin,
+        listenPort: listenPort,
         coverEnabled: _coverEnabled,
         coverDomains: List.from(_coverDomains),
       );
