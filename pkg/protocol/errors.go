@@ -8,9 +8,11 @@ var (
 	ErrInvalidVersion    = errors.New("guarch: invalid protocol version")
 	ErrInvalidPacketType = errors.New("guarch: invalid packet type")
 
-	ErrAuthFailed  = errors.New("guarch: authentication failed")
-	ErrAuthTimeout = errors.New("guarch: authentication timeout")
+	ErrAuthFailed       = errors.New("guarch: authentication failed")
+	ErrAuthTimeout      = errors.New("guarch: authentication timeout")
 
 	ErrDecryptFailed    = errors.New("guarch: decryption failed")
 	ErrConnectionClosed = errors.New("guarch: connection closed")
+	ErrReplayDetected   = errors.New("guarch: replay detected")
+	ErrMuxClosed        = errors.New("guarch: mux closed")
 )
