@@ -107,7 +107,18 @@ func (s *Shaper) FragmentSize() int {
 	if avg < 100 {
 		avg = 512
 	}
-	return avg + randomInt(-64, 64)
+
+	result := avg + randomInt(-64, 64)
+
+	// ✅ اصلاح: جلوگیری از مقدار منفی یا خیلی کوچک
+	if result < 64 {
+		result = 64
+	}
+	if result > 1024 {
+		result = 1024
+	}
+
+	return result
 }
 
 func randomInt(min, max int) int {
