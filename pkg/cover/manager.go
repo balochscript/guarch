@@ -95,8 +95,11 @@ func (m *Manager) sendRequest(dc DomainConfig) {
 	}
 
 	req.Header.Set("User-Agent", randomUserAgent())
-	req.Header.Set("Accept", "text/html,application/xhtml+xml")
-	req.Header.Set("Accept-Language", "en-US,en;q=0.9")
+	req.Header.Set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
+	req.Header.Set("Accept-Language", randomAcceptLanguage())
+	req.Header.Set("Accept-Encoding", "gzip, deflate, br")
+	req.Header.Set("Connection", "keep-alive")
+	req.Header.Set("Upgrade-Insecure-Requests", "1")
 
 	resp, err := m.client.Do(req)
 	if err != nil {
@@ -112,9 +115,6 @@ func (m *Manager) sendRequest(dc DomainConfig) {
 	size := len(body)
 	m.stats.Record(size)
 	m.stats.RecordRecv(size)
-
-	log.Printf("[cover] %s %s -> %d (%d bytes)",
-		dc.Domain, path, resp.StatusCode, size)
 }
 
 func (m *Manager) SendOne() {
@@ -138,7 +138,6 @@ func (m *Manager) pickDomain() DomainConfig {
 			return dc
 		}
 	}
-
 	return m.config.Domains[0]
 }
 
@@ -162,11 +161,26 @@ func randomDuration(min, max time.Duration) time.Duration {
 
 func randomUserAgent() string {
 	agents := []string{
+		"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
 		"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-		"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-		"Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:121.0) Gecko/20100101 Firefox/121.0",
-		"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-		"Mozilla/5.0 (iPhone; CPU iPhone OS 17_2 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Mobile/15E148 Safari/604.1",
+		"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
+		"Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:122.0) Gecko/20100101 Firefox/122.0",
+		"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
+		"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36 Edg/121.0.0.0",
+		"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Safari/605.1.15",
+		"Mozilla/5.0 (iPhone; CPU iPhone OS 17_3 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.3 Mobile/15E148 Safari/604.1",
 	}
 	return agents[rand.Intn(len(agents))]
+}
+
+func randomAcceptLanguage() string {
+	langs := []string{
+		"en-US,en;q=0.9",
+		"en-US,en;q=0.9,fa;q=0.8",
+		"en-GB,en;q=0.9,en-US;q=0.8",
+		"en-US,en;q=0.9,de;q=0.8",
+		"en,fa;q=0.9,en-US;q=0.8",
+		"en-US,en;q=0.5",
+	}
+	return langs[rand.Intn(len(langs))]
 }
