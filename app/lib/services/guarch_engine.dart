@@ -20,6 +20,7 @@ class GuarchEngine {
   Stream<String> get logStream => _logController.stream;
 
   bool _initialized = false;
+  bool _nativeAvailable = true;
 
   Future<void> init() async {
     if (_initialized) return;
@@ -41,6 +42,8 @@ class GuarchEngine {
                   final map = jsonDecode(data) as Map<String, dynamic>;
                   _statsController.add(map);
                 } catch (_) {}
+              } else if (data is Map) {
+                _statsController.add(Map<String, dynamic>.from(data));
               }
               break;
             case 'log':
@@ -48,8 +51,12 @@ class GuarchEngine {
               break;
           }
         }
-      }, onError: (_) {});
-    } catch (_) {}
+      }, onError: (e) {
+        _logController.add('Event channel error: $e');
+      });
+    } catch (e) {
+      _logController.add('Engine init error: $e');
+    }
   }
 
   Future<dynamic> _handleMethodCall(MethodCall call) async {
@@ -69,33 +76,61 @@ class GuarchEngine {
     }
   }
 
+  /// اتصال به سرور Guarch
   Future<bool> connect({
     required String serverAddr,
     int serverPort = 8443,
-    String listenAddr = '127.0.0.1:1080',
+    required String psk,                    // ✅ اجباری
+    String? certPin,                        // ✅ اختیاری
+    String listenAddr = '127.0.0.1',
+    int listenPort = 1080,
     bool coverEnabled = true,
   }) async {
+    // ✅ بررسی اولیه
+    if (serverAddr.isEmpty) {
+      _logController.add('Error: server address is empty');
+      return false;
+    }
+    if (psk.isEmpty) {
+      _logController.add('Error: PSK is required for secure connection');
+      return false;
+    }
+
     try {
       final config = jsonEncode({
         'server_addr': serverAddr,
         'server_port': serverPort,
+        'psk': psk,                          // ✅
+        'cert_pin': certPin ?? '',           // ✅
         'listen_addr': listenAddr,
+        'listen_port': listenPort,
         'cover_enabled': coverEnabled,
       });
+
+      _logController.add('Connecting to $serverAddr:$serverPort...');
+      if (certPin != null && certPin.isNotEmpty) {
+        _logController.add('Certificate PIN: ${certPin.substring(0, 16)}...');
+      }
+
       final result = await _channel.invokeMethod('connect', config);
       return result == true;
     } on PlatformException catch (e) {
       _logController.add('Connect error: ${e.message}');
+      _statusController.add('disconnected');
       return false;
     } on MissingPluginException {
-      _logController.add('Native engine not available, using simulation');
-      _statusController.add('connected');
-      return true;
+      _logController.add('⚠️ Native engine not available');
+      _logController.add('Build with: gomobile bind -target=android');
+      _nativeAvailable = false;
+      _statusController.add('disconnected');
+      return false;                          // ✅ دیگه simulate نمی‌کنه!
     }
   }
 
+  /// قطع اتصال
   Future<bool> disconnect() async {
     try {
+      _logController.add('Disconnecting...');
       final result = await _channel.invokeMethod('disconnect');
       return result == true;
     } on PlatformException catch (e) {
@@ -107,6 +142,7 @@ class GuarchEngine {
     }
   }
 
+  /// وضعیت فعلی
   Future<String> getStatus() async {
     try {
       final result = await _channel.invokeMethod('getStatus');
@@ -116,11 +152,15 @@ class GuarchEngine {
     }
   }
 
+  /// آمار اتصال
   Future<Map<String, dynamic>> getStats() async {
     try {
       final result = await _channel.invokeMethod('getStats');
       if (result is String) {
         return jsonDecode(result) as Map<String, dynamic>;
+      }
+      if (result is Map) {
+        return Map<String, dynamic>.from(result);
       }
       return {};
     } catch (_) {
@@ -128,27 +168,27 @@ class GuarchEngine {
     }
   }
 
-  /// پینگ واقعی - TCP connection به سرور
+  /// آیا native engine در دسترس هست؟
+  bool get isNativeAvailable => _nativeAvailable;
+
+  /// پینگ واقعی با TCP Socket
   Future<int> ping(String address, int port) async {
     try {
-      // اول DNS resolve کن
       final List<InternetAddress> addresses;
       try {
         addresses = await InternetAddress.lookup(address)
             .timeout(const Duration(seconds: 5));
       } catch (e) {
-        _logController.add('DNS lookup failed for $address: $e');
+        _logController.add('DNS lookup failed for $address');
         return -1;
       }
 
       if (addresses.isEmpty) {
-        _logController.add('DNS: no addresses found for $address');
+        _logController.add('DNS: no addresses for $address');
         return -1;
       }
 
       final ip = addresses.first.address;
-
-      // اتصال TCP و اندازه‌گیری زمان
       final stopwatch = Stopwatch()..start();
 
       final socket = await Socket.connect(
@@ -168,7 +208,7 @@ class GuarchEngine {
       _logController.add('Ping timeout ($address:$port)');
       return -1;
     } catch (e) {
-      _logController.add('Ping error ($address:$port): $e');
+      _logController.add('Ping error: $e');
       return -1;
     }
   }
