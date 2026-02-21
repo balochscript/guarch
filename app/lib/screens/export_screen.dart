@@ -22,6 +22,46 @@ class ExportScreen extends StatelessWidget {
       body: ListView(
         padding: const EdgeInsets.all(24),
         children: [
+          // Security Warning
+          if (server.psk.isNotEmpty)
+            Card(
+              color: Colors.orange.withOpacity(0.1),
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Row(
+                  children: [
+                    const Icon(Icons.warning_amber, color: Colors.orange),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'Security Notice',
+                            style: TextStyle(
+                              fontWeight: FontWeight.w600,
+                              color: Colors.orange,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            'This export contains your PSK (secret key). '
+                            'Only share it through secure channels.',
+                            style: TextStyle(
+                              color: Colors.orange.withOpacity(0.7),
+                              fontSize: 12,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          const SizedBox(height: 16),
+
+          // Guarch Link
           const Row(
             children: [
               Text('🔗', style: TextStyle(fontSize: 24)),
@@ -86,6 +126,8 @@ class ExportScreen extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 32),
+
+          // JSON Config
           const Row(
             children: [
               Text('📋', style: TextStyle(fontSize: 24)),
