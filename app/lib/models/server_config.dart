@@ -1,10 +1,11 @@
-import 'dart:convert';
-
 class ServerConfig {
   String id;
   String name;
   String address;
   int port;
+  String psk;              // ✅ اضافه شد
+  String? certPin;         // ✅ اضافه شد
+  int listenPort;          // ✅ اضافه شد
   bool coverEnabled;
   List<CoverDomain> coverDomains;
   String shapingPattern;
@@ -18,6 +19,9 @@ class ServerConfig {
     required this.name,
     required this.address,
     this.port = 8443,
+    this.psk = '',           // ✅
+    this.certPin,            // ✅
+    this.listenPort = 1080,  // ✅
     this.coverEnabled = true,
     List<CoverDomain>? coverDomains,
     this.shapingPattern = 'web_browsing',
@@ -44,12 +48,18 @@ class ServerConfig {
     return '🟠';
   }
 
+  bool get isValid =>
+      address.isNotEmpty && port > 0 && psk.isNotEmpty;  // ✅
+
   Map<String, dynamic> toJson() {
     return {
       'id': id,
       'name': name,
       'address': address,
       'port': port,
+      'psk': psk,                    // ✅
+      'cert_pin': certPin,           // ✅
+      'listen_port': listenPort,     // ✅
       'cover_enabled': coverEnabled,
       'cover_domains': coverDomains.map((d) => d.toJson()).toList(),
       'shaping_pattern': shapingPattern,
@@ -65,6 +75,9 @@ class ServerConfig {
       name: json['name'] ?? 'Server',
       address: json['address'] ?? json['server'] ?? '',
       port: json['port'] ?? 8443,
+      psk: json['psk'] ?? '',                          // ✅
+      certPin: json['cert_pin'] ?? json['pin'],        // ✅
+      listenPort: json['listen_port'] ?? 1080,         // ✅
       coverEnabled: json['cover_enabled'] ?? json['cover']?['enabled'] ?? true,
       coverDomains: json['cover_domains'] != null
           ? (json['cover_domains'] as List)
@@ -85,6 +98,8 @@ class ServerConfig {
       'name': name,
       'address': address,
       'port': port,
+      'psk': psk,                    // ✅
+      'cert_pin': certPin,           // ✅
       'cover_enabled': coverEnabled,
       'cover_domains': coverDomains.map((d) => d.toJson()).toList(),
     };
@@ -108,6 +123,9 @@ class ServerConfig {
     String? name,
     String? address,
     int? port,
+    String? psk,
+    String? certPin,
+    int? listenPort,
     bool? coverEnabled,
     List<CoverDomain>? coverDomains,
     bool? isActive,
@@ -118,6 +136,9 @@ class ServerConfig {
       name: name ?? this.name,
       address: address ?? this.address,
       port: port ?? this.port,
+      psk: psk ?? this.psk,
+      certPin: certPin ?? this.certPin,
+      listenPort: listenPort ?? this.listenPort,
       coverEnabled: coverEnabled ?? this.coverEnabled,
       coverDomains: coverDomains ?? this.coverDomains,
       shapingPattern: shapingPattern,
@@ -134,8 +155,8 @@ class ServerConfig {
       CoverDomain(domain: 'www.microsoft.com', weight: 20),
       CoverDomain(domain: 'github.com', weight: 15),
       CoverDomain(domain: 'stackoverflow.com', weight: 15),
-      CoverDomain(domain: 'www.wikipedia.org', weight: 10),
-      CoverDomain(domain: 'www.amazon.com', weight: 10),
+      CoverDomain(domain: 'www.cloudflare.com', weight: 10),     // ✅ بجای amazon
+      CoverDomain(domain: 'learn.microsoft.com', weight: 10),    // ✅ بجای wikipedia
     ];
   }
 }
