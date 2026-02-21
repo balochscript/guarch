@@ -3,7 +3,7 @@ package interleave
 import (
 	"context"
 	"log"
-	"sync"
+	"sync/atomic"
 	"time"
 
 	"guarch/pkg/cover"
@@ -16,8 +16,7 @@ type Interleaver struct {
 	coverMgr *cover.Manager
 	shaper   *cover.Shaper
 	sendCh   chan []byte
-	mu       sync.Mutex
-	seq      uint32
+	seq      atomic.Uint32 // ✅ اصلاح: atomic بجای mutex
 }
 
 func New(sc *transport.SecureConn, coverMgr *cover.Manager) *Interleaver {
@@ -30,7 +29,7 @@ func New(sc *transport.SecureConn, coverMgr *cover.Manager) *Interleaver {
 		sc:       sc,
 		coverMgr: coverMgr,
 		shaper:   shaper,
-		sendCh:   make(chan []byte, 64),
+		sendCh:   make(chan []byte, 128), // ✅ بزرگتر
 	}
 }
 
@@ -94,10 +93,7 @@ func (il *Interleaver) sendWithCover(data []byte) {
 		}
 	}
 
-	il.mu.Lock()
-	il.seq++
-	seq := il.seq
-	il.mu.Unlock()
+	seq := il.seq.Add(1)
 
 	var pkt *protocol.Packet
 	var err error
@@ -126,20 +122,11 @@ func (il *Interleaver) sendWithCover(data []byte) {
 }
 
 func (il *Interleaver) sendPadding() {
-	il.mu.Lock()
-	il.seq++
-	seq := il.seq
-	il.mu.Unlock()
+	seq := il.seq.Add(1)
 
 	size := 64
 	if il.shaper != nil {
 		size = il.shaper.FragmentSize()
-		if size > 1024 {
-			size = 1024
-		}
-		if size < 16 {
-			size = 16
-		}
 	}
 
 	pkt, err := protocol.NewPaddingPacket(size, seq)
@@ -150,15 +137,20 @@ func (il *Interleaver) sendPadding() {
 	il.sc.SendPacket(pkt)
 }
 
+// Send — ارسال با cover traffic (غیرمسدودکننده)
 func (il *Interleaver) Send(data []byte) {
-	il.sendCh <- data
+	// ✅ اصلاح: با timeout برای جلوگیری از بلاک شدن
+	select {
+	case il.sendCh <- data:
+	default:
+		log.Printf("[interleave] send channel full, sending direct")
+		il.SendDirect(data)
+	}
 }
 
+// SendDirect — ارسال مستقیم بدون cover
 func (il *Interleaver) SendDirect(data []byte) error {
-	il.mu.Lock()
-	il.seq++
-	seq := il.seq
-	il.mu.Unlock()
+	seq := il.seq.Add(1)
 
 	pkt, err := protocol.NewDataPacket(data, seq)
 	if err != nil {
@@ -180,10 +172,7 @@ func (il *Interleaver) Recv() ([]byte, error) {
 		case protocol.PacketTypePadding:
 			continue
 		case protocol.PacketTypePing:
-			il.mu.Lock()
-			il.seq++
-			seq := il.seq
-			il.mu.Unlock()
+			seq := il.seq.Add(1)
 			pong := protocol.NewPongPacket(seq)
 			il.sc.SendPacket(pong)
 			continue
