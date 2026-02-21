@@ -152,8 +152,7 @@ class _HomeTab extends StatelessWidget {
       return Card(
         child: ListTile(
           leading: Icon(Icons.add_circle_outline, color: kGold),
-          title: Text('No server selected',
-              style: TextStyle(color: kGoldLight)),
+          title: const Text('No server selected', style: TextStyle(color: kGoldLight)),
           subtitle: Text('Go to Servers tab to add one',
               style: TextStyle(color: kGold.withOpacity(0.5))),
           trailing: Icon(Icons.arrow_forward_ios, size: 16, color: kGold),
@@ -164,17 +163,10 @@ class _HomeTab extends StatelessWidget {
     return Card(
       child: ListTile(
         leading: Text(server.pingEmoji, style: const TextStyle(fontSize: 24)),
-        title: Text(
-          server.name,
-          style: const TextStyle(
-            fontWeight: FontWeight.w600,
-            color: kGoldLight,
-          ),
-        ),
-        subtitle: Text(
-          server.fullAddress,
-          style: TextStyle(color: kGold.withOpacity(0.5)),
-        ),
+        title: Text(server.name,
+            style: const TextStyle(fontWeight: FontWeight.w600, color: kGoldLight)),
+        subtitle: Text(server.fullAddress,
+            style: TextStyle(color: kGold.withOpacity(0.5))),
         trailing: Text(
           server.pingText,
           style: TextStyle(
@@ -194,30 +186,30 @@ class _HomeTab extends StatelessWidget {
 
     switch (status) {
       case VpnStatus.disconnected:
-        text = 'Tap to connect';
+        text = 'Tap to Guarch';
         color = kGold.withOpacity(0.5);
         break;
       case VpnStatus.connecting:
-        text = 'Connecting...';
+        text = 'Guarching...';
         color = kGold;
         break;
       case VpnStatus.connected:
-        text = 'Connected & Protected';
+        text = '🎯 Guarch Activated';
         color = Colors.green;
         break;
       case VpnStatus.disconnecting:
-        text = 'Disconnecting...';
+        text = 'De-Guarching...';
         color = kGold;
         break;
       case VpnStatus.error:
-        text = 'Connection failed';
+        text = 'Guarch Failed';
         color = Colors.red;
         break;
     }
 
     return Text(
       text,
-      style: TextStyle(color: color, fontSize: 16, fontWeight: FontWeight.w500),
+      style: TextStyle(color: color, fontSize: 16, fontWeight: FontWeight.w600),
     );
   }
 
@@ -233,24 +225,17 @@ class _HomeTab extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text(
-                    'Cover Traffic Active',
-                    style: TextStyle(fontWeight: FontWeight.w600, color: kGoldLight),
-                  ),
-                  Text(
-                    '${stats.coverRequests} cover requests sent',
-                    style: TextStyle(color: kGold.withOpacity(0.5), fontSize: 12),
-                  ),
+                  const Text('Cover Traffic Active',
+                      style: TextStyle(fontWeight: FontWeight.w600, color: kGoldLight)),
+                  Text('${stats.coverRequests} cover requests sent',
+                      style: TextStyle(color: kGold.withOpacity(0.5), fontSize: 12)),
                 ],
               ),
             ),
             Container(
               width: 8,
               height: 8,
-              decoration: const BoxDecoration(
-                color: Colors.green,
-                shape: BoxShape.circle,
-              ),
+              decoration: const BoxDecoration(color: Colors.green, shape: BoxShape.circle),
             ),
           ],
         ),
