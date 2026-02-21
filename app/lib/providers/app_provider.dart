@@ -157,9 +157,20 @@ class AppProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> connect() async {
+    Future<void> connect() async {
     if (activeServer == null) return;
     if (_status == VpnStatus.connecting || _status == VpnStatus.connected) return;
+
+    // ✅ بررسی PSK
+    if (activeServer!.psk.isEmpty) {
+      _addLog('Error: PSK is required. Edit server settings.');
+      _status = VpnStatus.error;
+      notifyListeners();
+      await Future.delayed(const Duration(seconds: 2));
+      _status = VpnStatus.disconnected;
+      notifyListeners();
+      return;
+    }
 
     _status = VpnStatus.connecting;
     _addLog('Guarching to ${activeServer!.name}...');
@@ -171,12 +182,18 @@ class AppProvider extends ChangeNotifier {
     final success = await _engine.connect(
       serverAddr: activeServer!.address,
       serverPort: activeServer!.port,
+      psk: activeServer!.psk,                   // ✅
+      certPin: activeServer!.certPin,            // ✅
+      listenPort: activeServer!.listenPort,      // ✅
       coverEnabled: activeServer!.coverEnabled,
     );
 
     if (!success) {
       _status = VpnStatus.error;
       _addLog('Guarch failed!');
+      if (!_engine.isNativeAvailable) {          // ✅
+        _addLog('Native engine not built. See docs for gomobile setup.');
+      }
       notifyListeners();
       await Future.delayed(const Duration(seconds: 2));
       _status = VpnStatus.disconnected;
