@@ -87,9 +87,10 @@ class AppProvider extends ChangeNotifier {
       notifyListeners();
     });
 
-    // پینگ همه سرورها هنگام شروع
+    // پینگ خودکار هنگام شروع
     if (_servers.isNotEmpty) {
-      _addLog('Auto-pinging all servers...');
+      _addLog('Auto-pinging ${_servers.length} servers...');
+      notifyListeners();
       pingAllServers();
     }
   }
@@ -112,7 +113,9 @@ class AppProvider extends ChangeNotifier {
     _servers.add(server);
     _saveServers();
     _addLog('Server added: ${server.name} (${server.fullAddress})');
-    _addLog('Cover domains: ${server.coverDomains.map((d) => d.domain).join(", ")}');
+    if (server.coverEnabled) {
+      _addLog('Cover: ${server.coverDomains.map((d) => d.domain).join(", ")}');
+    }
     notifyListeners();
 
     // پینگ خودکار
@@ -136,21 +139,21 @@ class AppProvider extends ChangeNotifier {
   }
 
   void removeServer(String id) {
-    final server = _servers.firstWhere((s) => s.id == id);
+    final name = _servers.firstWhere((s) => s.id == id).name;
     _servers.removeWhere((s) => s.id == id);
     if (_activeServerId == id) {
       _activeServerId = null;
       _prefs.remove('active_server');
     }
     _saveServers();
-    _addLog('Server removed: ${server.name}');
+    _addLog('Server removed: $name');
     notifyListeners();
   }
 
   void setActiveServer(String id) {
     _activeServerId = id;
     _prefs.setString('active_server', id);
-    _addLog('Active server: ${activeServer?.name}');
+    _addLog('Active: ${activeServer?.name}');
     notifyListeners();
   }
 
@@ -159,10 +162,9 @@ class AppProvider extends ChangeNotifier {
     if (_status == VpnStatus.connecting || _status == VpnStatus.connected) return;
 
     _status = VpnStatus.connecting;
-    _addLog('Connecting to ${activeServer!.name}...');
-    _addLog('Cover traffic: ${activeServer!.coverEnabled ? "ON" : "OFF"}');
+    _addLog('Guarching to ${activeServer!.name}...');
     if (activeServer!.coverEnabled) {
-      _addLog('Cover domains: ${activeServer!.coverDomains.map((d) => d.domain).join(", ")}');
+      _addLog('Cover: ${activeServer!.coverDomains.map((d) => d.domain).join(", ")}');
     }
     notifyListeners();
 
@@ -174,9 +176,8 @@ class AppProvider extends ChangeNotifier {
 
     if (!success) {
       _status = VpnStatus.error;
-      _addLog('Connection failed');
+      _addLog('Guarch failed!');
       notifyListeners();
-
       await Future.delayed(const Duration(seconds: 2));
       _status = VpnStatus.disconnected;
       notifyListeners();
@@ -187,7 +188,7 @@ class AppProvider extends ChangeNotifier {
     if (_status != VpnStatus.connected) return;
 
     _status = VpnStatus.disconnecting;
-    _addLog('Disconnecting...');
+    _addLog('De-Guarching...');
     notifyListeners();
 
     await _engine.disconnect();
@@ -195,7 +196,7 @@ class AppProvider extends ChangeNotifier {
     _status = VpnStatus.disconnected;
     _stats = const ConnectionStats();
     _connectTime = null;
-    _addLog('Disconnected');
+    _addLog('Guarch deactivated');
     notifyListeners();
   }
 
@@ -209,11 +210,14 @@ class AppProvider extends ChangeNotifier {
 
   Future<int> pingServer(ServerConfig server) async {
     _addLog('Pinging ${server.name} (${server.fullAddress})...');
+    notifyListeners();
+
     final ping = await _engine.ping(server.address, server.port);
+
     if (ping > 0) {
-      _addLog('Ping ${server.name}: ${ping}ms');
+      _addLog('${server.name}: ${ping}ms ✅');
     } else {
-      _addLog('Ping ${server.name}: timeout');
+      _addLog('${server.name}: unreachable ❌');
     }
     notifyListeners();
     return ping;
@@ -221,6 +225,8 @@ class AppProvider extends ChangeNotifier {
 
   Future<void> pingAllServers() async {
     _addLog('Pinging ${_servers.length} servers...');
+    notifyListeners();
+
     for (var i = 0; i < _servers.length; i++) {
       final ping = await pingServer(_servers[i]);
       _servers[i] = _servers[i].copyWith(ping: ping);
@@ -228,12 +234,12 @@ class AppProvider extends ChangeNotifier {
     }
     _saveServers();
     _addLog('Ping complete');
+    notifyListeners();
   }
 
   void importConfig(String data) {
     try {
       ServerConfig server;
-
       if (data.startsWith('guarch://')) {
         server = ServerConfig.fromShareString(data);
       } else if (data.startsWith('{')) {
@@ -243,22 +249,20 @@ class AppProvider extends ChangeNotifier {
       } else {
         server = ServerConfig.fromShareString(data);
       }
-
       if (server.address.isEmpty) {
         _addLog('Import failed: empty address');
+        notifyListeners();
         return;
       }
-
       addServer(server);
-      _addLog('Config imported: ${server.name}');
+      _addLog('Imported: ${server.name}');
     } catch (e) {
       _addLog('Import failed: $e');
+      notifyListeners();
     }
   }
 
-  String exportConfig(ServerConfig server) {
-    return server.toShareString();
-  }
+  String exportConfig(ServerConfig server) => server.toShareString();
 
   String exportConfigJson(ServerConfig server) {
     const encoder = JsonEncoder.withIndent('  ');
@@ -272,7 +276,7 @@ class AppProvider extends ChangeNotifier {
   }
 
   void _startStatsTimer() {
-    _statsTimer = Timer.periodic(const Duration(seconds: 1), (_) async {
+    _statsTimer = Timer.periodic(const Duration(seconds: 1), (_) {
       if (_connectTime != null && _status == VpnStatus.connected) {
         _stats = _stats.copyWith(
           duration: DateTime.now().difference(_connectTime!),
