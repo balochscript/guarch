@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+import 'package:guarch/app.dart';
 import 'package:guarch/providers/app_provider.dart';
 import 'package:guarch/screens/import_screen.dart';
 import 'package:guarch/screens/about_screen.dart';
@@ -23,12 +24,12 @@ class SettingsScreen extends StatelessWidget {
                 child: ListTile(
                   leading: Icon(
                     provider.isDarkMode ? Icons.dark_mode : Icons.light_mode,
+                    color: kGold,
                   ),
-                  title: const Text('Dark Mode'),
+                  title: const Text('Dark Mode', style: TextStyle(color: kGoldLight)),
                   trailing: Switch(
                     value: provider.isDarkMode,
                     onChanged: (_) => provider.toggleTheme(),
-                    activeColor: const Color(0xFF6C5CE7),
                   ),
                 ),
               ),
@@ -38,22 +39,21 @@ class SettingsScreen extends StatelessWidget {
                 child: Column(
                   children: [
                     ListTile(
-                      leading: const Icon(Icons.input),
-                      title: const Text('Import Config'),
-                      subtitle: const Text('From link, JSON, or clipboard'),
-                      trailing: const Icon(Icons.arrow_forward_ios, size: 16),
+                      leading: const Icon(Icons.input, color: kGold),
+                      title: const Text('Import Config', style: TextStyle(color: kGoldLight)),
+                      subtitle: Text('From link, JSON, or clipboard',
+                          style: TextStyle(color: kGold.withOpacity(0.4))),
+                      trailing: Icon(Icons.arrow_forward_ios, size: 16, color: kGold.withOpacity(0.4)),
                       onTap: () => Navigator.push(
                         context,
-                        MaterialPageRoute(
-                          builder: (_) => const ImportScreen(),
-                        ),
+                        MaterialPageRoute(builder: (_) => const ImportScreen()),
                       ),
                     ),
-                    const Divider(height: 1),
+                    Divider(height: 1, color: kGold.withOpacity(0.1)),
                     ListTile(
-                      leading: const Icon(Icons.content_paste),
-                      title: const Text('Quick Import from Clipboard'),
-                      trailing: const Icon(Icons.arrow_forward_ios, size: 16),
+                      leading: const Icon(Icons.content_paste, color: kGold),
+                      title: const Text('Quick Import from Clipboard', style: TextStyle(color: kGoldLight)),
+                      trailing: Icon(Icons.arrow_forward_ios, size: 16, color: kGold.withOpacity(0.4)),
                       onTap: () => _importClipboard(context, provider),
                     ),
                   ],
@@ -62,22 +62,16 @@ class SettingsScreen extends StatelessWidget {
               const SizedBox(height: 24),
               _sectionTitle('Connection'),
               Card(
-                child: Column(
-                  children: [
-                    ListTile(
-                      leading: const Icon(Icons.speed),
-                      title: const Text('Ping All Servers'),
-                      trailing: const Icon(Icons.arrow_forward_ios, size: 16),
-                      onTap: () {
-                        provider.pingAllServers();
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text('Pinging all servers...'),
-                          ),
-                        );
-                      },
-                    ),
-                  ],
+                child: ListTile(
+                  leading: const Icon(Icons.speed, color: kGold),
+                  title: const Text('Ping All Servers', style: TextStyle(color: kGoldLight)),
+                  trailing: Icon(Icons.arrow_forward_ios, size: 16, color: kGold.withOpacity(0.4)),
+                  onTap: () {
+                    provider.pingAllServers();
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Pinging all servers...')),
+                    );
+                  },
                 ),
               ),
               const SizedBox(height: 24),
@@ -87,31 +81,31 @@ class SettingsScreen extends StatelessWidget {
                   children: [
                     ListTile(
                       leading: const Text('🎯', style: TextStyle(fontSize: 24)),
-                      title: const Text('About Guarch'),
-                      subtitle: const Text('Learn about the protocol'),
-                      trailing: const Icon(Icons.arrow_forward_ios, size: 16),
+                      title: const Text('About Guarch', style: TextStyle(color: kGoldLight)),
+                      subtitle: Text('Learn about the protocol',
+                          style: TextStyle(color: kGold.withOpacity(0.4))),
+                      trailing: Icon(Icons.arrow_forward_ios, size: 16, color: kGold.withOpacity(0.4)),
                       onTap: () => Navigator.push(
                         context,
-                        MaterialPageRoute(
-                          builder: (_) => const AboutScreen(),
-                        ),
+                        MaterialPageRoute(builder: (_) => const AboutScreen()),
                       ),
                     ),
-                    const Divider(height: 1),
+                    Divider(height: 1, color: kGold.withOpacity(0.1)),
                     ListTile(
-                      leading: const Icon(Icons.code),
-                      title: const Text('Source Code'),
-                      subtitle: const Text('github.com/ppooria/guarch'),
-                      trailing: const Icon(Icons.open_in_new, size: 16),
+                      leading: const Icon(Icons.code, color: kGold),
+                      title: const Text('Source Code', style: TextStyle(color: kGoldLight)),
+                      subtitle: Text('github.com/balochscript/guarch',
+                          style: TextStyle(color: kGold.withOpacity(0.4))),
+                      trailing: Icon(Icons.open_in_new, size: 16, color: kGold.withOpacity(0.4)),
                       onTap: () => launchUrl(
-                        Uri.parse('https://github.com/ppooria/guarch'),
+                        Uri.parse('https://github.com/balochscript/guarch'),
                       ),
                     ),
-                    const Divider(height: 1),
-                    const ListTile(
-                      leading: Text('📱', style: TextStyle(fontSize: 24)),
-                      title: Text('Version'),
-                      trailing: Text('1.0.0'),
+                    Divider(height: 1, color: kGold.withOpacity(0.1)),
+                    ListTile(
+                      leading: const Text('📱', style: TextStyle(fontSize: 24)),
+                      title: const Text('Version', style: TextStyle(color: kGoldLight)),
+                      trailing: Text('1.0.0', style: TextStyle(color: kGold.withOpacity(0.5))),
                     ),
                   ],
                 ),
@@ -132,7 +126,7 @@ class SettingsScreen extends StatelessWidget {
         style: const TextStyle(
           fontSize: 14,
           fontWeight: FontWeight.w600,
-          color: Color(0xFF6C5CE7),
+          color: kGold,
         ),
       ),
     );
