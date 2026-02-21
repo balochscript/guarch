@@ -1,11 +1,14 @@
 package transport
 
 import (
+	"crypto/hmac"
+	"crypto/sha256"
 	"encoding/binary"
 	"fmt"
 	"io"
 	"net"
 	"sync"
+	"sync/atomic"
 
 	"guarch/pkg/crypto"
 	"guarch/pkg/protocol"
@@ -14,14 +17,26 @@ import (
 const maxEncryptedSize = 1024 * 1024
 
 type SecureConn struct {
-	raw     net.Conn
-	cipher  *crypto.AEADCipher
-	sendSeq uint32
-	sendMu  sync.Mutex
-	recvMu  sync.Mutex
+	raw         net.Conn
+	cipher      *crypto.AEADCipher
+	sendSeq     uint32
+	sendMu      sync.Mutex
+	recvMu      sync.Mutex
+	lastRecvSeq atomic.Uint32
 }
 
-func Handshake(raw net.Conn, isServer bool) (*SecureConn, error) {
+// HandshakeConfig تنظیمات امنیتی هندشیک
+type HandshakeConfig struct {
+	PSK []byte // کلید از پیش مشترک - اجباری برای امنیت
+}
+
+// Handshake هندشیک امن با PSK
+func Handshake(raw net.Conn, isServer bool, cfg *HandshakeConfig) (*SecureConn, error) {
+	if cfg == nil {
+		cfg = &HandshakeConfig{}
+	}
+
+	// ۱. تولید جفت کلید زودگذر
 	kp, err := crypto.GenerateKeyPair()
 	if err != nil {
 		return nil, fmt.Errorf("guarch: keygen: %w", err)
@@ -29,6 +44,7 @@ func Handshake(raw net.Conn, isServer bool) (*SecureConn, error) {
 
 	var peerPub []byte
 
+	// ۲. تبادل کلید عمومی
 	if isServer {
 		peerPub = make([]byte, crypto.PublicKeySize)
 		if _, err := io.ReadFull(raw, peerPub); err != nil {
@@ -47,17 +63,76 @@ func Handshake(raw net.Conn, isServer bool) (*SecureConn, error) {
 		}
 	}
 
-	sharedKey, err := kp.SharedSecret(peerPub)
+	// ۳. محاسبه رمز مشترک
+	sharedRaw, err := kp.SharedSecret(peerPub)
 	if err != nil {
 		return nil, fmt.Errorf("guarch: shared secret: %w", err)
 	}
 
+	// ۴. استخراج کلید با HKDF + PSK
+	sharedKey, err := crypto.DeriveKey(
+		sharedRaw, cfg.PSK, []byte("guarch-session-v1"),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("guarch: key derivation: %w", err)
+	}
+
+	// ۵. ساخت رمزنگار
 	c, err := crypto.NewAEADCipher(sharedKey)
 	if err != nil {
 		return nil, fmt.Errorf("guarch: cipher: %w", err)
 	}
 
-	return &SecureConn{raw: raw, cipher: c}, nil
+	sc := &SecureConn{raw: raw, cipher: c}
+
+	// ۶. احراز هویت متقابل
+	if len(cfg.PSK) > 0 {
+		if err := sc.authenticate(isServer, sharedKey); err != nil {
+			return nil, err
+		}
+	}
+
+	return sc, nil
+}
+
+// احراز هویت متقابل با HMAC
+func (sc *SecureConn) authenticate(isServer bool, key []byte) error {
+	if isServer {
+		// خواندن تأیید کلاینت
+		authData, err := sc.Recv()
+		if err != nil {
+			return fmt.Errorf("guarch: auth read: %w", err)
+		}
+		expected := computeAuthMAC(key, "client")
+		if !hmac.Equal(authData, expected) {
+			return protocol.ErrAuthFailed
+		}
+		// ارسال تأیید سرور
+		serverAuth := computeAuthMAC(key, "server")
+		return sc.Send(serverAuth)
+	}
+
+	// ارسال تأیید کلاینت
+	clientAuth := computeAuthMAC(key, "client")
+	if err := sc.Send(clientAuth); err != nil {
+		return err
+	}
+	// خواندن تأیید سرور
+	authData, err := sc.Recv()
+	if err != nil {
+		return fmt.Errorf("guarch: auth read: %w", err)
+	}
+	expected := computeAuthMAC(key, "server")
+	if !hmac.Equal(authData, expected) {
+		return protocol.ErrAuthFailed
+	}
+	return nil
+}
+
+func computeAuthMAC(key []byte, role string) []byte {
+	mac := hmac.New(sha256.New, key)
+	mac.Write([]byte("guarch-auth-v1-" + role))
+	return mac.Sum(nil)
 }
 
 func (sc *SecureConn) sendRaw(pkt *protocol.Packet) error {
@@ -123,7 +198,21 @@ func (sc *SecureConn) RecvPacket() (*protocol.Packet, error) {
 		return nil, err
 	}
 
-	return protocol.Unmarshal(data)
+	pkt, err := protocol.Unmarshal(data)
+	if err != nil {
+		return nil, err
+	}
+
+	// محافظت در برابر Replay
+	if pkt.Type == protocol.PacketTypeData && pkt.SeqNum > 0 {
+		lastSeq := sc.lastRecvSeq.Load()
+		if pkt.SeqNum <= lastSeq {
+			return nil, protocol.ErrReplayDetected
+		}
+		sc.lastRecvSeq.Store(pkt.SeqNum)
+	}
+
+	return pkt, nil
 }
 
 func (sc *SecureConn) Recv() ([]byte, error) {
@@ -141,41 +230,6 @@ func (sc *SecureConn) Close() error {
 	return sc.raw.Close()
 }
 
-func Relay(sc *SecureConn, conn net.Conn) {
-	ch := make(chan error, 2)
-
-	go func() {
-		buf := make([]byte, 32768)
-		for {
-			n, err := conn.Read(buf)
-			if n > 0 {
-				if serr := sc.Send(buf[:n]); serr != nil {
-					ch <- serr
-					return
-				}
-			}
-			if err != nil {
-				ch <- err
-				return
-			}
-		}
-	}()
-
-	go func() {
-		for {
-			data, err := sc.Recv()
-			if err != nil {
-				ch <- err
-				return
-			}
-			if _, werr := conn.Write(data); werr != nil {
-				ch <- werr
-				return
-			}
-		}
-	}()
-
-	<-ch
-	conn.Close()
-	sc.Close()
+func (sc *SecureConn) RemoteAddr() net.Addr {
+	return sc.raw.RemoteAddr()
 }
