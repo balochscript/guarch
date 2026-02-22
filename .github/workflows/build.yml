@@ -105,14 +105,20 @@ jobs:
             -o app/android/app/libs/mobile.aar \
             ./mobile/
 
-      - name: Check files exist
+      - name: Generate default icon
         working-directory: app
         run: |
-          echo "=== Android files ==="
-          find android/ -type f | sort
-          echo ""
-          echo "=== Libs ==="
-          ls -la android/app/libs/ || echo "No libs dir"
+          sudo apt-get install -y imagemagick
+          mkdir -p android/app/src/main/res/mipmap-mdpi
+          mkdir -p android/app/src/main/res/mipmap-hdpi
+          mkdir -p android/app/src/main/res/mipmap-xhdpi
+          mkdir -p android/app/src/main/res/mipmap-xxhdpi
+          mkdir -p android/app/src/main/res/mipmap-xxxhdpi
+          convert -size 48x48 xc:"#1E3543" android/app/src/main/res/mipmap-mdpi/ic_launcher.png
+          convert -size 72x72 xc:"#1E3543" android/app/src/main/res/mipmap-hdpi/ic_launcher.png
+          convert -size 96x96 xc:"#1E3543" android/app/src/main/res/mipmap-xhdpi/ic_launcher.png
+          convert -size 144x144 xc:"#1E3543" android/app/src/main/res/mipmap-xxhdpi/ic_launcher.png
+          convert -size 192x192 xc:"#1E3543" android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png
 
       - name: Flutter dependencies
         working-directory: app
@@ -128,7 +134,7 @@ jobs:
           echo "========================================="
           echo "ERRORS FOUND:"
           echo "========================================="
-          grep -i "error\|FAILURE\|failed\|exception\|cannot find\|not found\|unresolved" /tmp/build.log | head -50
+          grep -i "error\|FAILURE\|failed\|exception" /tmp/build.log | head -30
           echo ""
           echo "========================================="
           echo "FULL LOG (first 200 lines):"
