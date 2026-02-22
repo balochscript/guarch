@@ -16,11 +16,11 @@ func TestHandshake(t *testing.T) {
 	done := make(chan struct{})
 
 	go func() {
-		sc1, err1 = Handshake(c1, false)
+		sc1, err1 = Handshake(c1, false, nil)
 		close(done)
 	}()
 
-	sc2, err2 := Handshake(c2, true)
+	sc2, err2 := Handshake(c2, true, nil)
 	<-done
 
 	if err1 != nil {
@@ -46,11 +46,11 @@ func TestSendRecv(t *testing.T) {
 	done := make(chan struct{})
 
 	go func() {
-		client, cerr = Handshake(c1, false)
+		client, cerr = Handshake(c1, false, nil)
 		close(done)
 	}()
 
-	server, serr := Handshake(c2, true)
+	server, serr := Handshake(c2, true, nil)
 	<-done
 
 	if cerr != nil {
@@ -94,11 +94,11 @@ func TestSendRecvBothDirections(t *testing.T) {
 	done := make(chan struct{})
 
 	go func() {
-		client, cerr = Handshake(c1, false)
+		client, cerr = Handshake(c1, false, nil)
 		close(done)
 	}()
 
-	server, serr := Handshake(c2, true)
+	server, serr := Handshake(c2, true, nil)
 	<-done
 
 	if cerr != nil || serr != nil {
@@ -146,11 +146,11 @@ func TestSendPacket(t *testing.T) {
 	done := make(chan struct{})
 
 	go func() {
-		client, cerr = Handshake(c1, false)
+		client, cerr = Handshake(c1, false, nil)
 		close(done)
 	}()
 
-	server, serr := Handshake(c2, true)
+	server, serr := Handshake(c2, true, nil)
 	<-done
 
 	if cerr != nil || serr != nil {
@@ -195,11 +195,11 @@ func TestMultipleMessages(t *testing.T) {
 	done := make(chan struct{})
 
 	go func() {
-		client, cerr = Handshake(c1, false)
+		client, cerr = Handshake(c1, false, nil)
 		close(done)
 	}()
 
-	server, serr := Handshake(c2, true)
+	server, serr := Handshake(c2, true, nil)
 	<-done
 
 	if cerr != nil || serr != nil {
