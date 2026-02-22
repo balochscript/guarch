@@ -5,7 +5,7 @@ import (
 )
 
 func TestPoolCreate(t *testing.T) {
-	pool := NewPool("127.0.0.1:9999", 5)
+	pool := NewPool("127.0.0.1:9999", 5, nil)
 
 	if pool.Size() != 0 {
 		t.Errorf("initial size = %d want 0", pool.Size())
@@ -17,7 +17,7 @@ func TestPoolCreate(t *testing.T) {
 }
 
 func TestPoolSize(t *testing.T) {
-	pool := NewPool("127.0.0.1:9999", 3)
+	pool := NewPool("127.0.0.1:9999", 3, nil)
 
 	if pool.maxSize != 3 {
 		t.Errorf("maxSize = %d want 3", pool.maxSize)
