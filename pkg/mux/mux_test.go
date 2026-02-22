@@ -16,11 +16,11 @@ func setupMux(t *testing.T) (*Mux, *Mux) {
 	done := make(chan struct{})
 
 	go func() {
-		sc1, err1 = transport.Handshake(c1, false)
+		sc1, err1 = transport.Handshake(c1, false, nil)
 		close(done)
 	}()
 
-	sc2, err2 := transport.Handshake(c2, true)
+	sc2, err2 := transport.Handshake(c2, true, nil)
 	<-done
 
 	if err1 != nil {
@@ -147,11 +147,11 @@ func TestMuxStreamID(t *testing.T) {
 	done := make(chan struct{})
 
 	go func() {
-		sc1, err1 = transport.Handshake(c1, false)
+		sc1, err1 = transport.Handshake(c1, false, nil)
 		close(done)
 	}()
 
-	sc2, _ := transport.Handshake(c2, true)
+	sc2, _ := transport.Handshake(c2, true, nil)
 	<-done
 
 	if err1 != nil {
