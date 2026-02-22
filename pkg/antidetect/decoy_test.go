@@ -20,8 +20,8 @@ func TestDecoyHomePage(t *testing.T) {
 	}
 
 	body := w.Body.String()
-	if !strings.Contains(body, "CloudFront") {
-		t.Error("missing CloudFront in body")
+	if !strings.Contains(body, "FastEdge") {
+		t.Error("missing FastEdge in body")
 	}
 	if !strings.Contains(body, "<!DOCTYPE html>") {
 		t.Error("missing DOCTYPE")
