@@ -12,19 +12,21 @@ import (
 type Pool struct {
 	serverAddr string
 	tlsConfig  *tls.Config
+	hsCfg      *HandshakeConfig
 	conns      []*SecureConn
 	mu         sync.Mutex
 	maxSize    int
 	maxRetry   int
 }
 
-func NewPool(serverAddr string, maxSize int) *Pool {
+func NewPool(serverAddr string, maxSize int, hsCfg *HandshakeConfig) *Pool {
 	return &Pool{
 		serverAddr: serverAddr,
 		tlsConfig: &tls.Config{
 			InsecureSkipVerify: true,
 			MinVersion:         tls.VersionTLS13,
 		},
+		hsCfg:    hsCfg,
 		maxSize:  maxSize,
 		maxRetry: 3,
 	}
@@ -82,7 +84,7 @@ func (p *Pool) createConn() (*SecureConn, error) {
 			continue
 		}
 
-		sc, err := Handshake(tlsConn, false)
+		sc, err := Handshake(tlsConn, false, p.hsCfg)
 		if err != nil {
 			tlsConn.Close()
 			lastErr = fmt.Errorf("handshake: %w", err)
