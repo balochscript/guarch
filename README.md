@@ -95,7 +95,7 @@ Guarch Protocol:
 
 ### 1. Build
 
-    git clone https://github.com/ppooria/guarch.git
+    git clone https://github.com/balochscript/guarch.git
     cd guarch
     go build -o guarch-server ./cmd/guarch-server/
     go build -o guarch-client ./cmd/guarch-client/
@@ -550,7 +550,7 @@ Response:
 
     ssh ubuntu@YOUR_VPS_IP
     sudo snap install go --classic
-    git clone https://github.com/ppooria/guarch.git
+    git clone https://github.com/balochscript/guarch.git
     cd guarch
     go build -o guarch-server ./cmd/guarch-server/
 
