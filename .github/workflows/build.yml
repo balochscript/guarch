@@ -105,85 +105,35 @@ jobs:
             -o app/android/app/libs/mobile.aar \
             ./mobile/
 
-      - name: DEBUG - Find the problem
+      - name: Check files exist
         working-directory: app
         run: |
-          echo "========================================="
-          echo "1. Flutter version"
-          echo "========================================="
-          flutter --version
-
+          echo "=== Android files ==="
+          find android/ -type f | sort
           echo ""
-          echo "========================================="
-          echo "2. List all android files"
-          echo "========================================="
-          find android/ -type f -name "*.xml" -o -name "*.gradle" -o -name "*.kt" -o -name "*.java" -o -name "*.properties" | sort
+          echo "=== Libs ==="
+          ls -la android/app/libs/ || echo "No libs dir"
 
-          echo ""
-          echo "========================================="
-          echo "3. Check AndroidManifest for v1 embedding"
-          echo "========================================="
-          find android/ -name "AndroidManifest.xml" -exec echo "--- {} ---" \; -exec cat {} \;
-
-          echo ""
-          echo "========================================="
-          echo "4. Check for FlutterApplication (v1 sign)"
-          echo "========================================="
-          grep -r "FlutterApplication" android/ || echo "NOT FOUND - Good!"
-
-          echo ""
-          echo "========================================="
-          echo "5. Check for old GeneratedPluginRegistrant"
-          echo "========================================="
-          grep -r "GeneratedPluginRegistrant" android/ || echo "NOT FOUND"
-
-          echo ""
-          echo "========================================="
-          echo "6. Check MainActivity"
-          echo "========================================="
-          find android/ -name "MainActivity.*" -exec echo "--- {} ---" \; -exec cat {} \;
-
-          echo ""
-          echo "========================================="
-          echo "7. Check build.gradle files"
-          echo "========================================="
-          find android/ -name "build.gradle*" -exec echo "--- {} ---" \; -exec cat {} \;
-
-          echo ""
-          echo "========================================="
-          echo "8. Check settings.gradle"
-          echo "========================================="
-          find android/ -name "settings.gradle*" -exec echo "--- {} ---" \; -exec cat {} \;
-
-          echo ""
-          echo "========================================="
-          echo "9. Check gradle.properties"
-          echo "========================================="
-          find android/ -name "gradle.properties" -exec echo "--- {} ---" \; -exec cat {} \;
-
-          echo ""
-          echo "========================================="
-          echo "10. Check gradle-wrapper.properties"
-          echo "========================================="
-          find android/ -name "gradle-wrapper.properties" -exec echo "--- {} ---" \; -exec cat {} \;
-
-          echo ""
-          echo "========================================="
-          echo "11. pubspec.lock versions"
-          echo "========================================="
+      - name: Flutter dependencies
+        working-directory: app
+        run: |
           rm -f pubspec.lock
           flutter pub get
-          cat pubspec.lock | grep -A 3 "share_plus\|connectivity_plus\|flutter_local_notifications\|permission_handler"
 
+      - name: Build APK
+        working-directory: app
+        run: |
+          flutter build apk --release 2>&1 | tee /tmp/build.log || true
           echo ""
           echo "========================================="
-          echo "12. Flutter doctor"
+          echo "ERRORS FOUND:"
           echo "========================================="
-          flutter doctor -v
-
-      - name: Try Build APK with verbose
-        working-directory: app
-        run: flutter build apk --release -v 2>&1 | tail -100
+          grep -i "error\|FAILURE\|failed\|exception\|cannot find\|not found\|unresolved" /tmp/build.log | head -50
+          echo ""
+          echo "========================================="
+          echo "FULL LOG (first 200 lines):"
+          echo "========================================="
+          head -200 /tmp/build.log
 
       - name: Upload APK
         if: success()
