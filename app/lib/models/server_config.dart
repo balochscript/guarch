@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 class ServerConfig {
   String id;
   String name;
