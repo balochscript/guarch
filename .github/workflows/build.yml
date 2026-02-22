@@ -8,7 +8,6 @@ on:
   workflow_dispatch:
 
 jobs:
-
   build-server:
     runs-on: ubuntu-latest
     steps:
@@ -52,7 +51,7 @@ jobs:
           name: guarch-client
           path: bin/guarch-client-*
 
-    build-android:
+  build-android:
     runs-on: ubuntu-latest
     needs: build-server
     steps:
@@ -89,20 +88,13 @@ jobs:
 
       - name: Install gomobile
         run: |
-          # اول پکیج‌ها رو دانلود کن
           go get golang.org/x/mobile/bind
           go get golang.org/x/mobile/cmd/gomobile
           go get golang.org/x/mobile/cmd/gobind
-          
-          # بعد نصب کن
           go install golang.org/x/mobile/cmd/gomobile@latest
           go install golang.org/x/mobile/cmd/gobind@latest
-          
-          # اضافه کردن به PATH
           export PATH=$PATH:$(go env GOPATH)/bin
           echo "PATH=$PATH:$(go env GOPATH)/bin" >> $GITHUB_ENV
-          
-          # init کردن
           gomobile init
 
       - name: Build Go mobile library
