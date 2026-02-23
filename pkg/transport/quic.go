@@ -5,6 +5,7 @@ import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"crypto/tls"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"time"
@@ -38,12 +39,12 @@ func DefaultZhipQUICConfig() *ZhipQUICConfig {
 
 func (c *ZhipQUICConfig) toQUICConfig() *quic.Config {
 	return &quic.Config{
-		MaxIdleTimeout:        c.IdleTimeout,
-		KeepAlivePeriod:       c.KeepAlive,
-		MaxIncomingStreams:     c.MaxStreams,
-		MaxIncomingUniStreams:  0,
-		Allow0RTT:             c.Allow0RTT,
-		EnableDatagrams:       false,
+		MaxIdleTimeout:       c.IdleTimeout,
+		KeepAlivePeriod:      c.KeepAlive,
+		MaxIncomingStreams:    c.MaxStreams,
+		MaxIncomingUniStreams: 0,
+		Allow0RTT:            c.Allow0RTT,
+		EnableDatagrams:      false,
 	}
 }
 
@@ -60,7 +61,7 @@ func ZhipListen(addr string, tlsCert tls.Certificate, cfg *ZhipQUICConfig) (*qui
 	tlsConfig := &tls.Config{
 		Certificates: []tls.Certificate{tlsCert},
 		MinVersion:   tls.VersionTLS13,
-		NextProtos:   []string{"zhip-v1"}, // ALPN — شناسایی پروتکل
+		NextProtos:   []string{"zhip-v1"},
 	}
 
 	listener, err := quic.ListenAddr(addr, tlsConfig, cfg.toQUICConfig())
@@ -72,7 +73,6 @@ func ZhipListen(addr string, tlsCert tls.Certificate, cfg *ZhipQUICConfig) (*qui
 }
 
 // ZhipServerAuth — احراز هویت سمت سرور
-// stream اول (auth stream) رو می‌خونه و PSK رو تأیید می‌کنه
 func ZhipServerAuth(conn quic.Connection, psk []byte) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
@@ -117,24 +117,30 @@ func ZhipDial(ctx context.Context, addr string, certPin string, cfg *ZhipQUICCon
 
 	tlsConfig := &tls.Config{
 		MinVersion:         tls.VersionTLS13,
-		InsecureSkipVerify: true, // self-signed cert
+		InsecureSkipVerify: true, // self-signed cert — pinning replaces verification
 		NextProtos:         []string{"zhip-v1"},
-		// ✅ Session cache برای 0-RTT resume
-		ClientSessionCache: tls.NewLRUClientSessionCache(64),
+		ClientSessionCache: tls.NewLRUClientSessionCache(64), // 0-RTT resume
 	}
 
-	// Certificate Pinning
+	// ✅ Certificate Pinning با VerifyConnection
+	// این روش با quic-go و همه نسخه‌های Go 1.15+ سازگاره
 	if certPin != "" {
 		pin := certPin
-		tlsConfig.VerifyPeerCertificate = func(rawCerts [][]byte, _ [][]*tls.CertificateChain) error {
-			if len(rawCerts) == 0 {
+		tlsConfig.VerifyConnection = func(state tls.ConnectionState) error {
+			// بررسی وجود سرتیفیکیت
+			if len(state.PeerCertificates) == 0 {
 				return fmt.Errorf("zhip: no server certificate")
 			}
-			hash := sha256.Sum256(rawCerts[0])
-			got := fmt.Sprintf("%x", hash[:])
+
+			// محاسبه‌ی SHA-256 hash از سرتیفیکیت DER
+			hash := sha256.Sum256(state.PeerCertificates[0].Raw)
+			got := hex.EncodeToString(hash[:])
+
+			// مقایسه با PIN ذخیره‌شده
 			if got != pin {
-				return fmt.Errorf("zhip: certificate PIN mismatch")
+				return fmt.Errorf("zhip: certificate PIN mismatch!\n  expected: %s\n  got:      %s", pin, got)
 			}
+
 			return nil
 		}
 	}
@@ -195,6 +201,6 @@ func ZhipTCPDecoyConfig(cert tls.Certificate) *tls.Config {
 	return &tls.Config{
 		Certificates: []tls.Certificate{cert},
 		MinVersion:   tls.VersionTLS13,
-		NextProtos:   []string{"h2", "http/1.1"}, // شبیه CDN واقعی
+		NextProtos:   []string{"h2", "http/1.1"},
 	}
 }
