@@ -117,3 +117,10 @@ func (s *Stats) TotalSent() int64 {
 	defer s.mu.RUnlock()
 	return s.totalSent
 }
+
+func (s *Stats) RecordError() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	// فعلاً فقط شمارنده — بعداً می‌شه بیشتر کرد
+	s.totalSent++ // شمارش به عنوان attempt
+}
