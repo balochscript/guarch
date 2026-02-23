@@ -16,7 +16,7 @@ type Interleaver struct {
 	coverMgr *cover.Manager
 	shaper   *cover.Shaper
 	sendCh   chan []byte
-	seq      atomic.Uint32 // ✅ اصلاح: atomic بجای mutex
+	seq      atomic.Uint32
 }
 
 func New(sc *transport.SecureConn, coverMgr *cover.Manager) *Interleaver {
@@ -29,7 +29,7 @@ func New(sc *transport.SecureConn, coverMgr *cover.Manager) *Interleaver {
 		sc:       sc,
 		coverMgr: coverMgr,
 		shaper:   shaper,
-		sendCh:   make(chan []byte, 128), // ✅ بزرگتر
+		sendCh:   make(chan []byte, 128),
 	}
 }
 
@@ -44,48 +44,16 @@ func (il *Interleaver) sendLoop(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case data := <-il.sendCh:
-			il.sendWithCover(data)
+			il.sendShaped(data)
 		}
 	}
 }
 
-func (il *Interleaver) idleLoop(ctx context.Context) {
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		default:
-			if il.shaper != nil {
-				delay := il.shaper.IdleDelay()
-				select {
-				case <-ctx.Done():
-					return
-				case <-time.After(delay):
-				}
-
-				if il.shaper.ShouldSendPadding() {
-					il.sendPadding()
-				}
-
-				if il.coverMgr != nil {
-					il.coverMgr.SendOne()
-				}
-			} else {
-				select {
-				case <-ctx.Done():
-					return
-				case <-time.After(3 * time.Second):
-				}
-			}
-		}
-	}
-}
-
-func (il *Interleaver) sendWithCover(data []byte) {
-	if il.coverMgr != nil {
-		il.coverMgr.SendOne()
-	}
-
+// ✅ FIX B4: حذف Cover از send path
+// قبلاً: sendWithCover() → ۲ بار Cover + blocking HTTP!
+// الان: فقط padding + timing → سریع‌تر
+func (il *Interleaver) sendShaped(data []byte) {
+	// فقط timing jitter (نه Cover!)
 	if il.shaper != nil {
 		delay := il.shaper.Delay()
 		if delay > 0 {
@@ -115,9 +83,37 @@ func (il *Interleaver) sendWithCover(data []byte) {
 		log.Printf("[interleave] send error: %v", err)
 		return
 	}
+}
 
-	if il.coverMgr != nil {
-		il.coverMgr.SendOne()
+// ✅ FIX B4: idleLoop فقط padding می‌فرسته، Cover نه
+// Cover Manager مستقل و جداگانه اجرا می‌شه
+func (il *Interleaver) idleLoop(ctx context.Context) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		default:
+			if il.shaper != nil {
+				delay := il.shaper.IdleDelay()
+				select {
+				case <-ctx.Done():
+					return
+				case <-time.After(delay):
+				}
+
+				if il.shaper.ShouldSendPadding() {
+					il.sendPadding()
+				}
+				// ✅ حذف: il.coverMgr.SendOne()
+				// Cover Manager خودش مستقل کار می‌کنه
+			} else {
+				select {
+				case <-ctx.Done():
+					return
+				case <-time.After(3 * time.Second):
+				}
+			}
+		}
 	}
 }
 
@@ -137,18 +133,22 @@ func (il *Interleaver) sendPadding() {
 	il.sc.SendPacket(pkt)
 }
 
-// Send — ارسال با cover traffic (غیرمسدودکننده)
+// ✅ FIX A2: Send() حالا copy می‌کنه!
 func (il *Interleaver) Send(data []byte) {
-	// ✅ اصلاح: با timeout برای جلوگیری از بلاک شدن
+	// کپی داده قبل از فرستادن به channel
+	// جلوگیری از race condition وقتی caller بافر رو reuse می‌کنه
+	cp := make([]byte, len(data))
+	copy(cp, data)
+
 	select {
-	case il.sendCh <- data:
+	case il.sendCh <- cp:
 	default:
+		// بافر پره — مستقیم بفرست (بدون shaping)
 		log.Printf("[interleave] send channel full, sending direct")
-		il.SendDirect(data)
+		il.SendDirect(cp)
 	}
 }
 
-// SendDirect — ارسال مستقیم بدون cover
 func (il *Interleaver) SendDirect(data []byte) error {
 	seq := il.seq.Add(1)
 
