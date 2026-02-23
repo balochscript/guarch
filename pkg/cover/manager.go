@@ -13,42 +13,47 @@ import (
 )
 
 type Manager struct {
-	config  *Config
-	stats   *Stats
-	client  *http.Client
-	running bool
-	mu      sync.RWMutex
+	config   *Config
+	stats    *Stats
+	client   *http.Client
+	adaptive *AdaptiveCover // ✅ جدید
+	running  bool
+	mu       sync.RWMutex
 }
 
-func NewManager(cfg *Config) *Manager {
+// ✅ اصلاح: حالا adaptive می‌گیره
+func NewManager(cfg *Config, adaptive *AdaptiveCover) *Manager {
 	if cfg == nil {
 		cfg = DefaultConfig()
 	}
 
 	return &Manager{
-		config: cfg,
-		stats:  NewStats(100),
+		config:   cfg,
+		stats:    NewStats(100),
+		adaptive: adaptive,
 		client: &http.Client{
 			Timeout: 15 * time.Second,
 			Transport: &http.Transport{
 				TLSClientConfig: &tls.Config{
 					MinVersion: tls.VersionTLS13,
 				},
-				MaxIdleConnsPerHost: 2,
-				IdleConnTimeout:     30 * time.Second,
+				MaxIdleConnsPerHost: 4,            // ✅ بیشتر — connection reuse بهتر
+				IdleConnTimeout:     90 * time.Second, // ✅ بیشتر — HTTP/2 reuse
+				ForceAttemptHTTP2:   true,          // ✅ جدید — HTTP/2 ترجیح داده بشه
 			},
 		},
 	}
 }
 
-func NewManagerWithClient(cfg *Config, client *http.Client) *Manager {
+func NewManagerWithClient(cfg *Config, client *http.Client, adaptive *AdaptiveCover) *Manager {
 	if cfg == nil {
 		cfg = DefaultConfig()
 	}
 	return &Manager{
-		config: cfg,
-		stats:  NewStats(100),
-		client: client,
+		config:   cfg,
+		stats:    NewStats(100),
+		client:   client,
+		adaptive: adaptive,
 	}
 }
 
@@ -59,12 +64,13 @@ func (m *Manager) Start(ctx context.Context) {
 
 	log.Println("[cover] starting cover traffic")
 
-	for _, domain := range m.config.Domains {
-		go m.domainWorker(ctx, domain)
+	for i, domain := range m.config.Domains {
+		go m.domainWorker(ctx, domain, i)
 	}
 }
 
-func (m *Manager) domainWorker(ctx context.Context, dc DomainConfig) {
+// ✅ اصلاح: domainWorker حالا از adaptive استفاده می‌کنه
+func (m *Manager) domainWorker(ctx context.Context, dc DomainConfig, index int) {
 	log.Printf("[cover] worker started for %s", dc.Domain)
 
 	for {
@@ -73,9 +79,31 @@ func (m *Manager) domainWorker(ctx context.Context, dc DomainConfig) {
 			log.Printf("[cover] worker stopped for %s", dc.Domain)
 			return
 		default:
+			// ✅ بررسی adaptive: آیا این دامنه فعال باشه؟
+			if m.adaptive != nil {
+				activeDomains := m.adaptive.GetActiveDomains()
+				if index >= activeDomains {
+					// این دامنه فعال نیست — منتظر بمون و دوباره چک کن
+					select {
+					case <-ctx.Done():
+						return
+					case <-time.After(5 * time.Second):
+						continue
+					}
+				}
+			}
+
 			m.sendRequest(dc)
 
-			interval := randomDuration(dc.MinInterval, dc.MaxInterval)
+			// ✅ فاصله رو از adaptive بگیر (اگه فعاله)
+			var interval time.Duration
+			if m.adaptive != nil {
+				minI, maxI := m.adaptive.GetCoverInterval()
+				interval = randomDuration(minI, maxI)
+			} else {
+				interval = randomDuration(dc.MinInterval, dc.MaxInterval)
+			}
+
 			select {
 			case <-ctx.Done():
 				return
@@ -91,6 +119,7 @@ func (m *Manager) sendRequest(dc DomainConfig) {
 
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
+		m.stats.RecordError() // ✅ ثبت خطا
 		return
 	}
 
@@ -103,16 +132,22 @@ func (m *Manager) sendRequest(dc DomainConfig) {
 
 	resp, err := m.client.Do(req)
 	if err != nil {
+		m.stats.RecordError() // ✅ ثبت خطا
 		return
 	}
 	defer resp.Body.Close()
 
-	body, err := io.ReadAll(io.LimitReader(resp.Body, 100*1024))
+	// ✅ FIX B5: io.Discard به جای ReadAll
+	// قبلاً: body, _ := io.ReadAll(io.LimitReader(resp.Body, 100*1024))
+	//         ← ۱۰۰KB حافظه allocate می‌شد فقط برای دور ریختن!
+	// الان: مستقیم discard — بدون allocation
+	written, err := io.Copy(io.Discard, io.LimitReader(resp.Body, 50*1024))
 	if err != nil {
+		m.stats.RecordError()
 		return
 	}
 
-	size := len(body)
+	size := int(written)
 	m.stats.Record(size)
 	m.stats.RecordRecv(size)
 }
@@ -143,6 +178,10 @@ func (m *Manager) pickDomain() DomainConfig {
 
 func (m *Manager) Stats() *Stats {
 	return m.stats
+}
+
+func (m *Manager) Adaptive() *AdaptiveCover {
+	return m.adaptive
 }
 
 func (m *Manager) IsRunning() bool {
