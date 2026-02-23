@@ -1,6 +1,6 @@
-.PHONY: build test clean client server zhip-client zhip-server
+.PHONY: build test clean client server zhip-client zhip-server grouk-client grouk-server
 
-# ═══ Guarch (TCP — Stealth) ═══
+# ═══ Guarch 🏹 (TCP — Stealth) ═══
 build: client server
 
 client:
@@ -9,7 +9,7 @@ client:
 server:
 	go build -o bin/guarch-server ./cmd/guarch-server/
 
-# ═══ Zhip (QUIC — Fast) ═══
+# ═══ Zhip ⚡ (QUIC — Fast) ═══
 zhip-client:
 	go build -o bin/zhip-client ./cmd/zhip-client/
 
@@ -18,8 +18,17 @@ zhip-server:
 
 zhip: zhip-client zhip-server
 
+# ═══ Grouk 🌩️ (Raw UDP — Ultra Fast) ═══
+grouk-client:
+	go build -o bin/grouk-client ./cmd/grouk-client/
+
+grouk-server:
+	go build -o bin/grouk-server ./cmd/grouk-server/
+
+grouk: grouk-client grouk-server
+
 # ═══ All Protocols ═══
-all: build zhip
+all: build zhip grouk
 
 # ═══ Test ═══
 test:
@@ -71,5 +80,20 @@ zhip-windows:
 zhip-darwin:
 	GOOS=darwin GOARCH=arm64 go build -o bin/zhip-client-darwin ./cmd/zhip-client/
 
+# ═══ Cross Compile — Grouk ═══
+grouk-linux-amd64:
+	GOOS=linux GOARCH=amd64 go build -o bin/grouk-client-linux-amd64 ./cmd/grouk-client/
+	GOOS=linux GOARCH=amd64 go build -o bin/grouk-server-linux-amd64 ./cmd/grouk-server/
+
+grouk-linux-arm64:
+	GOOS=linux GOARCH=arm64 go build -o bin/grouk-client-linux-arm64 ./cmd/grouk-client/
+	GOOS=linux GOARCH=arm64 go build -o bin/grouk-server-linux-arm64 ./cmd/grouk-server/
+
+grouk-windows:
+	GOOS=windows GOARCH=amd64 go build -o bin/grouk-client.exe ./cmd/grouk-client/
+
+grouk-darwin:
+	GOOS=darwin GOARCH=arm64 go build -o bin/grouk-client-darwin ./cmd/grouk-client/
+
 # ═══ All Platforms — All Protocols ═══
-all-platforms: linux-amd64 linux-arm64 windows darwin zhip-linux-amd64 zhip-linux-arm64 zhip-windows zhip-darwin
+all-platforms: linux-amd64 linux-arm64 windows darwin zhip-linux-amd64 zhip-linux-arm64 zhip-windows zhip-darwin grouk-linux-amd64 grouk-linux-arm64 grouk-windows grouk-darwin
