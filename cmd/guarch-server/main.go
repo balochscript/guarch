@@ -35,6 +35,7 @@ var (
 	decoyServer   *antidetect.DecoyServer
 	healthCheck   *health.Checker
 	serverPSK     []byte
+	serverMode    cover.Mode
 )
 
 func main() {
@@ -43,12 +44,14 @@ func main() {
 	healthAddr := flag.String("health", "127.0.0.1:9090", "health check")
 	psk := flag.String("psk", "", "pre-shared key (required)")
 	coverEnabled := flag.Bool("cover", true, "enable server cover traffic")
+	mode := flag.String("mode", "balanced", "mode: stealth|balanced|fast")
 	flag.Parse()
 
 	if *psk == "" {
 		log.Fatal("[guarch] -psk is required")
 	}
 	serverPSK = []byte(*psk)
+	serverMode = cover.ParseMode(*mode)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -62,10 +65,13 @@ func main() {
 	healthCheck.StartServer(*healthAddr)
 
 	// ═══ Server Cover Traffic ═══
-	if *coverEnabled {
-		coverMgr := cover.NewManager(cover.DefaultConfig())
+	if *coverEnabled && serverMode != cover.ModeFast {
+		modeCfg := cover.GetModeConfig(serverMode)
+		adaptive := cover.NewAdaptiveCover(modeCfg)
+		coverCfg := cover.ConfigForMode(serverMode)
+		coverMgr := cover.NewManager(coverCfg, adaptive)
 		coverMgr.Start(ctx)
-		log.Println("[guarch] server cover traffic started")
+		log.Printf("[guarch] server cover traffic started (mode: %s)", serverMode)
 	}
 
 	// ═══ TLS Certificate ═══
@@ -74,7 +80,6 @@ func main() {
 		log.Fatal("cert:", err)
 	}
 
-	// نمایش Certificate PIN
 	certPin := sha256.Sum256(cert.Certificate[0])
 	certPinHex := hex.EncodeToString(certPin[:])
 
@@ -95,7 +100,7 @@ func main() {
 	log.Println(" ██    ██ ██    ██ ██   ██ ██   ██ ██      ██   ██")
 	log.Println("  ██████   ██████  ██   ██ ██   ██  ██████ ██   ██")
 	log.Println("")
-	log.Printf("[guarch] server on %s", *addr)
+	log.Printf("[guarch] server on %s (mode: %s)", *addr, serverMode)
 	log.Printf("[guarch] decoy on %s", *decoyAddr)
 	log.Printf("[guarch] health on %s", *healthAddr)
 	log.Println("")
@@ -137,10 +142,6 @@ func startDecoy(addr string) {
 	}
 }
 
-// ═══════════════════════════════════════
-// Handle Connection — مدیریت اتصال‌ها
-// ═══════════════════════════════════════
-
 func handleConn(raw net.Conn) {
 	defer raw.Close()
 
@@ -148,7 +149,6 @@ func handleConn(raw net.Conn) {
 	healthCheck.AddConn()
 	defer healthCheck.RemoveConn()
 
-	// ۱. بررسی Probe
 	if probeDetector.Check(remoteAddr) {
 		log.Printf("[probe] suspicious: %s → serving decoy", remoteAddr)
 		healthCheck.AddError()
@@ -156,7 +156,6 @@ func handleConn(raw net.Conn) {
 		return
 	}
 
-	// ۲. Guarch Handshake با PSK
 	raw.SetDeadline(time.Now().Add(30 * time.Second))
 
 	hsCfg := &transport.HandshakeConfig{
@@ -167,7 +166,6 @@ func handleConn(raw net.Conn) {
 	if err != nil {
 		log.Printf("[guarch] handshake failed %s: %v", remoteAddr, err)
 		healthCheck.AddError()
-		// هندشیک شکست خورد — احتمالاً probe هست
 		serveDecoyToRaw(raw)
 		return
 	}
@@ -175,11 +173,25 @@ func handleConn(raw net.Conn) {
 	raw.SetDeadline(time.Time{})
 	log.Printf("[guarch] authenticated: %s ✅", remoteAddr)
 
-	// ۳. ساخت Mux
-	m := mux.NewMux(sc)
-	defer m.Close()
+	// ✅ استفاده از PaddedMux بر اساس mode
+	var m *mux.Mux
+	if serverMode != cover.ModeFast {
+		modeCfg := cover.GetModeConfig(serverMode)
+		stats := cover.NewStats(100)
+		shaper := cover.NewAdaptiveShaper(
+			stats,
+			modeCfg.ShapingPattern,
+			nil, // سرور adaptive خودش رو ندار — از کلاینت تبعیت می‌کنه
+			modeCfg.MaxPadding,
+		)
+		pm := mux.NewPaddedMux(sc, shaper)
+		m = pm.Mux
+		defer pm.Close()
+	} else {
+		m = mux.NewMux(sc)
+		defer m.Close()
+	}
 
-	// ۴. پذیرش Stream‌ها
 	for {
 		stream, err := m.AcceptStream()
 		if err != nil {
@@ -190,14 +202,9 @@ func handleConn(raw net.Conn) {
 	}
 }
 
-// ═══════════════════════════════════════
-// Handle Stream — مدیریت هر استریم
-// ═══════════════════════════════════════
-
 func handleStream(stream *mux.Stream, remoteAddr string) {
 	defer stream.Close()
 
-	// ۱. خواندن ConnectRequest
 	lenBuf := make([]byte, 2)
 	if _, err := io.ReadFull(stream, lenBuf); err != nil {
 		log.Printf("[stream %d] read length: %v", stream.ID(), err)
@@ -226,7 +233,6 @@ func handleStream(stream *mux.Stream, remoteAddr string) {
 	target := req.Address()
 	log.Printf("[guarch] %s → %s (stream %d)", remoteAddr, target, stream.ID())
 
-	// ۲. اتصال به مقصد
 	targetConn, err := net.DialTimeout("tcp", target, 10*time.Second)
 	if err != nil {
 		log.Printf("[guarch] dial %s: %v", target, err)
@@ -235,22 +241,17 @@ func handleStream(stream *mux.Stream, remoteAddr string) {
 	}
 	defer targetConn.Close()
 
-	// ۳. ارسال Success
 	if _, err := stream.Write([]byte{protocol.ConnectSuccess}); err != nil {
 		log.Printf("[stream %d] write response: %v", stream.ID(), err)
 		return
 	}
 
-	// ۴. Relay
 	log.Printf("[guarch] ✅ relaying %s (stream %d)", target, stream.ID())
 	mux.RelayStream(stream, targetConn)
 	log.Printf("[guarch] ✖ done %s (stream %d)", target, stream.ID())
 }
 
-// ═══════════════════════════════════════
-// Decoy — سرور فریبنده
-// ═══════════════════════════════════════
-
+// ✅ FIX C3: استفاده از decoyServer گلوبال
 func serveDecoyToRaw(conn net.Conn) {
 	response := "HTTP/1.1 200 OK\r\n" +
 		"Server: nginx/1.24.0\r\n" +
@@ -259,15 +260,9 @@ func serveDecoyToRaw(conn net.Conn) {
 		"Strict-Transport-Security: max-age=31536000\r\n\r\n"
 
 	conn.Write([]byte(response))
-
-	ds := antidetect.NewDecoyServer()
-	page := ds.GenerateHomePage()
+	page := decoyServer.GenerateHomePage()
 	conn.Write([]byte(page))
 }
-
-// ═══════════════════════════════════════
-// TLS Certificate
-// ═══════════════════════════════════════
 
 func generateCert() (tls.Certificate, error) {
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
