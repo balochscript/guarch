@@ -24,18 +24,17 @@ import (
 	"guarch/pkg/transport"
 )
 
-// ═══════════════════════════════════════
-// Client — مدیریت اتصال به سرور
-// ═══════════════════════════════════════
-
 type Client struct {
 	serverAddr string
 	certPin    string
 	psk        []byte
+	mode       cover.Mode
 	coverMgr   *cover.Manager
+	adaptive   *cover.AdaptiveCover
 
-	mu       sync.Mutex
+	mu        sync.Mutex
 	activeMux *mux.Mux
+	activePM  *mux.PaddedMux // ✅ جدید: نگهداری PaddedMux
 }
 
 func main() {
@@ -44,6 +43,7 @@ func main() {
 	psk := flag.String("psk", "", "pre-shared key (required)")
 	certPin := flag.String("pin", "", "server TLS certificate SHA-256 pin")
 	coverEnabled := flag.Bool("cover", true, "enable cover traffic")
+	mode := flag.String("mode", "balanced", "mode: stealth|balanced|fast")
 	flag.Parse()
 
 	if *serverAddr == "" {
@@ -53,20 +53,32 @@ func main() {
 		log.Fatal("[guarch] -psk is required for security")
 	}
 
+	clientMode := cover.ParseMode(*mode)
+
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	// ═══ Cover Traffic ═══
+	// ═══ Adaptive + Cover Traffic ═══
+	modeCfg := cover.GetModeConfig(clientMode)
 	var coverMgr *cover.Manager
-	if *coverEnabled {
-		log.Println("[guarch] starting cover traffic...")
-		coverMgr = cover.NewManager(cover.DefaultConfig())
+	var adaptive *cover.AdaptiveCover
+
+	if *coverEnabled && modeCfg.CoverEnabled {
+		log.Printf("[guarch] starting cover traffic (mode: %s)...", clientMode)
+
+		adaptive = cover.NewAdaptiveCover(modeCfg)
+		coverCfg := cover.ConfigForMode(clientMode)
+		coverMgr = cover.NewManager(coverCfg, adaptive)
 		coverMgr.Start(ctx)
+
+		// منتظر آمار اولیه
 		time.Sleep(2 * time.Second)
 		log.Printf("[guarch] cover ready: avg_size=%d samples=%d",
 			coverMgr.Stats().AvgPacketSize(),
 			coverMgr.Stats().SampleCount(),
 		)
+	} else {
+		log.Printf("[guarch] cover traffic disabled (mode: %s)", clientMode)
 	}
 
 	// ═══ Client ═══
@@ -74,7 +86,9 @@ func main() {
 		serverAddr: *serverAddr,
 		certPin:    *certPin,
 		psk:        []byte(*psk),
+		mode:       clientMode,
 		coverMgr:   coverMgr,
+		adaptive:   adaptive,
 	}
 
 	// ═══ SOCKS5 Listener ═══
@@ -92,6 +106,7 @@ func main() {
 	log.Println("")
 	log.Printf("[guarch] client ready on socks5://%s", *listenAddr)
 	log.Printf("[guarch] server: %s", *serverAddr)
+	log.Printf("[guarch] mode: %s", clientMode)
 	if *certPin != "" {
 		log.Printf("[guarch] certificate pin: %s...", (*certPin)[:16])
 	}
@@ -122,20 +137,14 @@ func main() {
 	client.close()
 }
 
-// ═══════════════════════════════════════
-// اتصال و بازاتصال
-// ═══════════════════════════════════════
-
 func (c *Client) getOrCreateMux() (*mux.Mux, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	// اگه mux فعال هست، استفاده کن
 	if c.activeMux != nil && !c.activeMux.IsClosed() {
 		return c.activeMux, nil
 	}
 
-	// اتصال جدید
 	log.Println("[guarch] connecting to server...")
 
 	m, err := c.connect()
@@ -149,13 +158,11 @@ func (c *Client) getOrCreateMux() (*mux.Mux, error) {
 }
 
 func (c *Client) connect() (*mux.Mux, error) {
-	// ۱. TLS با Certificate Pinning
 	tlsConfig := &tls.Config{
 		MinVersion:         tls.VersionTLS13,
-		InsecureSkipVerify: true, // self-signed
+		InsecureSkipVerify: true,
 	}
 
-	// اگه certificate pin داریم، بررسی کن
 	if c.certPin != "" {
 		expectedPin := c.certPin
 		tlsConfig.VerifyPeerCertificate = func(rawCerts [][]byte, _ [][]*x509.Certificate) error {
@@ -171,11 +178,6 @@ func (c *Client) connect() (*mux.Mux, error) {
 		}
 	}
 
-	// Cover request قبل از اتصال
-	if c.coverMgr != nil {
-		c.coverMgr.SendOne()
-	}
-
 	tlsConn, err := tls.DialWithDialer(
 		&net.Dialer{Timeout: 15 * time.Second},
 		"tcp", c.serverAddr, tlsConfig,
@@ -184,7 +186,6 @@ func (c *Client) connect() (*mux.Mux, error) {
 		return nil, fmt.Errorf("TLS: %w", err)
 	}
 
-	// ۲. Guarch Handshake با PSK
 	hsCfg := &transport.HandshakeConfig{
 		PSK: c.psk,
 	}
@@ -195,34 +196,43 @@ func (c *Client) connect() (*mux.Mux, error) {
 		tlsConn.Close()
 		return nil, fmt.Errorf("handshake: %w", err)
 	}
-	tlsConn.SetDeadline(time.Time{}) // حذف deadline
+	tlsConn.SetDeadline(time.Time{})
 
-	// Cover request بعد از اتصال
-	if c.coverMgr != nil {
-		c.coverMgr.SendOne()
+	// ✅ ساخت PaddedMux بر اساس mode
+	modeCfg := cover.GetModeConfig(c.mode)
+
+	if c.mode != cover.ModeFast && modeCfg.ShapingEnabled {
+		stats := cover.NewStats(100)
+		shaper := cover.NewAdaptiveShaper(
+			stats,
+			modeCfg.ShapingPattern,
+			c.adaptive,
+			modeCfg.MaxPadding,
+		)
+		pm := mux.NewPaddedMux(sc, shaper)
+		c.activePM = pm
+		return pm.Mux, nil
 	}
 
-	// ۳. ساخت Mux
+	// Fast mode: بدون padding
 	m := mux.NewMux(sc)
+	c.activePM = nil
 	return m, nil
 }
 
 func (c *Client) close() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if c.activeMux != nil {
+	if c.activePM != nil {
+		c.activePM.Close()
+	} else if c.activeMux != nil {
 		c.activeMux.Close()
 	}
 }
 
-// ═══════════════════════════════════════
-// هندلر SOCKS5
-// ═══════════════════════════════════════
-
 func (c *Client) handleSOCKS(socksConn net.Conn, ctx context.Context) {
 	defer socksConn.Close()
 
-	// ۱. SOCKS5 Handshake
 	target, err := socks5.Handshake(socksConn)
 	if err != nil {
 		log.Printf("[socks5] %v", err)
@@ -231,7 +241,11 @@ func (c *Client) handleSOCKS(socksConn net.Conn, ctx context.Context) {
 
 	log.Printf("[guarch] → %s", target)
 
-	// ۲. گرفتن یا ساختن Mux
+	// ✅ ثبت ترافیک در adaptive
+	if c.adaptive != nil {
+		c.adaptive.RecordTraffic(1) // فعلاً ۱ درخواست
+	}
+
 	m, err := c.getOrCreateMux()
 	if err != nil {
 		log.Printf("[guarch] connection failed: %v", err)
@@ -239,14 +253,13 @@ func (c *Client) handleSOCKS(socksConn net.Conn, ctx context.Context) {
 		return
 	}
 
-	// ۳. باز کردن Stream
 	stream, err := m.OpenStream()
 	if err != nil {
 		log.Printf("[guarch] open stream failed: %v, reconnecting...", err)
 
-		// Mux مرده — بازاتصال
 		c.mu.Lock()
 		c.activeMux = nil
+		c.activePM = nil
 		c.mu.Unlock()
 
 		m, err = c.getOrCreateMux()
@@ -264,7 +277,6 @@ func (c *Client) handleSOCKS(socksConn net.Conn, ctx context.Context) {
 		}
 	}
 
-	// ۴. ارسال ConnectRequest از طریق Stream
 	host, portStr, _ := net.SplitHostPort(target)
 	port := parsePort(portStr)
 
@@ -287,24 +299,19 @@ func (c *Client) handleSOCKS(socksConn net.Conn, ctx context.Context) {
 	lenBuf := make([]byte, 2)
 	binary.BigEndian.PutUint16(lenBuf, uint16(len(reqData)))
 
-	// ارسال طول + داده درخواست
 	if _, err := stream.Write(lenBuf); err != nil {
-		log.Printf("[guarch] write request: %v", err)
 		stream.Close()
 		socks5.SendReply(socksConn, 0x01)
 		return
 	}
 	if _, err := stream.Write(reqData); err != nil {
-		log.Printf("[guarch] write request: %v", err)
 		stream.Close()
 		socks5.SendReply(socksConn, 0x01)
 		return
 	}
 
-	// ۵. خواندن ConnectResponse
 	statusBuf := make([]byte, 1)
 	if _, err := io.ReadFull(stream, statusBuf); err != nil {
-		log.Printf("[guarch] read response: %v", err)
 		stream.Close()
 		socks5.SendReply(socksConn, 0x01)
 		return
@@ -317,13 +324,63 @@ func (c *Client) handleSOCKS(socksConn net.Conn, ctx context.Context) {
 		return
 	}
 
-	// ۶. SOCKS5 Success Reply
 	socks5.SendReply(socksConn, 0x00)
 
-	// ۷. Relay
+	// ✅ Relay با ثبت ترافیک adaptive
 	log.Printf("[guarch] ✅ %s (stream %d)", target, stream.ID())
-	mux.RelayStream(stream, socksConn)
+	c.relayWithTracking(stream, socksConn)
 	log.Printf("[guarch] ✖ %s", target)
+}
+
+// ✅ جدید: relay با ثبت ترافیک برای adaptive
+func (c *Client) relayWithTracking(stream *mux.Stream, conn net.Conn) {
+	ch := make(chan error, 2)
+
+	// conn → stream
+	go func() {
+		buf := make([]byte, 32768)
+		for {
+			n, err := conn.Read(buf)
+			if n > 0 {
+				if c.adaptive != nil {
+					c.adaptive.RecordTraffic(int64(n))
+				}
+				if _, werr := stream.Write(buf[:n]); werr != nil {
+					ch <- werr
+					return
+				}
+			}
+			if err != nil {
+				ch <- err
+				return
+			}
+		}
+	}()
+
+	// stream → conn
+	go func() {
+		buf := make([]byte, 32768)
+		for {
+			n, err := stream.Read(buf)
+			if n > 0 {
+				if c.adaptive != nil {
+					c.adaptive.RecordTraffic(int64(n))
+				}
+				if _, werr := conn.Write(buf[:n]); werr != nil {
+					ch <- werr
+					return
+				}
+			}
+			if err != nil {
+				ch <- err
+				return
+			}
+		}
+	}()
+
+	<-ch
+	stream.Close()
+	conn.Close()
 }
 
 func parsePort(s string) uint16 {
