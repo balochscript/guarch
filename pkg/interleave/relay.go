@@ -5,19 +5,16 @@ import (
 	"net"
 )
 
-// Relay — ریله بین Interleaver و اتصال TCP
-// ✅ اصلاح: از Send استفاده می‌شود (با cover traffic)
 func Relay(il *Interleaver, conn net.Conn) {
 	ch := make(chan error, 2)
 
-	// conn → interleaver (با cover traffic)
+	// conn → interleaver
 	go func() {
 		buf := make([]byte, 32768)
 		for {
 			n, err := conn.Read(buf)
 			if n > 0 {
-				// ✅ قبلاً SendDirect بود — بدون cover
-				// حالا Send هست — با cover traffic و padding
+				// ✅ Send() داخلش copy می‌کنه — safe
 				il.Send(buf[:n])
 			}
 			if err != nil {
@@ -42,10 +39,7 @@ func Relay(il *Interleaver, conn net.Conn) {
 		}
 	}()
 
-	err := <-ch
-	_ = err
-	log.Printf("[relay] connection ended")
-
+	<-ch
 	conn.Close()
 	il.Close()
 }
