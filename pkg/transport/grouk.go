@@ -38,29 +38,28 @@ const (
 	groukStreamOpen  byte = 0x01
 	groukStreamClose byte = 0x02
 	groukStreamData  byte = 0x03
-	groukStreamAck   byte = 0x04
 
 	// Sizes
 	groukSessionIDSize = 4
 	groukTypeSize      = 1
 	groukNonceSize     = 12
 	groukTagSize       = 16
-	groukHeaderSize    = groukSessionIDSize + groukTypeSize + groukNonceSize // 17
-	groukStreamHdrSize = 2 + 4 + 4 // StreamID(2) + SeqNum(4) + AckNum(4) = 10
+	groukHeaderSize    = groukSessionIDSize + groukTypeSize // 5
+	groukStreamHdrSize = 2 + 4 + 4                         // StreamID(2) + SeqNum(4) + AckNum(4) = 10
 
 	// Limits
-	groukMaxPacketSize = 1400 // safe UDP payload size
-	groukMaxPayload    = groukMaxPacketSize - groukHeaderSize - groukTagSize - groukStreamHdrSize
-	groukMaxSessions   = 256
+	groukMaxPacketSize    = 1400
+	groukMaxPayload       = groukMaxPacketSize - groukHeaderSize - groukNonceSize - groukTagSize - 4 - groukStreamHdrSize
+	groukMaxSessions      = 256
 	groukHandshakeTimeout = 10 * time.Second
 
 	// ARQ
-	groukDefaultRTO      = 200 * time.Millisecond // aggressive retransmit
-	groukMinRTO          = 50 * time.Millisecond
-	groukMaxRTO          = 2 * time.Second
-	groukWindowSize      = 128 // max unacked packets
-	groukRecvBufferSize  = 256
-	groukMaxRetransmit   = 10
+	groukDefaultRTO     = 200 * time.Millisecond
+	groukMinRTO         = 50 * time.Millisecond
+	groukMaxRTO         = 2 * time.Second
+	groukWindowSize     = 128
+	groukRecvBufferSize = 256
+	groukMaxRetransmit  = 10
 )
 
 // ═══════════════════════════════════════
@@ -70,7 +69,7 @@ const (
 type GroukPacket struct {
 	SessionID uint32
 	Type      byte
-	Payload   []byte // encrypted for data, plaintext for handshake
+	Payload   []byte
 }
 
 func marshalGroukPacket(pkt *GroukPacket, cipher *gcrypto.AEADCipher) ([]byte, error) {
@@ -79,21 +78,19 @@ func marshalGroukPacket(pkt *GroukPacket, cipher *gcrypto.AEADCipher) ([]byte, e
 	buf[4] = pkt.Type
 
 	if cipher != nil && pkt.Type >= groukTypeData {
-		// رمزنگاری payload
 		encrypted, err := cipher.Seal(pkt.Payload)
 		if err != nil {
 			return nil, err
 		}
 		buf = append(buf, encrypted...)
 	} else {
-		// handshake — plaintext
 		buf = append(buf, pkt.Payload...)
 	}
 
 	return buf, nil
 }
 
-func unmarshalGroukPacket(data []byte) (*GroukPacket, error) {
+func UnmarshalGroukPacket(data []byte) (*GroukPacket, error) {
 	if len(data) < groukSessionIDSize+groukTypeSize {
 		return nil, fmt.Errorf("grouk: packet too short: %d", len(data))
 	}
@@ -114,7 +111,7 @@ type GroukSession struct {
 	RemoteAddr *net.UDPAddr
 	sendCipher *gcrypto.AEADCipher
 	recvCipher *gcrypto.AEADCipher
-	streams    sync.Map // map[uint16]*GroukStream
+	streams    sync.Map
 	nextStream atomic.Uint32
 	conn       *net.UDPConn
 	lastActive atomic.Int64
@@ -170,26 +167,60 @@ func (s *GroukSession) sendPacket(pktType byte, payload []byte) error {
 	return err
 }
 
+// sendRawPacket — ارسال بسته بدون رمزنگاری (برای handshake)
+func (s *GroukSession) sendRawPacket(pktType byte, payload []byte) error {
+	s.sendMu.Lock()
+	defer s.sendMu.Unlock()
+
+	pkt := &GroukPacket{
+		SessionID: s.ID,
+		Type:      pktType,
+		Payload:   payload,
+	}
+
+	data, err := marshalGroukPacket(pkt, nil) // nil = plaintext
+	if err != nil {
+		return err
+	}
+
+	_, err = s.conn.WriteToUDP(data, s.RemoteAddr)
+	return err
+}
+
+// HandlePacketFromClient — پردازش بسته (export شده برای grouk-client)
+func (s *GroukSession) HandlePacketFromClient(pkt *GroukPacket) {
+	s.handlePacket(pkt)
+}
+
 func (s *GroukSession) handlePacket(pkt *GroukPacket) {
 	s.lastActive.Store(time.Now().UnixMilli())
 
-	// رمزگشایی
-	plaintext, err := s.recvCipher.Open(pkt.Payload)
-	if err != nil {
-		return // بسته‌ی نامعتبر — بی‌صدا رد شو
-	}
-
 	switch pkt.Type {
 	case groukTypeData:
+		plaintext, err := s.recvCipher.Open(pkt.Payload)
+		if err != nil {
+			return
+		}
 		s.handleData(plaintext)
+
 	case groukTypeAck:
+		plaintext, err := s.recvCipher.Open(pkt.Payload)
+		if err != nil {
+			return
+		}
 		s.handleAck(plaintext)
+
 	case groukTypePing:
 		s.sendPacket(groukTypePong, []byte{0x01})
+
 	case groukTypePong:
 		// OK
+
 	case groukTypeClose:
 		s.Close()
+
+	case groukTypeHandshakeDone:
+		// کلاینت: auth تأیید شد — بی‌صدا OK
 	}
 }
 
@@ -213,7 +244,6 @@ func (s *GroukSession) handleData(data []byte) {
 		case s.acceptCh <- stream:
 		case <-s.closeCh:
 		}
-		// ACK the open
 		s.sendStreamAck(streamID, seqNum)
 
 	case groukStreamData:
@@ -278,7 +308,6 @@ func (s *GroukSession) OpenStream() (*GroukStream, error) {
 	stream := newGroukStream(id, s)
 	s.streams.Store(id, stream)
 
-	// ارسال OPEN
 	seq := stream.nextSendSeq()
 	if err := s.sendStreamPacket(id, groukStreamOpen, seq, 0, nil); err != nil {
 		s.streams.Delete(id)
@@ -343,12 +372,12 @@ type GroukStream struct {
 	session *GroukSession
 
 	// ارسال
-	sendSeq  atomic.Uint32
-	sendBuf  sync.Map // map[uint32]*sendEntry
-	sendWin  atomic.Int32
+	sendSeq atomic.Uint32
+	sendBuf sync.Map
+	sendWin atomic.Int32
 
 	// دریافت
-	recvBuf  sync.Map // map[uint32][]byte
+	recvBuf  sync.Map
 	recvNext atomic.Uint32
 	readCh   chan []byte
 	readBuf  []byte
@@ -360,10 +389,10 @@ type GroukStream struct {
 }
 
 type sendEntry struct {
-	data      []byte
-	seq       uint32
-	sentAt    time.Time
-	retries   int
+	data    []byte
+	seq     uint32
+	sentAt  time.Time
+	retries int
 }
 
 func newGroukStream(id uint16, session *GroukSession) *GroukStream {
@@ -384,7 +413,7 @@ func (s *GroukStream) nextSendSeq() uint32 {
 	return s.sendSeq.Add(1)
 }
 
-// Read — خواندن از stream (net.Conn compatible)
+// Read — خواندن از stream
 func (s *GroukStream) Read(p []byte) (int, error) {
 	if len(s.readBuf) > 0 {
 		n := copy(p, s.readBuf)
@@ -408,17 +437,16 @@ func (s *GroukStream) Read(p []byte) (int, error) {
 	}
 }
 
-// Write — نوشتن به stream با reliable delivery
+// Write — نوشتن با reliable delivery
 func (s *GroukStream) Write(p []byte) (int, error) {
 	if s.closed.Load() {
 		return 0, io.ErrClosedPipe
 	}
 
 	sent := 0
-	maxPayload := groukMaxPayload - 1 // -1 for cmd byte
+	maxPayload := groukMaxPayload - 1
 
 	for sent < len(p) {
-		// بررسی window
 		for s.sendWin.Load() >= groukWindowSize {
 			time.Sleep(5 * time.Millisecond)
 			if s.closed.Load() {
@@ -436,7 +464,6 @@ func (s *GroukStream) Write(p []byte) (int, error) {
 
 		seq := s.nextSendSeq()
 
-		// ذخیره در send buffer برای retransmit
 		entry := &sendEntry{
 			data:   chunk,
 			seq:    seq,
@@ -445,7 +472,6 @@ func (s *GroukStream) Write(p []byte) (int, error) {
 		s.sendBuf.Store(seq, entry)
 		s.sendWin.Add(1)
 
-		// ارسال
 		if err := s.session.sendStreamPacket(s.id, groukStreamData, seq, 0, chunk); err != nil {
 			return sent, err
 		}
@@ -456,18 +482,15 @@ func (s *GroukStream) Write(p []byte) (int, error) {
 	return sent, nil
 }
 
-// handleRecv — دریافت بسته
 func (s *GroukStream) handleRecv(seq uint32, data []byte) {
 	if s.closed.Load() {
 		return
 	}
 
-	// ذخیره در recv buffer
 	cp := make([]byte, len(data))
 	copy(cp, data)
 	s.recvBuf.Store(seq, cp)
 
-	// تحویل بسته‌های ترتیبی
 	s.deliverOrdered()
 }
 
@@ -489,14 +512,12 @@ func (s *GroukStream) deliverOrdered() {
 	}
 }
 
-// handleAck — پردازش ACK
 func (s *GroukStream) handleAck(ackNum uint32) {
 	if _, loaded := s.sendBuf.LoadAndDelete(ackNum); loaded {
 		s.sendWin.Add(-1)
 	}
 }
 
-// retransmitLoop — بازارسال بسته‌های بدون ACK
 func (s *GroukStream) retransmitLoop() {
 	ticker := time.NewTicker(50 * time.Millisecond)
 	defer ticker.Stop()
@@ -517,8 +538,7 @@ func (s *GroukStream) retransmitLoop() {
 				if now.Sub(entry.sentAt) > rto {
 					entry.retries++
 					if entry.retries > groukMaxRetransmit {
-						// خیلی زیاد retry شده — stream رو ببند
-						log.Printf("[grouk] stream %d: max retransmit reached for seq %d", s.id, entry.seq)
+						log.Printf("[grouk] stream %d: max retransmit for seq %d", s.id, entry.seq)
 						s.markClosed()
 						return false
 					}
@@ -559,14 +579,14 @@ func (s *GroukStream) ID() uint16 {
 // ═══════════════════════════════════════
 
 // GroukServerHandshake — handshake سمت سرور
-// raw packet رو می‌گیره و session برمی‌گردونه
-func GroukServerHandshake(udpConn *net.UDPConn, pkt *GroukPacket, remote *net.UDPAddr, psk []byte) (*GroukSession, error) {
+// shared secret رو هم برمی‌گردونه (برای auth verification بعدی)
+func GroukServerHandshake(udpConn *net.UDPConn, pkt *GroukPacket, remote *net.UDPAddr, psk []byte) (*GroukSession, []byte, error) {
 	if pkt.Type != groukTypeHandshakeInit {
-		return nil, fmt.Errorf("grouk: expected INIT got %d", pkt.Type)
+		return nil, nil, fmt.Errorf("grouk: expected INIT got %d", pkt.Type)
 	}
 
 	if len(pkt.Payload) < gcrypto.PublicKeySize {
-		return nil, fmt.Errorf("grouk: INIT too short")
+		return nil, nil, fmt.Errorf("grouk: INIT too short")
 	}
 
 	clientPub := pkt.Payload[:gcrypto.PublicKeySize]
@@ -574,7 +594,7 @@ func GroukServerHandshake(udpConn *net.UDPConn, pkt *GroukPacket, remote *net.UD
 	// ۱. تولید جفت کلید سرور
 	serverKP, err := gcrypto.GenerateKeyPair()
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	// ۲. ارسال Response
@@ -587,28 +607,30 @@ func GroukServerHandshake(udpConn *net.UDPConn, pkt *GroukPacket, remote *net.UD
 	respData, _ := marshalGroukPacket(respPkt, nil)
 	udpConn.WriteToUDP(respData, remote)
 
-	// ۳. محاسبه‌ی کلیدها
+	// ۳. محاسبه‌ی shared secret
 	shared, err := serverKP.SharedSecret(clientPub)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
+	// ۴. استخراج کلیدهای رمزنگاری
 	sendKey, err := gcrypto.DeriveKey(shared, psk, []byte("grouk-server-send-v1"))
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	recvKey, err := gcrypto.DeriveKey(shared, psk, []byte("grouk-client-send-v1"))
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
-	// ۴. ساخت session
+	// ۵. ساخت session
 	session, err := newGroukSession(sessionID, remote, udpConn, sendKey, recvKey)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
-	return session, nil
+	// ✅ shared رو هم برگردون — برای ساختن authKey بعداً
+	return session, shared, nil
 }
 
 // GroukClientHandshake — handshake سمت کلاینت
@@ -637,10 +659,10 @@ func GroukClientHandshake(udpConn *net.UDPConn, serverAddr *net.UDPAddr, psk []b
 		buf := make([]byte, 1024)
 		n, _, err := udpConn.ReadFromUDP(buf)
 		if err != nil {
-			continue // timeout → retry
+			continue
 		}
 
-		pkt, err := unmarshalGroukPacket(buf[:n])
+		pkt, err := UnmarshalGroukPacket(buf[:n])
 		if err != nil || pkt.Type != groukTypeHandshakeResp {
 			continue
 		}
@@ -663,12 +685,13 @@ func GroukClientHandshake(udpConn *net.UDPConn, serverAddr *net.UDPAddr, psk []b
 	sessionID := binary.BigEndian.Uint32(respData[0:4])
 	serverPub := respData[4 : 4+gcrypto.PublicKeySize]
 
-	// ۴. محاسبه‌ی کلیدها
+	// ۴. محاسبه‌ی shared secret
 	shared, err := clientKP.SharedSecret(serverPub)
 	if err != nil {
 		return nil, err
 	}
 
+	// ۵. استخراج کلیدهای رمزنگاری
 	sendKey, err := gcrypto.DeriveKey(shared, psk, []byte("grouk-client-send-v1"))
 	if err != nil {
 		return nil, err
@@ -678,35 +701,49 @@ func GroukClientHandshake(udpConn *net.UDPConn, serverAddr *net.UDPAddr, psk []b
 		return nil, err
 	}
 
-	// ۵. ساخت session
+	// ۶. استخراج کلید auth — جدا از کلید رمزنگاری!
+	// ✅ از HKDF با info متفاوت — هیچ ربطی به sendKey/recvKey نداره
+	authKey, err := gcrypto.DeriveKey(shared, psk, []byte("grouk-auth-v1"))
+	if err != nil {
+		return nil, err
+	}
+
+	// ۷. ساخت session
 	session, err := newGroukSession(sessionID, serverAddr, udpConn, sendKey, recvKey)
 	if err != nil {
 		return nil, err
 	}
 
-	// ۶. ارسال Auth HMAC
-	authMAC := groukAuthMAC(sendKey, "grouk-client")
-	session.sendPacket(groukTypeHandshakeAuth, authMAC)
+	// ۸. ارسال Auth HMAC
+	// ✅ plaintext! مقدار HMAC بدون دانستن authKey بی‌معنیه
+	// مهاجم نمی‌تونه forge کنه چون authKey رو نداره
+	authMAC := groukAuthMAC(authKey, "grouk-client")
+	session.sendRawPacket(groukTypeHandshakeAuth, authMAC)
 
 	return session, nil
 }
 
-// GroukServerVerifyAuth — تأیید auth بسته از کلاینت
-func GroukServerVerifyAuth(session *GroukSession, payload []byte) error {
-	// رمزگشایی
-	plaintext, err := session.recvCipher.Open(payload)
+// GroukServerVerifyAuth — تأیید auth از کلاینت
+// ✅ shared و psk رو می‌گیره و authKey رو خودش می‌سازه
+// هیچ نیازی به دسترسی به کلید cipher نداره
+func GroukServerVerifyAuth(session *GroukSession, payload []byte, shared []byte, psk []byte) error {
+	// ✅ همون HKDF که کلاینت استفاده کرد → همون authKey
+	authKey, err := gcrypto.DeriveKey(shared, psk, []byte("grouk-auth-v1"))
 	if err != nil {
+		return err
+	}
+
+	// بررسی HMAC کلاینت
+	expected := groukAuthMAC(authKey, "grouk-client")
+	if !hmac.Equal(payload, expected) {
 		return protocol.ErrAuthFailed
 	}
 
-	expected := groukAuthMAC(session.recvCipher.Key(), "grouk-client")
-	if !hmac.Equal(plaintext, expected) {
-		return protocol.ErrAuthFailed
-	}
+	// ارسال HMAC سرور (plaintext)
+	serverMAC := groukAuthMAC(authKey, "grouk-server")
+	session.sendRawPacket(groukTypeHandshakeDone, serverMAC)
 
-	// ارسال auth سرور
-	serverMAC := groukAuthMAC(session.sendCipher.Key(), "grouk-server")
-	return session.sendPacket(groukTypeHandshakeDone, serverMAC)
+	return nil
 }
 
 func groukAuthMAC(key []byte, role string) []byte {
@@ -720,7 +757,7 @@ func generateSessionID() uint32 {
 	rand.Read(buf)
 	id := binary.BigEndian.Uint32(buf)
 	if id == 0 {
-		id = 1 // 0 reserved for handshake
+		id = 1
 	}
 	return id
 }
@@ -729,12 +766,19 @@ func generateSessionID() uint32 {
 // GroukListener — سرور UDP
 // ═══════════════════════════════════════
 
+// pendingSession — session در انتظار auth
+type pendingSession struct {
+	session *GroukSession
+	shared  []byte // shared secret برای ساختن authKey
+}
+
 type GroukListener struct {
-	conn     *net.UDPConn
-	psk      []byte
-	sessions sync.Map // map[uint32]*GroukSession
-	acceptCh chan *GroukSession
-	closeCh  chan struct{}
+	conn        *net.UDPConn
+	psk         []byte
+	sessions    sync.Map // map[uint32]*GroukSession — session‌های تأیید شده
+	pendingAuth sync.Map // map[uint32]*pendingSession — در انتظار auth
+	acceptCh    chan *GroukSession
+	closeCh     chan struct{}
 }
 
 func GroukListen(addr string, psk []byte) (*GroukListener, error) {
@@ -748,7 +792,6 @@ func GroukListen(addr string, psk []byte) (*GroukListener, error) {
 		return nil, err
 	}
 
-	// بافر بزرگ‌تر
 	conn.SetReadBuffer(4 * 1024 * 1024)
 	conn.SetWriteBuffer(4 * 1024 * 1024)
 
@@ -760,6 +803,7 @@ func GroukListen(addr string, psk []byte) (*GroukListener, error) {
 	}
 
 	go gl.readLoop()
+	go gl.cleanupPending()
 
 	return gl, nil
 }
@@ -779,50 +823,91 @@ func (gl *GroukListener) readLoop() {
 			continue
 		}
 
-		pkt, err := unmarshalGroukPacket(buf[:n])
+		pkt, err := UnmarshalGroukPacket(buf[:n])
 		if err != nil {
 			continue
 		}
 
+		// ═══ Handshake Init — session جدید ═══
 		if pkt.SessionID == 0 && pkt.Type == groukTypeHandshakeInit {
 			go gl.handleHandshake(pkt, remote)
 			continue
 		}
 
-		// پیدا کردن session
-		if val, ok := gl.sessions.Load(pkt.SessionID); ok {
-			session := val.(*GroukSession)
+		// ═══ Handshake Auth — تأیید PSK ═══
+		if pkt.Type == groukTypeHandshakeAuth {
+			if val, ok := gl.pendingAuth.Load(pkt.SessionID); ok {
+				pending := val.(*pendingSession)
 
-			// Auth packet
-			if pkt.Type == groukTypeHandshakeAuth {
-				if err := GroukServerVerifyAuth(session, pkt.Payload); err != nil {
+				if err := GroukServerVerifyAuth(pending.session, pkt.Payload, pending.shared, gl.psk); err != nil {
 					log.Printf("[grouk] auth failed from %s: %v", remote, err)
-					gl.sessions.Delete(pkt.SessionID)
-					session.Close()
+					gl.pendingAuth.Delete(pkt.SessionID)
+					pending.session.Close()
 					continue
 				}
-				log.Printf("[grouk] authenticated: %s ✅", remote)
+
+				// ✅ Auth OK → انتقال از pending به active
+				log.Printf("[grouk] authenticated: %s ✅ (session %d)", remote, pkt.SessionID)
+				gl.sessions.Store(pkt.SessionID, pending.session)
+				gl.pendingAuth.Delete(pkt.SessionID)
+
 				select {
-				case gl.acceptCh <- session:
+				case gl.acceptCh <- pending.session:
 				case <-gl.closeCh:
 				}
-				continue
 			}
+			continue
+		}
 
+		// ═══ Data packets — session فعال ═══
+		if val, ok := gl.sessions.Load(pkt.SessionID); ok {
+			session := val.(*GroukSession)
 			session.handlePacket(pkt)
 		}
 	}
 }
 
 func (gl *GroukListener) handleHandshake(pkt *GroukPacket, remote *net.UDPAddr) {
-	session, err := GroukServerHandshake(gl.conn, pkt, remote, gl.psk)
+	// ✅ shared secret رو هم می‌گیره
+	session, shared, err := GroukServerHandshake(gl.conn, pkt, remote, gl.psk)
 	if err != nil {
 		log.Printf("[grouk] handshake failed from %s: %v", remote, err)
 		return
 	}
 
-	gl.sessions.Store(session.ID, session)
+	// ذخیره در pending — منتظر auth packet
+	gl.pendingAuth.Store(session.ID, &pendingSession{
+		session: session,
+		shared:  shared,
+	})
+
 	log.Printf("[grouk] session %d created for %s (waiting for auth)", session.ID, remote)
+}
+
+// cleanupPending — حذف session‌هایی که auth نشدن بعد از timeout
+func (gl *GroukListener) cleanupPending() {
+	ticker := time.NewTicker(30 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-gl.closeCh:
+			return
+		case <-ticker.C:
+			now := time.Now().UnixMilli()
+			gl.pendingAuth.Range(func(key, val any) bool {
+				pending := val.(*pendingSession)
+				lastActive := pending.session.lastActive.Load()
+				// ۳۰ ثانیه بدون auth → حذف
+				if now-lastActive > 30000 {
+					log.Printf("[grouk] pending session %d timed out", key)
+					gl.pendingAuth.Delete(key)
+					pending.session.Close()
+				}
+				return true
+			})
+		}
+	}
 }
 
 // Accept — پذیرش session تأیید شده
