@@ -16,6 +16,7 @@ import (
 
 const maxEncryptedSize = 1024 * 1024
 
+// ✅ FIX C1: دو cipher جدا
 type SecureConn struct {
 	raw         net.Conn
 	sendCipher  *crypto.AEADCipher
@@ -26,13 +27,9 @@ type SecureConn struct {
 	lastRecvSeq atomic.Uint32
 }
 
-// HandshakeConfig تنظیمات امنیتی هندشیک
 type HandshakeConfig struct {
-	PSK []byte // کلید از پیش مشترک - اجباری برای امنیت
+	PSK []byte
 }
-
-// ✅ FIX C1: دو کلید جدا
-// فقط تابع Handshake تغییر می‌کنه
 
 func Handshake(raw net.Conn, isServer bool, cfg *HandshakeConfig) (*SecureConn, error) {
 	if cfg == nil {
@@ -73,7 +70,6 @@ func Handshake(raw net.Conn, isServer bool, cfg *HandshakeConfig) (*SecureConn, 
 	}
 
 	// ✅ FIX C1: دو کلید جدا برای هر جهت
-	// جلوگیری از مشکل nonce reuse بین client و server
 	sendInfo := "guarch-client-send-v1"
 	recvInfo := "guarch-server-send-v1"
 	if isServer {
@@ -91,7 +87,6 @@ func Handshake(raw net.Conn, isServer bool, cfg *HandshakeConfig) (*SecureConn, 
 		return nil, fmt.Errorf("guarch: recv key: %w", err)
 	}
 
-	// ✅ FIX C1: یک کلید مشترک هم برای auth لازمه
 	authKey, err := crypto.DeriveKey(sharedRaw, cfg.PSK, []byte("guarch-auth-v1"))
 	if err != nil {
 		return nil, fmt.Errorf("guarch: auth key: %w", err)
@@ -124,10 +119,8 @@ func Handshake(raw net.Conn, isServer bool, cfg *HandshakeConfig) (*SecureConn, 
 	return sc, nil
 }
 
-// احراز هویت متقابل با HMAC
 func (sc *SecureConn) authenticate(isServer bool, key []byte) error {
 	if isServer {
-		// خواندن تأیید کلاینت
 		authData, err := sc.Recv()
 		if err != nil {
 			return fmt.Errorf("guarch: auth read: %w", err)
@@ -136,17 +129,14 @@ func (sc *SecureConn) authenticate(isServer bool, key []byte) error {
 		if !hmac.Equal(authData, expected) {
 			return protocol.ErrAuthFailed
 		}
-		// ارسال تأیید سرور
 		serverAuth := computeAuthMAC(key, "server")
 		return sc.Send(serverAuth)
 	}
 
-	// ارسال تأیید کلاینت
 	clientAuth := computeAuthMAC(key, "client")
 	if err := sc.Send(clientAuth); err != nil {
 		return err
 	}
-	// خواندن تأیید سرور
 	authData, err := sc.Recv()
 	if err != nil {
 		return fmt.Errorf("guarch: auth read: %w", err)
@@ -170,7 +160,6 @@ func (sc *SecureConn) sendRaw(pkt *protocol.Packet) error {
 		return err
 	}
 
-	// ✅ استفاده از sendCipher
 	encrypted, err := sc.sendCipher.Seal(data)
 	if err != nil {
 		return err
@@ -223,7 +212,6 @@ func (sc *SecureConn) RecvPacket() (*protocol.Packet, error) {
 		return nil, err
 	}
 
-	// ✅ استفاده از recvCipher
 	data, err := sc.recvCipher.Open(encrypted)
 	if err != nil {
 		return nil, err
@@ -234,7 +222,6 @@ func (sc *SecureConn) RecvPacket() (*protocol.Packet, error) {
 		return nil, err
 	}
 
-	// محافظت در برابر Replay
 	if pkt.Type == protocol.PacketTypeData && pkt.SeqNum > 0 {
 		lastSeq := sc.lastRecvSeq.Load()
 		if pkt.SeqNum <= lastSeq {
