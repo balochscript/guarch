@@ -18,7 +18,8 @@ const maxEncryptedSize = 1024 * 1024
 
 type SecureConn struct {
 	raw         net.Conn
-	cipher      *crypto.AEADCipher
+	sendCipher  *crypto.AEADCipher
+	recvCipher  *crypto.AEADCipher
 	sendSeq     uint32
 	sendMu      sync.Mutex
 	recvMu      sync.Mutex
@@ -169,7 +170,8 @@ func (sc *SecureConn) sendRaw(pkt *protocol.Packet) error {
 		return err
 	}
 
-	encrypted, err := sc.cipher.Seal(data)
+	// ✅ استفاده از sendCipher
+	encrypted, err := sc.sendCipher.Seal(data)
 	if err != nil {
 		return err
 	}
@@ -221,7 +223,8 @@ func (sc *SecureConn) RecvPacket() (*protocol.Packet, error) {
 		return nil, err
 	}
 
-	data, err := sc.cipher.Open(encrypted)
+	// ✅ استفاده از recvCipher
+	data, err := sc.recvCipher.Open(encrypted)
 	if err != nil {
 		return nil, err
 	}
