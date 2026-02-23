@@ -20,7 +20,7 @@ const (
 	cmdPing  byte = 0x04
 	cmdPong  byte = 0x05
 
-	muxHeaderSize = 5 // cmd(1) + streamID(4)
+	muxHeaderSize = 5
 )
 
 // ═══════════════════════════════════════
@@ -29,7 +29,7 @@ const (
 
 type Mux struct {
 	sc        *transport.SecureConn
-	streams   sync.Map // map[uint32]*Stream
+	streams   sync.Map
 	nextID    atomic.Uint32
 	acceptCh  chan *Stream
 	closeCh   chan struct{}
@@ -48,7 +48,6 @@ func NewMux(sc *transport.SecureConn) *Mux {
 	return m
 }
 
-// readLoop — تنها goroutine خواننده
 func (m *Mux) readLoop() {
 	defer m.Close()
 
@@ -84,11 +83,16 @@ func (m *Mux) readLoop() {
 				if !s.closed.Load() {
 					p := make([]byte, len(payload))
 					copy(p, payload)
+					// ✅ FIX A1: بدون default — blocking select
+					// اگه بافر پره، منتظر می‌مونه تا جا باز بشه
+					// یا stream بسته بشه یا mux بسته بشه
 					select {
 					case s.readCh <- p:
 					case <-s.doneCh:
-					default:
-						log.Printf("[mux] stream %d buffer full", streamID)
+						// stream بسته شده — داده رو دور بریز
+					case <-m.closeCh:
+						// mux بسته شده
+						return
 					}
 				}
 			}
@@ -105,21 +109,21 @@ func (m *Mux) readLoop() {
 			m.sendFrame(cmdPong, 0, nil)
 
 		case cmdPong:
-			// OK — اتصال زنده است
+			// OK
 		}
 	}
 }
 
-// keepAlive — ارسال Ping دوره‌ای
+// ✅ FIX C2: keepAlive تصادفی (۲۵-۳۵ ثانیه به جای ۳۰ ثابت)
 func (m *Mux) keepAlive() {
-	ticker := time.NewTicker(30 * time.Second)
-	defer ticker.Stop()
-
 	for {
+		// فاصله‌ی تصادفی بین ۲۵ تا ۳۵ ثانیه
+		jitter := time.Duration(randomMuxInt(25000, 35000)) * time.Millisecond
+
 		select {
 		case <-m.closeCh:
 			return
-		case <-ticker.C:
+		case <-time.After(jitter):
 			if err := m.sendFrame(cmdPing, 0, nil); err != nil {
 				return
 			}
@@ -127,7 +131,6 @@ func (m *Mux) keepAlive() {
 	}
 }
 
-// sendFrame — ارسال فریم مالتی‌پلکس
 func (m *Mux) sendFrame(cmd byte, streamID uint32, payload []byte) error {
 	m.sendMu.Lock()
 	defer m.sendMu.Unlock()
@@ -142,7 +145,6 @@ func (m *Mux) sendFrame(cmd byte, streamID uint32, payload []byte) error {
 	return m.sc.Send(frame)
 }
 
-// OpenStream — باز کردن استریم جدید (سمت کلاینت)
 func (m *Mux) OpenStream() (*Stream, error) {
 	select {
 	case <-m.closeCh:
@@ -163,7 +165,6 @@ func (m *Mux) OpenStream() (*Stream, error) {
 	return s, nil
 }
 
-// AcceptStream — پذیرش استریم (سمت سرور)
 func (m *Mux) AcceptStream() (*Stream, error) {
 	select {
 	case s, ok := <-m.acceptCh:
@@ -176,7 +177,6 @@ func (m *Mux) AcceptStream() (*Stream, error) {
 	}
 }
 
-// Close — بستن مالتی‌پلکسر
 func (m *Mux) Close() error {
 	m.closeOnce.Do(func() {
 		close(m.closeCh)
@@ -191,7 +191,6 @@ func (m *Mux) Close() error {
 	return nil
 }
 
-// IsClosed — آیا مالتی‌پلکسر بسته شده؟
 func (m *Mux) IsClosed() bool {
 	select {
 	case <-m.closeCh:
@@ -202,16 +201,16 @@ func (m *Mux) IsClosed() bool {
 }
 
 // ═══════════════════════════════════════
-// Stream — یک استریم مالتی‌پلکس شده
+// Stream
 // ═══════════════════════════════════════
 
 type Stream struct {
-	id      uint32
-	mux     *Mux
-	readCh  chan []byte
-	readBuf []byte // بافر خواندن ناقص
-	doneCh  chan struct{}
-	closed  atomic.Bool
+	id       uint32
+	mux      *Mux
+	readCh   chan []byte
+	readBuf  []byte
+	doneCh   chan struct{}
+	closed   atomic.Bool
 	doneOnce sync.Once
 }
 
@@ -219,21 +218,20 @@ func newStream(id uint32, m *Mux) *Stream {
 	return &Stream{
 		id:     id,
 		mux:    m,
-		readCh: make(chan []byte, 64),
+		// ✅ بافر بزرگ‌تر: ۲۵۶ به جای ۶۴
+		// فشار بیشتری رو تحمل می‌کنه قبل از block شدن
+		readCh: make(chan []byte, 256),
 		doneCh: make(chan struct{}),
 	}
 }
 
-// Read — خواندن از استریم (io.Reader)
 func (s *Stream) Read(p []byte) (int, error) {
-	// اول بافر قبلی رو خالی کن
 	if len(s.readBuf) > 0 {
 		n := copy(p, s.readBuf)
 		s.readBuf = s.readBuf[n:]
 		return n, nil
 	}
 
-	// منتظر داده جدید
 	select {
 	case data, ok := <-s.readCh:
 		if !ok {
@@ -241,7 +239,6 @@ func (s *Stream) Read(p []byte) (int, error) {
 		}
 		n := copy(p, data)
 		if n < len(data) {
-			// باقیمانده رو بافر کن
 			s.readBuf = make([]byte, len(data)-n)
 			copy(s.readBuf, data[n:])
 		}
@@ -251,13 +248,11 @@ func (s *Stream) Read(p []byte) (int, error) {
 	}
 }
 
-// Write — نوشتن به استریم (io.Writer)
 func (s *Stream) Write(p []byte) (int, error) {
 	if s.closed.Load() {
 		return 0, io.ErrClosedPipe
 	}
 
-	// تکه‌تکه ارسال کن اگه خیلی بزرگه
 	const maxChunk = 32768
 	sent := 0
 
@@ -276,13 +271,11 @@ func (s *Stream) Write(p []byte) (int, error) {
 	return sent, nil
 }
 
-// Close — بستن استریم
 func (s *Stream) Close() error {
 	if s.closed.Swap(true) {
-		return nil // قبلاً بسته شده
+		return nil
 	}
 
-	// به طرف مقابل اطلاع بده
 	s.mux.sendFrame(cmdClose, s.id, nil)
 	s.mux.streams.Delete(s.id)
 	s.markClosed()
@@ -290,7 +283,6 @@ func (s *Stream) Close() error {
 	return nil
 }
 
-// markClosed — علامت‌گذاری داخلی بسته شدن
 func (s *Stream) markClosed() {
 	s.closed.Store(true)
 	s.doneOnce.Do(func() {
@@ -303,13 +295,12 @@ func (s *Stream) ID() uint32 {
 }
 
 // ═══════════════════════════════════════
-// RelayStream — ریله بین استریم و اتصال TCP
+// RelayStream
 // ═══════════════════════════════════════
 
 func RelayStream(stream *Stream, conn net.Conn) {
 	ch := make(chan error, 2)
 
-	// conn → stream
 	go func() {
 		buf := make([]byte, 32768)
 		for {
@@ -327,7 +318,6 @@ func RelayStream(stream *Stream, conn net.Conn) {
 		}
 	}()
 
-	// stream → conn
 	go func() {
 		buf := make([]byte, 32768)
 		for {
@@ -348,4 +338,21 @@ func RelayStream(stream *Stream, conn net.Conn) {
 	<-ch
 	stream.Close()
 	conn.Close()
+}
+
+// ═══════════════════════════════════════
+// Helper
+// ═══════════════════════════════════════
+
+// ✅ تصادفی برای jitter — بدون نیاز به crypto/rand
+// (اینجا امنیت مهم نیست، فقط تصادفی بودن تایمینگ)
+func randomMuxInt(min, max int) int {
+	if max <= min {
+		return min
+	}
+	// از time.Now().UnixNano() به عنوان seed ساده
+	// برای jitter کافیه — نیازی به crypto/rand نیست
+	n := time.Now().UnixNano()
+	diff := int64(max - min)
+	return min + int(n%diff)
 }
