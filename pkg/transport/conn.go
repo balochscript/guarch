@@ -30,7 +30,9 @@ type HandshakeConfig struct {
 	PSK []byte // کلید از پیش مشترک - اجباری برای امنیت
 }
 
-// Handshake هندشیک امن با PSK
+// ✅ FIX C1: دو کلید جدا
+// فقط تابع Handshake تغییر می‌کنه
+
 func Handshake(raw net.Conn, isServer bool, cfg *HandshakeConfig) (*SecureConn, error) {
 	if cfg == nil {
 		cfg = &HandshakeConfig{}
@@ -69,25 +71,51 @@ func Handshake(raw net.Conn, isServer bool, cfg *HandshakeConfig) (*SecureConn, 
 		return nil, fmt.Errorf("guarch: shared secret: %w", err)
 	}
 
-	// ۴. استخراج کلید با HKDF + PSK
-	sharedKey, err := crypto.DeriveKey(
-		sharedRaw, cfg.PSK, []byte("guarch-session-v1"),
-	)
-	if err != nil {
-		return nil, fmt.Errorf("guarch: key derivation: %w", err)
+	// ✅ FIX C1: دو کلید جدا برای هر جهت
+	// جلوگیری از مشکل nonce reuse بین client و server
+	sendInfo := "guarch-client-send-v1"
+	recvInfo := "guarch-server-send-v1"
+	if isServer {
+		sendInfo = "guarch-server-send-v1"
+		recvInfo = "guarch-client-send-v1"
 	}
 
-	// ۵. ساخت رمزنگار
-	c, err := crypto.NewAEADCipher(sharedKey)
+	sendKey, err := crypto.DeriveKey(sharedRaw, cfg.PSK, []byte(sendInfo))
 	if err != nil {
-		return nil, fmt.Errorf("guarch: cipher: %w", err)
+		return nil, fmt.Errorf("guarch: send key: %w", err)
 	}
 
-	sc := &SecureConn{raw: raw, cipher: c}
+	recvKey, err := crypto.DeriveKey(sharedRaw, cfg.PSK, []byte(recvInfo))
+	if err != nil {
+		return nil, fmt.Errorf("guarch: recv key: %w", err)
+	}
+
+	// ✅ FIX C1: یک کلید مشترک هم برای auth لازمه
+	authKey, err := crypto.DeriveKey(sharedRaw, cfg.PSK, []byte("guarch-auth-v1"))
+	if err != nil {
+		return nil, fmt.Errorf("guarch: auth key: %w", err)
+	}
+
+	// ۵. ساخت رمزنگارها
+	sendCipher, err := crypto.NewAEADCipher(sendKey)
+	if err != nil {
+		return nil, fmt.Errorf("guarch: send cipher: %w", err)
+	}
+
+	recvCipher, err := crypto.NewAEADCipher(recvKey)
+	if err != nil {
+		return nil, fmt.Errorf("guarch: recv cipher: %w", err)
+	}
+
+	sc := &SecureConn{
+		raw:        raw,
+		sendCipher: sendCipher,
+		recvCipher: recvCipher,
+	}
 
 	// ۶. احراز هویت متقابل
 	if len(cfg.PSK) > 0 {
-		if err := sc.authenticate(isServer, sharedKey); err != nil {
+		if err := sc.authenticate(isServer, authKey); err != nil {
 			return nil, err
 		}
 	}
