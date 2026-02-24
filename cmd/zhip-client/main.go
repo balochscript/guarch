@@ -11,9 +11,11 @@ import (
 	"os"
 	"os/signal"
 	"sync"
+	"time"
 
 	"github.com/quic-go/quic-go"
 
+	"guarch/cmd/internal/cmdutil"
 	"guarch/pkg/cover"
 	"guarch/pkg/protocol"
 	"guarch/pkg/socks5"
@@ -27,8 +29,9 @@ type ZhipClient struct {
 	coverMgr   *cover.Manager
 	adaptive   *cover.AdaptiveCover
 
-	mu         sync.Mutex
-	activeConn quic.Connection
+	mu             sync.Mutex
+	activeConn     quic.Connection
+	connectBackoff time.Duration // ✅ M26
 }
 
 func main() {
@@ -58,7 +61,6 @@ func main() {
 		coverCfg := cover.ConfigForMode(cover.ModeBalanced)
 		coverMgr = cover.NewManager(coverCfg, adaptive)
 		coverMgr.Start(ctx)
-		log.Println("[zhip] cover traffic started (balanced)")
 	}
 
 	client := &ZhipClient{
@@ -83,14 +85,6 @@ func main() {
 	fmt.Println("")
 	log.Printf("[zhip] ⚡ client ready on socks5://%s", *listenAddr)
 	log.Printf("[zhip] server: %s (QUIC/UDP)", *serverAddr)
-	if *certPin != "" {
-		pinDisplay := *certPin
-		if len(pinDisplay) > 16 {
-			pinDisplay = pinDisplay[:16]
-		}
-		log.Printf("[zhip] certificate pin: %s...", pinDisplay)
-	}
-	log.Println("[zhip] fast as a blink ⚡")
 
 	go func() {
 		for {
@@ -117,6 +111,7 @@ func main() {
 	client.close()
 }
 
+// ✅ M26: backoff
 func (c *ZhipClient) getOrCreateConn(ctx context.Context) (quic.Connection, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -124,19 +119,33 @@ func (c *ZhipClient) getOrCreateConn(ctx context.Context) (quic.Connection, erro
 	if c.activeConn != nil {
 		select {
 		case <-c.activeConn.Context().Done():
-			log.Println("[zhip] connection dead, reconnecting...")
 			c.activeConn = nil
 		default:
+			c.connectBackoff = 0
 			return c.activeConn, nil
 		}
+	}
+
+	if c.connectBackoff > 0 {
+		log.Printf("[zhip] reconnect backoff: %v", c.connectBackoff)
+		time.Sleep(c.connectBackoff)
 	}
 
 	log.Println("[zhip] connecting to server...")
 	conn, err := c.connect(ctx)
 	if err != nil {
+		if c.connectBackoff == 0 {
+			c.connectBackoff = 1 * time.Second
+		} else {
+			c.connectBackoff *= 2
+			if c.connectBackoff > 30*time.Second {
+				c.connectBackoff = 30 * time.Second
+			}
+		}
 		return nil, err
 	}
 	c.activeConn = conn
+	c.connectBackoff = 0
 	log.Println("[zhip] connected ✅")
 	return conn, nil
 }
@@ -166,7 +175,6 @@ func (c *ZhipClient) handleSOCKS(socksConn net.Conn, ctx context.Context) {
 
 	target, err := socks5.Handshake(socksConn)
 	if err != nil {
-		log.Printf("[socks5] %v", err)
 		return
 	}
 
@@ -178,48 +186,40 @@ func (c *ZhipClient) handleSOCKS(socksConn net.Conn, ctx context.Context) {
 
 	conn, err := c.getOrCreateConn(ctx)
 	if err != nil {
-		log.Printf("[zhip] connection failed: %v", err)
 		socks5.SendReply(socksConn, 0x01)
 		return
 	}
 
 	stream, err := conn.OpenStreamSync(ctx)
 	if err != nil {
-		log.Printf("[zhip] open stream failed: %v, reconnecting...", err)
 		c.mu.Lock()
 		c.activeConn = nil
 		c.mu.Unlock()
 
 		conn, err = c.getOrCreateConn(ctx)
 		if err != nil {
-			log.Printf("[zhip] reconnect failed: %v", err)
 			socks5.SendReply(socksConn, 0x01)
 			return
 		}
 		stream, err = conn.OpenStreamSync(ctx)
 		if err != nil {
-			log.Printf("[zhip] stream failed after reconnect: %v", err)
 			socks5.SendReply(socksConn, 0x01)
 			return
 		}
 	}
 
-	host, portStr, _ := net.SplitHostPort(target)
-	port := parsePort(portStr)
-
-	addrType := protocol.AddrTypeDomain
-	if ip := net.ParseIP(host); ip != nil {
-		if ip.To4() != nil {
-			addrType = protocol.AddrTypeIPv4
-		} else {
-			addrType = protocol.AddrTypeIPv6
-		}
+	// ✅ M25 + M27
+	host, port, addrType, err := cmdutil.SplitTarget(target)
+	if err != nil {
+		log.Printf("[zhip] %v", err)
+		stream.Close()
+		socks5.SendReply(socksConn, 0x01)
+		return
 	}
 
 	req := &protocol.ConnectRequest{AddrType: addrType, Addr: host, Port: port}
 	reqData, err := req.Marshal()
 	if err != nil {
-		log.Printf("[zhip] marshal error: %v", err)
 		stream.Close()
 		socks5.SendReply(socksConn, 0x01)
 		return
@@ -247,7 +247,6 @@ func (c *ZhipClient) handleSOCKS(socksConn net.Conn, ctx context.Context) {
 	}
 
 	if statusBuf[0] != protocol.ConnectSuccess {
-		log.Printf("[zhip] connect failed: %s", target)
 		stream.Close()
 		socks5.SendReply(socksConn, 0x05)
 		return
@@ -307,18 +306,5 @@ func (c *ZhipClient) relay(stream quic.Stream, conn net.Conn) {
 	stream.CancelRead(0)
 	stream.CancelWrite(0)
 	conn.Close()
-}
-
-// ✅ H32: parsePort با بررسی overflow
-func parsePort(s string) uint16 {
-	var port int
-	for _, c := range s {
-		if c >= '0' && c <= '9' {
-			port = port*10 + int(c-'0')
-			if port > 65535 {
-				return 0
-			}
-		}
-	}
-	return uint16(port)
+	<-ch // ✅ M19
 }
