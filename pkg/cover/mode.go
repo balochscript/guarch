@@ -1,21 +1,15 @@
 package cover
 
-import "time"
+import (
+	"log"
+	"time"
+)
 
-// Mode — حالت عملکرد پروتکل
 type Mode int
 
 const (
-	// ModeStealth — حداکثر مخفی‌سازی، حجم بالاتر
-	// مناسب برای سانسور شدید
 	ModeStealth Mode = iota
-
-	// ModeBalanced — تعادل بین سرعت و مخفی‌سازی
-	// مناسب برای استفاده‌ی روزمره
 	ModeBalanced
-
-	// ModeFast — حداکثر سرعت، حداقل سربار
-	// مناسب برای استریم و دانلود
 	ModeFast
 )
 
@@ -32,7 +26,9 @@ func (m Mode) String() string {
 	}
 }
 
-// ParseMode — تبدیل رشته به Mode
+// ✅ L10: ParseMode حالا warning لاگ میکنه
+// قبلاً: silent fallback بدون هشدار → typo نامشخص
+// الان: warning + fallback
 func ParseMode(s string) Mode {
 	switch s {
 	case "stealth":
@@ -42,11 +38,13 @@ func ParseMode(s string) Mode {
 	case "fast":
 		return ModeFast
 	default:
+		if s != "" {
+			log.Printf("[mode] ⚠️  unknown mode %q, using 'balanced'", s)
+		}
 		return ModeBalanced
 	}
 }
 
-// ModeConfig — تنظیمات هر حالت
 type ModeConfig struct {
 	Mode             Mode
 	CoverEnabled     bool
@@ -59,14 +57,13 @@ type ModeConfig struct {
 	IdleInterval     time.Duration
 }
 
-// GetModeConfig — تنظیمات بر اساس حالت
 func GetModeConfig(mode Mode) *ModeConfig {
 	switch mode {
 	case ModeStealth:
 		return &ModeConfig{
 			Mode:             ModeStealth,
 			CoverEnabled:     true,
-			CoverDomainCount: 6, // همه‌ی دامنه‌ها
+			CoverDomainCount: 6,
 			PaddingEnabled:   true,
 			MaxPadding:       1024,
 			ShapingEnabled:   true,
@@ -79,7 +76,7 @@ func GetModeConfig(mode Mode) *ModeConfig {
 		return &ModeConfig{
 			Mode:             ModeBalanced,
 			CoverEnabled:     true,
-			CoverDomainCount: 3, // فقط ۳ دامنه
+			CoverDomainCount: 3,
 			PaddingEnabled:   true,
 			MaxPadding:       256,
 			ShapingEnabled:   true,
@@ -104,7 +101,6 @@ func GetModeConfig(mode Mode) *ModeConfig {
 	}
 }
 
-// ConfigForMode — ساخت Cover Config بر اساس Mode
 func ConfigForMode(mode Mode) *Config {
 	mc := GetModeConfig(mode)
 
@@ -114,12 +110,10 @@ func ConfigForMode(mode Mode) *Config {
 
 	full := DefaultConfig()
 
-	// فقط تعداد مشخصی دامنه فعال بشه
 	if mc.CoverDomainCount < len(full.Domains) {
 		full.Domains = full.Domains[:mc.CoverDomainCount]
 	}
 
-	// فواصل رو بر اساس mode تنظیم کن
 	if mode == ModeBalanced {
 		for i := range full.Domains {
 			full.Domains[i].MinInterval = full.Domains[i].MinInterval * 4
