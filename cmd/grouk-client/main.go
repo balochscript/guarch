@@ -42,16 +42,12 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	// ═══ UDP Connection ═══
 	udpServerAddr, err := net.ResolveUDPAddr("udp", *serverAddr)
 	if err != nil {
 		log.Fatal("resolve:", err)
 	}
 
-	// ✅ C15: استفاده از ListenUDP به جای DialUDP
-	// قبلاً: net.DialUDP → connected socket → WriteToUDP = ERROR!
-	// الان: net.ListenUDP → unconnected socket → WriteToUDP = OK ✅
-	udpConn, err := net.ListenUDP("udp", nil) // ← پورت تصادفی محلی
+	udpConn, err := net.ListenUDP("udp", nil)
 	if err != nil {
 		log.Fatal("udp listen:", err)
 	}
@@ -65,7 +61,6 @@ func main() {
 		udpConn:    udpConn,
 	}
 
-	// ═══ SOCKS5 ═══
 	ln, err := net.Listen("tcp", *listenAddr)
 	if err != nil {
 		log.Fatal("listen:", err)
@@ -114,8 +109,6 @@ func (c *GroukClient) getOrCreateSession() (*transport.GroukSession, error) {
 	if c.session != nil && !c.session.IsClosed() {
 		return c.session, nil
 	}
-
-	// ✅ بستن session قبلی اگه هنوز بازه
 	if c.session != nil {
 		c.session.Close()
 		c.session = nil
@@ -135,7 +128,6 @@ func (c *GroukClient) getOrCreateSession() (*transport.GroukSession, error) {
 	return session, nil
 }
 
-// ✅ C15: readLoop با ReadFromUDP و فیلتر آدرس
 func (c *GroukClient) sessionReadLoop(session *transport.GroukSession) {
 	buf := make([]byte, 2048)
 	for {
@@ -143,7 +135,6 @@ func (c *GroukClient) sessionReadLoop(session *transport.GroukSession) {
 			return
 		}
 
-		// ✅ ReadFromUDP به جای Read (unconnected socket)
 		n, addr, err := c.udpConn.ReadFromUDP(buf)
 		if err != nil {
 			if session.IsClosed() {
@@ -152,12 +143,10 @@ func (c *GroukClient) sessionReadLoop(session *transport.GroukSession) {
 			continue
 		}
 
-		// ✅ فیلتر: فقط پکت‌های از سرور مورد نظر
 		if !addr.IP.Equal(c.serverAddr.IP) || addr.Port != c.serverAddr.Port {
 			continue
 		}
 
-		// ✅ L17: استفاده از UnmarshalGroukPacket به جای تکرار کد
 		pkt, err := transport.UnmarshalGroukPacket(buf[:n])
 		if err != nil {
 			continue
@@ -214,7 +203,6 @@ func (c *GroukClient) handleSOCKS(socksConn net.Conn) {
 		}
 	}
 
-	// ConnectRequest
 	host, portStr, _ := net.SplitHostPort(target)
 	port := parsePort(portStr)
 
@@ -228,8 +216,6 @@ func (c *GroukClient) handleSOCKS(socksConn net.Conn) {
 	}
 
 	req := &protocol.ConnectRequest{AddrType: addrType, Addr: host, Port: port}
-
-	// ✅ C6/C7: Marshal حالا error برمیگردونه
 	reqData, err := req.Marshal()
 	if err != nil {
 		log.Printf("[grouk] marshal error: %v", err)
@@ -241,7 +227,6 @@ func (c *GroukClient) handleSOCKS(socksConn net.Conn) {
 	lenBuf := make([]byte, 2)
 	binary.BigEndian.PutUint16(lenBuf, uint16(len(reqData)))
 
-	// ✅ H30: error ها چک میشن
 	if _, err := stream.Write(lenBuf); err != nil {
 		stream.Close()
 		socks5.SendReply(socksConn, 0x01)
@@ -282,12 +267,16 @@ func relay(stream *transport.GroukStream, conn net.Conn) {
 	conn.Close()
 }
 
+// ✅ H32: parsePort با بررسی overflow
 func parsePort(s string) uint16 {
-	var port uint16
+	var port int
 	for _, c := range s {
 		if c >= '0' && c <= '9' {
-			port = port*10 + uint16(c-'0')
+			port = port*10 + int(c-'0')
+			if port > 65535 {
+				return 0
+			}
 		}
 	}
-	return port
+	return uint16(port)
 }
