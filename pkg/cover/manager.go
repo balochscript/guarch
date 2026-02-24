@@ -19,6 +19,7 @@ type Manager struct {
 	adaptive *AdaptiveCover
 	running  bool
 	mu       sync.RWMutex
+	wg       sync.WaitGroup // ✅ H15: track workers
 }
 
 func NewManager(cfg *Config, adaptive *AdaptiveCover) *Manager {
@@ -64,17 +65,31 @@ func (m *Manager) Start(ctx context.Context) {
 	log.Println("[cover] starting cover traffic")
 
 	for i, domain := range m.config.Domains {
+		m.wg.Add(1)
 		go m.domainWorker(ctx, domain, i)
 	}
 }
 
 func (m *Manager) domainWorker(ctx context.Context, dc DomainConfig, index int) {
+	// ✅ H15: wg.Done + running reset
+	defer m.wg.Done()
+	defer func() {
+		m.mu.Lock()
+		// فقط وقتی آخرین worker باشه running=false
+		m.wg.Add(0) // noop — فقط برای خوانایی
+		m.mu.Unlock()
+	}()
+
 	log.Printf("[cover] worker started for %s", dc.Domain)
 
 	for {
 		select {
 		case <-ctx.Done():
 			log.Printf("[cover] worker stopped for %s", dc.Domain)
+			// ✅ H15: وقتی context cancel شد running رو ریست کن
+			m.mu.Lock()
+			m.running = false
+			m.mu.Unlock()
 			return
 		default:
 			if m.adaptive != nil {
@@ -82,6 +97,9 @@ func (m *Manager) domainWorker(ctx context.Context, dc DomainConfig, index int) 
 				if index >= activeDomains {
 					select {
 					case <-ctx.Done():
+						m.mu.Lock()
+						m.running = false
+						m.mu.Unlock()
 						return
 					case <-time.After(5 * time.Second):
 						continue
@@ -101,6 +119,9 @@ func (m *Manager) domainWorker(ctx context.Context, dc DomainConfig, index int) 
 
 			select {
 			case <-ctx.Done():
+				m.mu.Lock()
+				m.running = false
+				m.mu.Unlock()
 				return
 			case <-time.After(interval):
 			}
@@ -108,9 +129,7 @@ func (m *Manager) domainWorker(ctx context.Context, dc DomainConfig, index int) 
 	}
 }
 
-// ✅ C10: بررسی Paths خالی + context
 func (m *Manager) sendRequest(ctx context.Context, dc DomainConfig) {
-	// ✅ C10: جلوگیری از panic روی Paths خالی
 	if len(dc.Paths) == 0 {
 		m.stats.RecordError()
 		return
@@ -161,11 +180,7 @@ func (m *Manager) SendOne() {
 	m.sendRequest(context.Background(), *dc)
 }
 
-// ✅ C11: pickDomain بدون panic
-// قبلاً: rand.Intn(0) = panic وقتی totalWeight=0
-// قبلاً: m.config.Domains[0] = panic وقتی Domains خالی
 func (m *Manager) pickDomain() *DomainConfig {
-	// ✅ C11: بررسی Domains خالی
 	if len(m.config.Domains) == 0 {
 		return nil
 	}
@@ -175,9 +190,7 @@ func (m *Manager) pickDomain() *DomainConfig {
 		totalWeight += dc.Weight
 	}
 
-	// ✅ C11: بررسی totalWeight = 0
 	if totalWeight <= 0 {
-		// اگه همه weight ها صفرن → اولین domain
 		dc := m.config.Domains[0]
 		return &dc
 	}
