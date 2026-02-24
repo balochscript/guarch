@@ -12,6 +12,9 @@ type ProbeDetector struct {
 	attempts map[string][]time.Time
 	maxRate  int
 	window   time.Duration
+	// ✅ H31: done channel
+	doneCh   chan struct{}
+	doneOnce sync.Once
 }
 
 func NewProbeDetector(maxRate int, window time.Duration) *ProbeDetector {
@@ -19,6 +22,7 @@ func NewProbeDetector(maxRate int, window time.Duration) *ProbeDetector {
 		attempts: make(map[string][]time.Time),
 		maxRate:  maxRate,
 		window:   window,
+		doneCh:   make(chan struct{}), // ✅ H31
 	}
 	go pd.cleanup()
 	return pd
@@ -55,28 +59,41 @@ func (pd *ProbeDetector) Check(addr string) bool {
 	return false
 }
 
+// ✅ H31: cleanup حالا با doneCh متوقف میشه
 func (pd *ProbeDetector) cleanup() {
 	ticker := time.NewTicker(5 * time.Minute)
 	defer ticker.Stop()
 
-	for range ticker.C {
-		pd.mu.Lock()
-		cutoff := time.Now().Add(-pd.window * 2)
-		for ip, times := range pd.attempts {
-			valid := make([]time.Time, 0)
-			for _, t := range times {
-				if t.After(cutoff) {
-					valid = append(valid, t)
+	for {
+		select {
+		case <-pd.doneCh:
+			return
+		case <-ticker.C:
+			pd.mu.Lock()
+			cutoff := time.Now().Add(-pd.window * 2)
+			for ip, times := range pd.attempts {
+				valid := make([]time.Time, 0)
+				for _, t := range times {
+					if t.After(cutoff) {
+						valid = append(valid, t)
+					}
+				}
+				if len(valid) == 0 {
+					delete(pd.attempts, ip)
+				} else {
+					pd.attempts[ip] = valid
 				}
 			}
-			if len(valid) == 0 {
-				delete(pd.attempts, ip)
-			} else {
-				pd.attempts[ip] = valid
-			}
+			pd.mu.Unlock()
 		}
-		pd.mu.Unlock()
 	}
+}
+
+// ✅ H31: متد Close
+func (pd *ProbeDetector) Close() {
+	pd.doneOnce.Do(func() {
+		close(pd.doneCh)
+	})
 }
 
 func (pd *ProbeDetector) AttemptCount(addr string) int {
