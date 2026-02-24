@@ -38,6 +38,8 @@ var (
 	serverMode    cover.Mode
 )
 
+var maxConns = make(chan struct{}, 1000)
+
 func main() {
 	addr := flag.String("addr", ":8443", "listen address")
 	decoyAddr := flag.String("decoy", ":8080", "decoy web server")
@@ -113,20 +115,29 @@ func main() {
 	log.Println("")
 	log.Println("[guarch] ready to accept connections 🏹")
 
-	go func() {
-		for {
-			conn, err := ln.Accept()
-			if err != nil {
-				select {
-				case <-ctx.Done():
-					return
-				default:
-					continue
-				}
+go func() {
+	for {
+		conn, err := ln.Accept()
+		if err != nil {
+			select {
+			case <-ctx.Done():
+				return
+			default:
+				continue
 			}
-			go handleConn(conn)
 		}
-	}()
+		select {
+		case maxConns <- struct{}{}:
+			go func() {
+				defer func() { <-maxConns }()
+				handleConn(conn)
+			}()
+		default:
+			log.Printf("[guarch] connection limit reached, rejecting %s", conn.RemoteAddr())
+			conn.Close()
+		}
+	}
+}()
 
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, os.Interrupt)
