@@ -192,11 +192,11 @@ func handleConn(raw net.Conn) {
 			nil,
 			modeCfg.MaxPadding,
 		)
-		pm := mux.NewPaddedMux(sc, shaper)
+		pm := mux.NewPaddedMux(sc, shaper, true)
 		m = pm.Mux
 		defer pm.Close()
 	} else {
-		m = mux.NewMux(sc)
+		m = mux.NewMux(sc, true)
 		defer m.Close()
 	}
 
