@@ -1,12 +1,25 @@
 package antidetect
 
 import (
+	crand "crypto/rand"
 	"fmt"
 	"log"
-	"math/rand"
+	"math/big"
 	"net/http"
 	"time"
 )
+
+// ✅ M29: crypto/rand بجای math/rand
+func cryptoRandIntn(n int) int {
+	if n <= 0 {
+		return 0
+	}
+	val, err := crand.Int(crand.Reader, big.NewInt(int64(n)))
+	if err != nil {
+		return n / 2
+	}
+	return int(val.Int64())
+}
 
 type DecoyServer struct {
 	pages map[string]string
@@ -26,8 +39,9 @@ func NewDecoyServer() *DecoyServer {
 func (ds *DecoyServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	log.Printf("[decoy] %s %s from %s", r.Method, r.URL.Path, r.RemoteAddr)
 
-	// تأخیر واقع‌گرایانه
-	time.Sleep(time.Duration(rand.Intn(100)+50) * time.Millisecond)
+	// ✅ M29: crypto/rand for timing — non-predictable delay
+	delay := time.Duration(cryptoRandIntn(100)+50) * time.Millisecond
+	time.Sleep(delay)
 
 	w.Header().Set("Server", "nginx/1.24.0")
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -35,7 +49,8 @@ func (ds *DecoyServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("X-Frame-Options", "DENY")
 	w.Header().Set("Strict-Transport-Security", "max-age=31536000")
 	w.Header().Set("Cache-Control", "public, max-age=3600")
-	w.Header().Set("Date", time.Now().UTC().Format(http.TimeFormat))
+	// ✅ L18: Date header فقط یکبار (http.ResponseWriter خودش اضافه میکنه)
+	// حذف شد: w.Header().Set("Date", ...)
 
 	page, ok := ds.pages[r.URL.Path]
 	if !ok {
@@ -82,13 +97,13 @@ h1{color:#1a1a2e;font-size:2.2em;margin-bottom:10px}
 <div class="stats">
 <div class="stat"><div class="stat-num">%d+</div><div class="stat-label">Edge Locations</div></div>
 <div class="stat"><div class="stat-num">%d+</div><div class="stat-label">Countries</div></div>
-<div class="stat"><div class="stat-num">99.9%%</div><div class="stat-label">Uptime SLA</div></div>
+<div class="stat"><div class="stat-num">99.9%%%%</div><div class="stat-label">Uptime SLA</div></div>
 </div>
 </div>
 </div>
 <div class="footer">&copy; %d FastEdge CDN. All rights reserved.</div>
 </body>
-</html>`, rand.Intn(100)+150, rand.Intn(30)+40, time.Now().Year())
+</html>`, cryptoRandIntn(100)+150, cryptoRandIntn(30)+40, time.Now().Year())
 }
 
 func (ds *DecoyServer) generateAboutPage() string {
@@ -100,7 +115,7 @@ func (ds *DecoyServer) generateAboutPage() string {
 <p>Founded in 2018, FastEdge CDN delivers content to over %d million users daily across our global network.</p>
 <p>Our infrastructure is built on modern edge computing principles, ensuring your content reaches users with minimal latency.</p>
 <p><a href="/">← Back to Home</a></p>
-</div></body></html>`, rand.Intn(500)+100)
+</div></body></html>`, cryptoRandIntn(500)+100)
 }
 
 func (ds *DecoyServer) generateContactPage() string {
@@ -122,12 +137,12 @@ func (ds *DecoyServer) generateBlogPage() string {
 <style>body{font-family:-apple-system,sans-serif;margin:40px;background:#f8f9fa}.c{max-width:800px;margin:0 auto;background:#fff;padding:40px;border-radius:12px;box-shadow:0 2px 8px rgba(0,0,0,0.08)}h1{color:#1a1a2e}h2{color:#333}p{color:#555;line-height:1.8}.post{border-bottom:1px solid #eee;padding:20px 0}.date{color:#999;font-size:14px}a{color:#4361ee}</style>
 </head><body><div class="c">
 <h1>Engineering Blog</h1>
-<div class="post"><h2>Optimizing TLS 1.3 Handshakes at Scale</h2><p class="date">%s</p><p>How we reduced connection setup time by 40%% across our edge network.</p></div>
+<div class="post"><h2>Optimizing TLS 1.3 Handshakes at Scale</h2><p class="date">%s</p><p>How we reduced connection setup time by 40%%%% across our edge network.</p></div>
 <div class="post"><h2>Building a Global Anycast Network</h2><p class="date">%s</p><p>Lessons learned from deploying across 200+ locations worldwide.</p></div>
 <p><a href="/">← Back to Home</a></p>
 </div></body></html>`,
-		time.Now().AddDate(0, 0, -rand.Intn(14)).Format("January 2, 2006"),
-		time.Now().AddDate(0, 0, -rand.Intn(30)-14).Format("January 2, 2006"),
+		time.Now().AddDate(0, 0, -cryptoRandIntn(14)).Format("January 2, 2006"),
+		time.Now().AddDate(0, 0, -cryptoRandIntn(30)-14).Format("January 2, 2006"),
 	)
 }
 
