@@ -17,11 +17,12 @@ type PaddedMux struct {
 	cancel context.CancelFunc
 }
 
-func NewPaddedMux(sc *transport.SecureConn, shaper *cover.Shaper) *PaddedMux {
+// ✅ C14: isServer اضافه شد
+func NewPaddedMux(sc *transport.SecureConn, shaper *cover.Shaper, isServer bool) *PaddedMux {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	pm := &PaddedMux{
-		Mux:    NewMux(sc),
+		Mux:    NewMux(sc, isServer),
 		shaper: shaper,
 		ctx:    ctx,
 		cancel: cancel,
@@ -34,9 +35,6 @@ func NewPaddedMux(sc *transport.SecureConn, shaper *cover.Shaper) *PaddedMux {
 	return pm
 }
 
-// ✅ C12: paddingLoop اصلاح شده
-// قبلاً: default → اولین iteration بدون تأخیر + time.After leak
-// الان: time.NewTimer + cleanup + همیشه تأخیر
 func (pm *PaddedMux) paddingLoop() {
 	for {
 		delay := pm.shaper.IdleDelay()
