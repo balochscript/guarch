@@ -23,10 +23,6 @@ import (
 	"guarch/pkg/transport"
 )
 
-// ═══════════════════════════════════════
-// Zhip Client
-// ═══════════════════════════════════════
-
 type ZhipClient struct {
 	serverAddr string
 	certPin    string
@@ -56,7 +52,6 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	// ═══ Cover Traffic (balanced — adaptive) ═══
 	var coverMgr *cover.Manager
 	var adaptive *cover.AdaptiveCover
 
@@ -69,7 +64,6 @@ func main() {
 		log.Println("[zhip] cover traffic started (balanced)")
 	}
 
-	// ═══ Client ═══
 	client := &ZhipClient{
 		serverAddr: *serverAddr,
 		certPin:    *certPin,
@@ -78,7 +72,6 @@ func main() {
 		adaptive:   adaptive,
 	}
 
-	// ═══ SOCKS5 Listener ═══
 	ln, err := net.Listen("tcp", *listenAddr)
 	if err != nil {
 		log.Fatal("listen:", err)
@@ -93,12 +86,18 @@ func main() {
 	fmt.Println("")
 	log.Printf("[zhip] ⚡ client ready on socks5://%s", *listenAddr)
 	log.Printf("[zhip] server: %s (QUIC/UDP)", *serverAddr)
+
+	// ✅ C16: نمایش امن pin
 	if *certPin != "" {
-		log.Printf("[zhip] certificate pin: %s...", (*certPin)[:16])
+		pinDisplay := *certPin
+		if len(pinDisplay) > 16 {
+			pinDisplay = pinDisplay[:16]
+		}
+		log.Printf("[zhip] certificate pin: %s...", pinDisplay)
 	}
+
 	log.Println("[zhip] fast as a blink ⚡")
 
-	// ═══ Accept SOCKS5 ═══
 	go func() {
 		for {
 			conn, err := ln.Accept()
@@ -114,7 +113,6 @@ func main() {
 		}
 	}()
 
-	// ═══ Graceful Shutdown ═══
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, os.Interrupt)
 	<-sigCh
@@ -125,17 +123,11 @@ func main() {
 	client.close()
 }
 
-// ═══════════════════════════════════════
-// Connection Management
-// ═══════════════════════════════════════
-
 func (c *ZhipClient) getOrCreateConn(ctx context.Context) (quic.Connection, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	// اتصال فعال و زنده؟
 	if c.activeConn != nil {
-		// بررسی زنده بودن — اگه context کنسل شده = مرده
 		select {
 		case <-c.activeConn.Context().Done():
 			log.Println("[zhip] connection dead, reconnecting...")
@@ -145,7 +137,6 @@ func (c *ZhipClient) getOrCreateConn(ctx context.Context) (quic.Connection, erro
 		}
 	}
 
-	// اتصال جدید
 	log.Println("[zhip] connecting to server...")
 
 	conn, err := c.connect(ctx)
@@ -159,13 +150,11 @@ func (c *ZhipClient) getOrCreateConn(ctx context.Context) (quic.Connection, erro
 }
 
 func (c *ZhipClient) connect(ctx context.Context) (quic.Connection, error) {
-	// ۱. QUIC Dial با Certificate Pinning
 	conn, err := transport.ZhipDial(ctx, c.serverAddr, c.certPin, nil)
 	if err != nil {
 		return nil, fmt.Errorf("zhip dial: %w", err)
 	}
 
-	// ۲. PSK Authentication (فقط ۱ roundtrip!)
 	if err := transport.ZhipClientAuth(conn, c.psk); err != nil {
 		conn.CloseWithError(0, "auth failed")
 		return nil, fmt.Errorf("zhip auth: %w", err)
@@ -182,14 +171,9 @@ func (c *ZhipClient) close() {
 	}
 }
 
-// ═══════════════════════════════════════
-// SOCKS5 Handler
-// ═══════════════════════════════════════
-
 func (c *ZhipClient) handleSOCKS(socksConn net.Conn, ctx context.Context) {
 	defer socksConn.Close()
 
-	// ۱. SOCKS5 Handshake
 	target, err := socks5.Handshake(socksConn)
 	if err != nil {
 		log.Printf("[socks5] %v", err)
@@ -198,12 +182,10 @@ func (c *ZhipClient) handleSOCKS(socksConn net.Conn, ctx context.Context) {
 
 	log.Printf("[zhip] → %s", target)
 
-	// ثبت ترافیک adaptive
 	if c.adaptive != nil {
 		c.adaptive.RecordTraffic(1)
 	}
 
-	// ۲. گرفتن QUIC Connection
 	conn, err := c.getOrCreateConn(ctx)
 	if err != nil {
 		log.Printf("[zhip] connection failed: %v", err)
@@ -211,14 +193,10 @@ func (c *ZhipClient) handleSOCKS(socksConn net.Conn, ctx context.Context) {
 		return
 	}
 
-	// ۳. باز کردن QUIC Stream
-	// اینجا خیلی سریعه — بدون handshake!
-	// QUIC stream باز کردن فقط یه فریم محلیه
 	stream, err := conn.OpenStreamSync(ctx)
 	if err != nil {
 		log.Printf("[zhip] open stream failed: %v, reconnecting...", err)
 
-		// Connection مرده — بازاتصال
 		c.mu.Lock()
 		c.activeConn = nil
 		c.mu.Unlock()
@@ -238,7 +216,6 @@ func (c *ZhipClient) handleSOCKS(socksConn net.Conn, ctx context.Context) {
 		}
 	}
 
-	// ۴. ارسال ConnectRequest (همون فرمت Guarch)
 	host, portStr, _ := net.SplitHostPort(target)
 	port := parsePort(portStr)
 
@@ -257,7 +234,15 @@ func (c *ZhipClient) handleSOCKS(socksConn net.Conn, ctx context.Context) {
 		Port:     port,
 	}
 
-	reqData := req.Marshal()
+	// ✅ C6/C7: Marshal حالا error داره
+	reqData, err := req.Marshal()
+	if err != nil {
+		log.Printf("[zhip] marshal error: %v", err)
+		stream.Close()
+		socks5.SendReply(socksConn, 0x01)
+		return
+	}
+
 	lenBuf := make([]byte, 2)
 	binary.BigEndian.PutUint16(lenBuf, uint16(len(reqData)))
 
@@ -272,7 +257,6 @@ func (c *ZhipClient) handleSOCKS(socksConn net.Conn, ctx context.Context) {
 		return
 	}
 
-	// ۵. خواندن ConnectResponse
 	statusBuf := make([]byte, 1)
 	if _, err := io.ReadFull(stream, statusBuf); err != nil {
 		stream.Close()
@@ -287,20 +271,16 @@ func (c *ZhipClient) handleSOCKS(socksConn net.Conn, ctx context.Context) {
 		return
 	}
 
-	// ۶. SOCKS5 Success
 	socks5.SendReply(socksConn, 0x00)
 
-	// ۷. Relay — خیلی ساده با io.Copy
 	log.Printf("[zhip] ⚡ %s (stream %d)", target, stream.StreamID())
 	c.relay(stream, socksConn)
 	log.Printf("[zhip] ✖ %s", target)
 }
 
-// relay — ریله با ثبت ترافیک adaptive
 func (c *ZhipClient) relay(stream quic.Stream, conn net.Conn) {
 	ch := make(chan error, 2)
 
-	// conn → QUIC stream
 	go func() {
 		buf := make([]byte, 32768)
 		for {
@@ -321,7 +301,6 @@ func (c *ZhipClient) relay(stream quic.Stream, conn net.Conn) {
 		}
 	}()
 
-	// QUIC stream → conn
 	go func() {
 		buf := make([]byte, 32768)
 		for {
