@@ -16,12 +16,11 @@ type Manager struct {
 	config   *Config
 	stats    *Stats
 	client   *http.Client
-	adaptive *AdaptiveCover // ✅ جدید
+	adaptive *AdaptiveCover
 	running  bool
 	mu       sync.RWMutex
 }
 
-// ✅ اصلاح: حالا adaptive می‌گیره
 func NewManager(cfg *Config, adaptive *AdaptiveCover) *Manager {
 	if cfg == nil {
 		cfg = DefaultConfig()
@@ -37,9 +36,9 @@ func NewManager(cfg *Config, adaptive *AdaptiveCover) *Manager {
 				TLSClientConfig: &tls.Config{
 					MinVersion: tls.VersionTLS13,
 				},
-				MaxIdleConnsPerHost: 4,            // ✅ بیشتر — connection reuse بهتر
-				IdleConnTimeout:     90 * time.Second, // ✅ بیشتر — HTTP/2 reuse
-				ForceAttemptHTTP2:   true,          // ✅ جدید — HTTP/2 ترجیح داده بشه
+				MaxIdleConnsPerHost: 4,
+				IdleConnTimeout:     90 * time.Second,
+				ForceAttemptHTTP2:   true,
 			},
 		},
 	}
@@ -69,7 +68,6 @@ func (m *Manager) Start(ctx context.Context) {
 	}
 }
 
-// ✅ اصلاح: domainWorker حالا از adaptive استفاده می‌کنه
 func (m *Manager) domainWorker(ctx context.Context, dc DomainConfig, index int) {
 	log.Printf("[cover] worker started for %s", dc.Domain)
 
@@ -79,11 +77,9 @@ func (m *Manager) domainWorker(ctx context.Context, dc DomainConfig, index int) 
 			log.Printf("[cover] worker stopped for %s", dc.Domain)
 			return
 		default:
-			// ✅ بررسی adaptive: آیا این دامنه فعال باشه؟
 			if m.adaptive != nil {
 				activeDomains := m.adaptive.GetActiveDomains()
 				if index >= activeDomains {
-					// این دامنه فعال نیست — منتظر بمون و دوباره چک کن
 					select {
 					case <-ctx.Done():
 						return
@@ -93,9 +89,8 @@ func (m *Manager) domainWorker(ctx context.Context, dc DomainConfig, index int) 
 				}
 			}
 
-			m.sendRequest(dc)
+			m.sendRequest(ctx, dc)
 
-			// ✅ فاصله رو از adaptive بگیر (اگه فعاله)
 			var interval time.Duration
 			if m.adaptive != nil {
 				minI, maxI := m.adaptive.GetCoverInterval()
@@ -113,13 +108,20 @@ func (m *Manager) domainWorker(ctx context.Context, dc DomainConfig, index int) 
 	}
 }
 
-func (m *Manager) sendRequest(dc DomainConfig) {
+// ✅ C10: بررسی Paths خالی + context
+func (m *Manager) sendRequest(ctx context.Context, dc DomainConfig) {
+	// ✅ C10: جلوگیری از panic روی Paths خالی
+	if len(dc.Paths) == 0 {
+		m.stats.RecordError()
+		return
+	}
+
 	path := dc.Paths[rand.Intn(len(dc.Paths))]
 	url := fmt.Sprintf("https://%s%s", dc.Domain, path)
 
-	req, err := http.NewRequest("GET", url, nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
-		m.stats.RecordError() // ✅ ثبت خطا
+		m.stats.RecordError()
 		return
 	}
 
@@ -132,15 +134,11 @@ func (m *Manager) sendRequest(dc DomainConfig) {
 
 	resp, err := m.client.Do(req)
 	if err != nil {
-		m.stats.RecordError() // ✅ ثبت خطا
+		m.stats.RecordError()
 		return
 	}
 	defer resp.Body.Close()
 
-	// ✅ FIX B5: io.Discard به جای ReadAll
-	// قبلاً: body, _ := io.ReadAll(io.LimitReader(resp.Body, 100*1024))
-	//         ← ۱۰۰KB حافظه allocate می‌شد فقط برای دور ریختن!
-	// الان: مستقیم discard — بدون allocation
 	written, err := io.Copy(io.Discard, io.LimitReader(resp.Body, 50*1024))
 	if err != nil {
 		m.stats.RecordError()
@@ -157,23 +155,43 @@ func (m *Manager) SendOne() {
 		return
 	}
 	dc := m.pickDomain()
-	m.sendRequest(dc)
+	if dc == nil {
+		return
+	}
+	m.sendRequest(context.Background(), *dc)
 }
 
-func (m *Manager) pickDomain() DomainConfig {
+// ✅ C11: pickDomain بدون panic
+// قبلاً: rand.Intn(0) = panic وقتی totalWeight=0
+// قبلاً: m.config.Domains[0] = panic وقتی Domains خالی
+func (m *Manager) pickDomain() *DomainConfig {
+	// ✅ C11: بررسی Domains خالی
+	if len(m.config.Domains) == 0 {
+		return nil
+	}
+
 	totalWeight := 0
 	for _, dc := range m.config.Domains {
 		totalWeight += dc.Weight
+	}
+
+	// ✅ C11: بررسی totalWeight = 0
+	if totalWeight <= 0 {
+		// اگه همه weight ها صفرن → اولین domain
+		dc := m.config.Domains[0]
+		return &dc
 	}
 
 	r := rand.Intn(totalWeight)
 	for _, dc := range m.config.Domains {
 		r -= dc.Weight
 		if r < 0 {
-			return dc
+			return &dc
 		}
 	}
-	return m.config.Domains[0]
+
+	dc := m.config.Domains[0]
+	return &dc
 }
 
 func (m *Manager) Stats() *Stats {
