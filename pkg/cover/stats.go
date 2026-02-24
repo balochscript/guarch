@@ -5,6 +5,14 @@ import (
 	"time"
 )
 
+// ✅ L9: named constants بجای magic numbers
+const (
+	defaultAvgPacketSize = 512       // bytes — تخمین اولیه قبل از داشتن نمونه
+	defaultMinPacketSize = 256       // bytes
+	defaultMaxPacketSize = 1024      // bytes
+	defaultAvgInterval   = 2 * time.Second
+)
+
 type Stats struct {
 	mu           sync.RWMutex
 	packetSizes  []int
@@ -52,21 +60,16 @@ func (s *Stats) RecordRecv(size int) {
 	s.totalRecv += int64(size)
 }
 
-// ✅ M13/M23: RecordError حالا lastSendTime رو آپدیت میکنه
-// قبلاً: فقط counter++ → بعد از error، interval بعدی inflate میشد
-// الان: timing آپدیت میشه + interval ثبت میشه
 func (s *Stats) RecordError() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.totalErrors++
 
-	// ✅ M23: interval ثبت بشه تا آمار خراب نشه
 	now := time.Now()
 	s.recordInterval(now)
 	s.lastSendTime = now
 }
 
-// ✅ M13/M23: تابع مشترک interval recording
 func (s *Stats) recordInterval(now time.Time) {
 	if s.lastSendTime.IsZero() {
 		return
@@ -84,12 +87,13 @@ func (s *Stats) recordInterval(now time.Time) {
 	s.intervals = append(s.intervals, interval)
 }
 
+// ✅ L9: named constant
 func (s *Stats) AvgPacketSize() int {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
 	if len(s.packetSizes) == 0 {
-		return 512
+		return defaultAvgPacketSize
 	}
 
 	total := 0
@@ -99,12 +103,13 @@ func (s *Stats) AvgPacketSize() int {
 	return total / len(s.packetSizes)
 }
 
+// ✅ L9: named constant
 func (s *Stats) AvgInterval() time.Duration {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
 	if len(s.intervals) == 0 {
-		return 2 * time.Second
+		return defaultAvgInterval
 	}
 
 	var total time.Duration
@@ -114,12 +119,13 @@ func (s *Stats) AvgInterval() time.Duration {
 	return total / time.Duration(len(s.intervals))
 }
 
+// ✅ L9: named constants
 func (s *Stats) MinMaxPacketSize() (int, int) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
 	if len(s.packetSizes) == 0 {
-		return 256, 1024
+		return defaultMinPacketSize, defaultMaxPacketSize
 	}
 
 	mn := s.packetSizes[0]
