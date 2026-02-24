@@ -10,18 +10,16 @@ import (
 	"guarch/pkg/transport"
 )
 
-// PaddedMux — Mux با قابلیت Padding و Timing
-// جایگزین NewMux وقتی mode stealth یا balanced باشه
 type PaddedMux struct {
 	*Mux
-	shaper  *cover.Shaper
-	ctx     context.Context
-	cancel  context.CancelFunc
+	shaper *cover.Shaper
+	ctx    context.Context
+	cancel context.CancelFunc
 }
 
 func NewPaddedMux(sc *transport.SecureConn, shaper *cover.Shaper) *PaddedMux {
 	ctx, cancel := context.WithCancel(context.Background())
-	
+
 	pm := &PaddedMux{
 		Mux:    NewMux(sc),
 		shaper: shaper,
@@ -36,28 +34,26 @@ func NewPaddedMux(sc *transport.SecureConn, shaper *cover.Shaper) *PaddedMux {
 	return pm
 }
 
-// paddingLoop — ارسال دوره‌ای padding packets
-// فایروال نمی‌تونه بفهمه کِی کاربر فعاله و کِی بی‌کار
+// ✅ C12: paddingLoop اصلاح شده
+// قبلاً: default → اولین iteration بدون تأخیر + time.After leak
+// الان: time.NewTimer + cleanup + همیشه تأخیر
 func (pm *PaddedMux) paddingLoop() {
 	for {
+		delay := pm.shaper.IdleDelay()
+		timer := time.NewTimer(delay)
+
 		select {
 		case <-pm.ctx.Done():
+			timer.Stop()
 			return
 		case <-pm.closeCh:
+			timer.Stop()
 			return
-		default:
-			delay := pm.shaper.IdleDelay()
-			select {
-			case <-pm.ctx.Done():
-				return
-			case <-pm.closeCh:
-				return
-			case <-time.After(delay):
-			}
+		case <-timer.C:
+		}
 
-			if pm.shaper.ShouldSendPadding() {
-				pm.sendPaddingPacket()
-			}
+		if pm.shaper.ShouldSendPadding() {
+			pm.sendPaddingPacket()
 		}
 	}
 }
