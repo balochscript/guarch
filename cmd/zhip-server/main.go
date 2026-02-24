@@ -38,6 +38,8 @@ var (
 	serverPSK     []byte
 )
 
+var maxConns = make(chan struct{}, 1000)
+
 func main() {
 	addr := flag.String("addr", ":8443", "listen address")
 	decoyAddr := flag.String("decoy", ":8080", "HTTP decoy server")
@@ -110,20 +112,29 @@ func main() {
 	log.Println("[zhip] ready — fast as a blink ⚡")
 
 	go func() {
-		for {
-			conn, err := quicLn.Accept(ctx)
-			if err != nil {
-				select {
-				case <-ctx.Done():
-					return
-				default:
-					log.Printf("[zhip] accept error: %v", err)
-					continue
-				}
+	for {
+		conn, err := quicLn.Accept(ctx)
+		if err != nil {
+			select {
+			case <-ctx.Done():
+				return
+			default:
+				log.Printf("[zhip] accept error: %v", err)
+				continue
 			}
-			go handleQUICConn(conn)
 		}
-	}()
+		select {
+		case maxConns <- struct{}{}:
+			go func() {
+				defer func() { <-maxConns }()
+				handleQUICConn(conn)
+			}()
+		default:
+			log.Printf("[zhip] connection limit reached")
+			conn.CloseWithError(0, "server full")
+		}
+	}
+}()
 
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, os.Interrupt)
