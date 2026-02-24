@@ -34,7 +34,7 @@ type Client struct {
 
 	mu        sync.Mutex
 	activeMux *mux.Mux
-	activePM  *mux.PaddedMux // ✅ جدید: نگهداری PaddedMux
+	activePM  *mux.PaddedMux
 }
 
 func main() {
@@ -58,7 +58,6 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	// ═══ Adaptive + Cover Traffic ═══
 	modeCfg := cover.GetModeConfig(clientMode)
 	var coverMgr *cover.Manager
 	var adaptive *cover.AdaptiveCover
@@ -71,7 +70,6 @@ func main() {
 		coverMgr = cover.NewManager(coverCfg, adaptive)
 		coverMgr.Start(ctx)
 
-		// منتظر آمار اولیه
 		time.Sleep(2 * time.Second)
 		log.Printf("[guarch] cover ready: avg_size=%d samples=%d",
 			coverMgr.Stats().AvgPacketSize(),
@@ -81,7 +79,6 @@ func main() {
 		log.Printf("[guarch] cover traffic disabled (mode: %s)", clientMode)
 	}
 
-	// ═══ Client ═══
 	client := &Client{
 		serverAddr: *serverAddr,
 		certPin:    *certPin,
@@ -91,7 +88,6 @@ func main() {
 		adaptive:   adaptive,
 	}
 
-	// ═══ SOCKS5 Listener ═══
 	ln, err := net.Listen("tcp", *listenAddr)
 	if err != nil {
 		log.Fatal("listen:", err)
@@ -107,10 +103,17 @@ func main() {
 	log.Printf("[guarch] client ready on socks5://%s", *listenAddr)
 	log.Printf("[guarch] server: %s", *serverAddr)
 	log.Printf("[guarch] mode: %s", clientMode)
+
+	// ✅ C16: نمایش امن pin
 	if *certPin != "" {
-		log.Printf("[guarch] certificate pin: %s...", (*certPin)[:16])
+		pinDisplay := *certPin
+		if len(pinDisplay) > 16 {
+			pinDisplay = pinDisplay[:16]
+		}
+		log.Printf("[guarch] certificate pin: %s...", pinDisplay)
 	}
-	log.Println("[guarch] hidden like a Balochi hunter 🏹")
+
+	log.Println("[guarch] hidden like a Balochi hunter  🏹")
 
 	go func() {
 		for {
@@ -198,7 +201,6 @@ func (c *Client) connect() (*mux.Mux, error) {
 	}
 	tlsConn.SetDeadline(time.Time{})
 
-	// ✅ ساخت PaddedMux بر اساس mode
 	modeCfg := cover.GetModeConfig(c.mode)
 
 	if c.mode != cover.ModeFast && modeCfg.ShapingEnabled {
@@ -214,7 +216,6 @@ func (c *Client) connect() (*mux.Mux, error) {
 		return pm.Mux, nil
 	}
 
-	// Fast mode: بدون padding
 	m := mux.NewMux(sc)
 	c.activePM = nil
 	return m, nil
@@ -241,9 +242,8 @@ func (c *Client) handleSOCKS(socksConn net.Conn, ctx context.Context) {
 
 	log.Printf("[guarch] → %s", target)
 
-	// ✅ ثبت ترافیک در adaptive
 	if c.adaptive != nil {
-		c.adaptive.RecordTraffic(1) // فعلاً ۱ درخواست
+		c.adaptive.RecordTraffic(1)
 	}
 
 	m, err := c.getOrCreateMux()
@@ -295,7 +295,15 @@ func (c *Client) handleSOCKS(socksConn net.Conn, ctx context.Context) {
 		Port:     port,
 	}
 
-	reqData := req.Marshal()
+	// ✅ C6/C7: Marshal حالا error داره
+	reqData, err := req.Marshal()
+	if err != nil {
+		log.Printf("[guarch] marshal error: %v", err)
+		stream.Close()
+		socks5.SendReply(socksConn, 0x01)
+		return
+	}
+
 	lenBuf := make([]byte, 2)
 	binary.BigEndian.PutUint16(lenBuf, uint16(len(reqData)))
 
@@ -326,17 +334,14 @@ func (c *Client) handleSOCKS(socksConn net.Conn, ctx context.Context) {
 
 	socks5.SendReply(socksConn, 0x00)
 
-	// ✅ Relay با ثبت ترافیک adaptive
 	log.Printf("[guarch] ✅ %s (stream %d)", target, stream.ID())
 	c.relayWithTracking(stream, socksConn)
 	log.Printf("[guarch] ✖ %s", target)
 }
 
-// ✅ جدید: relay با ثبت ترافیک برای adaptive
 func (c *Client) relayWithTracking(stream *mux.Stream, conn net.Conn) {
 	ch := make(chan error, 2)
 
-	// conn → stream
 	go func() {
 		buf := make([]byte, 32768)
 		for {
@@ -357,7 +362,6 @@ func (c *Client) relayWithTracking(stream *mux.Stream, conn net.Conn) {
 		}
 	}()
 
-	// stream → conn
 	go func() {
 		buf := make([]byte, 32768)
 		for {
