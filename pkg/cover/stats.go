@@ -12,7 +12,7 @@ type Stats struct {
 	lastSendTime time.Time
 	totalSent    int64
 	totalRecv    int64
-	totalErrors  int64 // ✅ H12: جدا از totalSent
+	totalErrors  int64
 	maxSamples   int
 }
 
@@ -28,26 +28,15 @@ func NewStats(maxSamples int) *Stats {
 	}
 }
 
-// ✅ H12: circular buffer بدون memory leak
 func (s *Stats) Record(size int) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	now := time.Now()
-	if !s.lastSendTime.IsZero() {
-		interval := now.Sub(s.lastSendTime)
-		if len(s.intervals) >= s.maxSamples {
-			// ✅ H12: copy به slice جدید به جای shift
-			newIntervals := make([]time.Duration, s.maxSamples-1, s.maxSamples)
-			copy(newIntervals, s.intervals[1:])
-			s.intervals = newIntervals
-		}
-		s.intervals = append(s.intervals, interval)
-	}
+	s.recordInterval(now)
 	s.lastSendTime = now
 
 	if len(s.packetSizes) >= s.maxSamples {
-		// ✅ H12: copy به slice جدید — backing array قدیمی GC میشه
 		newSizes := make([]int, s.maxSamples-1, s.maxSamples)
 		copy(newSizes, s.packetSizes[1:])
 		s.packetSizes = newSizes
@@ -61,6 +50,38 @@ func (s *Stats) RecordRecv(size int) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.totalRecv += int64(size)
+}
+
+// ✅ M13/M23: RecordError حالا lastSendTime رو آپدیت میکنه
+// قبلاً: فقط counter++ → بعد از error، interval بعدی inflate میشد
+// الان: timing آپدیت میشه + interval ثبت میشه
+func (s *Stats) RecordError() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.totalErrors++
+
+	// ✅ M23: interval ثبت بشه تا آمار خراب نشه
+	now := time.Now()
+	s.recordInterval(now)
+	s.lastSendTime = now
+}
+
+// ✅ M13/M23: تابع مشترک interval recording
+func (s *Stats) recordInterval(now time.Time) {
+	if s.lastSendTime.IsZero() {
+		return
+	}
+	interval := now.Sub(s.lastSendTime)
+	if interval <= 0 {
+		return
+	}
+
+	if len(s.intervals) >= s.maxSamples {
+		newIntervals := make([]time.Duration, s.maxSamples-1, s.maxSamples)
+		copy(newIntervals, s.intervals[1:])
+		s.intervals = newIntervals
+	}
+	s.intervals = append(s.intervals, interval)
 }
 
 func (s *Stats) AvgPacketSize() int {
@@ -101,17 +122,17 @@ func (s *Stats) MinMaxPacketSize() (int, int) {
 		return 256, 1024
 	}
 
-	min := s.packetSizes[0]
-	max := s.packetSizes[0]
+	mn := s.packetSizes[0]
+	mx := s.packetSizes[0]
 	for _, sz := range s.packetSizes[1:] {
-		if sz < min {
-			min = sz
+		if sz < mn {
+			mn = sz
 		}
-		if sz > max {
-			max = sz
+		if sz > mx {
+			mx = sz
 		}
 	}
-	return min, max
+	return mn, mx
 }
 
 func (s *Stats) SampleCount() int {
@@ -126,9 +147,8 @@ func (s *Stats) TotalSent() int64 {
 	return s.totalSent
 }
 
-// ✅ H12: RecordError جدا از totalSent
-func (s *Stats) RecordError() {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.totalErrors++
+func (s *Stats) TotalErrors() int64 {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.totalErrors
 }
