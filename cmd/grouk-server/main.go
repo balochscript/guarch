@@ -26,9 +26,9 @@ import (
 )
 
 var (
-	probeDetector *antidetect.ProbeDetector
-	decoyServer   *antidetect.DecoyServer
-	healthCheck   *health.Checker
+	// ✅ C18: probeDetector حذف شد — توی grouk استفاده نمیشد
+	decoyServer *antidetect.DecoyServer
+	healthCheck *health.Checker
 )
 
 func main() {
@@ -36,6 +36,8 @@ func main() {
 	decoyAddr := flag.String("decoy", ":8080", "HTTP decoy server")
 	healthAddr := flag.String("health", "127.0.0.1:9090", "health check")
 	psk := flag.String("psk", "", "pre-shared key (required)")
+	certFile := flag.String("cert", "grouk-cert.pem", "TLS cert for TCP decoy") // ✅ H26
+	keyFile := flag.String("key", "grouk-key.pem", "TLS key for TCP decoy")     // ✅ H26
 	flag.Parse()
 
 	if *psk == "" {
@@ -43,20 +45,16 @@ func main() {
 	}
 	pskBytes := []byte(*psk)
 
-	// ═══ Init ═══
 	healthCheck = health.New()
-	probeDetector = antidetect.NewProbeDetector(10, time.Minute)
 	decoyServer = antidetect.NewDecoyServer()
 
 	healthCheck.StartServer(*healthAddr)
 
-	// ═══ TCP Decoy on same port ═══
-	go startTCPDecoy(*addr)
-
-	// ═══ HTTP Decoy ═══
+	// ✅ H26: ذخیره/بارگذاری cert برای TCP decoy
+	go startTCPDecoy(*addr, *certFile, *keyFile)
 	go startHTTPDecoy(*decoyAddr)
 
-	// ═══ Grouk UDP Listener ═══
+	// Grouk UDP Listener
 	gl, err := transport.GroukListen(*addr, pskBytes)
 	if err != nil {
 		log.Fatal("grouk listen:", err)
@@ -75,7 +73,6 @@ func main() {
 	log.Printf("[grouk] 💓 health on %s", *healthAddr)
 	log.Println("[grouk] ready — fast as lightning 🌩️")
 
-	// ═══ Accept Sessions ═══
 	go func() {
 		for {
 			session, err := gl.Accept()
@@ -87,7 +84,6 @@ func main() {
 		}
 	}()
 
-	// ═══ Graceful Shutdown ═══
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, os.Interrupt)
 	<-sigCh
@@ -118,7 +114,6 @@ func handleStream(stream *transport.GroukStream, sessionID uint32) {
 
 	streamID := stream.ID()
 
-	// ۱. خواندن ConnectRequest (همون فرمت Guarch و Zhip)
 	lenBuf := make([]byte, 2)
 	if _, err := io.ReadFull(stream, lenBuf); err != nil {
 		return
@@ -142,7 +137,6 @@ func handleStream(stream *transport.GroukStream, sessionID uint32) {
 	target := req.Address()
 	log.Printf("[grouk] session %d → %s (stream %d)", sessionID, target, streamID)
 
-	// ۲. اتصال به مقصد
 	targetConn, err := net.DialTimeout("tcp", target, 10*time.Second)
 	if err != nil {
 		log.Printf("[grouk] dial %s: %v", target, err)
@@ -151,10 +145,8 @@ func handleStream(stream *transport.GroukStream, sessionID uint32) {
 	}
 	defer targetConn.Close()
 
-	// ۳. Success
 	stream.Write([]byte{protocol.ConnectSuccess})
 
-	// ۴. Relay
 	log.Printf("[grouk] 🌩️ relaying %s (stream %d)", target, streamID)
 	relay(stream, targetConn)
 	log.Printf("[grouk] ✖ done %s (stream %d)", target, streamID)
@@ -162,25 +154,18 @@ func handleStream(stream *transport.GroukStream, sessionID uint32) {
 
 func relay(stream *transport.GroukStream, conn net.Conn) {
 	ch := make(chan error, 2)
-
-	go func() {
-		_, err := io.Copy(stream, conn)
-		ch <- err
-	}()
-
-	go func() {
-		_, err := io.Copy(conn, stream)
-		ch <- err
-	}()
-
+	go func() { _, err := io.Copy(stream, conn); ch <- err }()
+	go func() { _, err := io.Copy(conn, stream); ch <- err }()
 	<-ch
 	stream.Close()
 	conn.Close()
 }
 
-func startTCPDecoy(addr string) {
-	cert, err := generateCert()
+// ✅ H26: cert persistence
+func startTCPDecoy(addr, certFile, keyFile string) {
+	cert, err := loadOrGenerateCert(certFile, keyFile)
 	if err != nil {
+		log.Printf("[grouk] TCP decoy cert error: %v", err)
 		return
 	}
 
@@ -213,8 +198,19 @@ func startHTTPDecoy(addr string) {
 	http.ListenAndServe(addr, decoyServer)
 }
 
-func generateCert() (tls.Certificate, error) {
-	key, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+func loadOrGenerateCert(certFile, keyFile string) (tls.Certificate, error) {
+	if _, err := os.Stat(certFile); err == nil {
+		cert, err := tls.LoadX509KeyPair(certFile, keyFile)
+		if err == nil {
+			log.Printf("[grouk] loaded existing certificate from %s", certFile)
+			return cert, nil
+		}
+	}
+
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		return tls.Certificate{}, err
+	}
 	template := &x509.Certificate{
 		SerialNumber: big.NewInt(1),
 		NotBefore:    time.Now(),
@@ -222,9 +218,20 @@ func generateCert() (tls.Certificate, error) {
 		KeyUsage:     x509.KeyUsageDigitalSignature,
 		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
 	}
-	certDER, _ := x509.CreateCertificate(rand.Reader, template, template, &key.PublicKey, key)
+	certDER, err := x509.CreateCertificate(rand.Reader, template, template, &key.PublicKey, key)
+	if err != nil {
+		return tls.Certificate{}, err
+	}
 	certPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: certDER})
-	keyDER, _ := x509.MarshalECPrivateKey(key)
+	keyDER, err := x509.MarshalECPrivateKey(key)
+	if err != nil {
+		return tls.Certificate{}, err
+	}
 	keyPEM := pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: keyDER})
+
+	os.WriteFile(certFile, certPEM, 0600) // ✅ H22
+	os.WriteFile(keyFile, keyPEM, 0600)
+
+	log.Printf("[grouk] TLS certificate generated and saved")
 	return tls.X509KeyPair(certPEM, keyPEM)
 }
