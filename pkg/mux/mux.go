@@ -1,10 +1,12 @@
 package mux
 
 import (
+	"crypto/rand"
 	"encoding/binary"
 	"fmt"
 	"io"
 	"log"
+	"math/big"
 	"net"
 	"sync"
 	"sync/atomic"
@@ -32,12 +34,9 @@ type Mux struct {
 	closeCh   chan struct{}
 	closeOnce sync.Once
 	sendMu    sync.Mutex
-	isServer  bool // ✅ C14
+	isServer  bool
 }
 
-// ✅ C14: NewMux حالا isServer میگیره
-// کلاینت: ID های ۱,۲,۳,... (شروع از ۰)
-// سرور: ID های ۱۰۰۰۰۰۰۰۰۱, ۱۰۰۰۰۰۰۰۰۲,... (شروع از ۱ میلیارد)
 func NewMux(sc *transport.SecureConn, isServer bool) *Mux {
 	m := &Mux{
 		sc:       sc,
@@ -46,7 +45,6 @@ func NewMux(sc *transport.SecureConn, isServer bool) *Mux {
 		isServer: isServer,
 	}
 
-	// ✅ C14: جلوگیری از تداخل Stream ID
 	if isServer {
 		m.nextID.Store(1_000_000_000)
 	}
@@ -230,7 +228,6 @@ type Stream struct {
 	doneCh chan struct{}
 	closed atomic.Bool
 
-	// ✅ C13: mutex برای readBuf
 	readMu   sync.Mutex
 	readBuf  []byte
 	doneOnce sync.Once
@@ -245,9 +242,7 @@ func newStream(id uint32, m *Mux) *Stream {
 	}
 }
 
-// ✅ C13: Read با mutex روی readBuf
 func (s *Stream) Read(p []byte) (int, error) {
-	// اول بافر موجود رو چک کن (با lock)
 	s.readMu.Lock()
 	if len(s.readBuf) > 0 {
 		n := copy(p, s.readBuf)
@@ -257,7 +252,6 @@ func (s *Stream) Read(p []byte) (int, error) {
 	}
 	s.readMu.Unlock()
 
-	// منتظر داده‌ی جدید (بدون lock — blocking)
 	select {
 	case data, ok := <-s.readCh:
 		if !ok {
@@ -369,11 +363,15 @@ func RelayStream(stream *Stream, conn net.Conn) {
 // Helper
 // ═══════════════════════════════════════
 
+// ✅ H19: تصادفی واقعی با crypto/rand
 func randomMuxInt(min, max int) int {
 	if max <= min {
 		return min
 	}
-	n := time.Now().UnixNano()
-	diff := int64(max - min)
-	return min + int(n%diff)
+	diff := max - min
+	n, err := rand.Int(rand.Reader, big.NewInt(int64(diff)))
+	if err != nil {
+		return min + diff/2
+	}
+	return min + int(n.Int64())
 }
