@@ -28,10 +28,7 @@ func GenerateKeyPair() (*KeyPair, error) {
 		return nil, fmt.Errorf("guarch/crypto: keygen: %w", err)
 	}
 
-	// Curve25519 clamping
-	kp.PrivateKey[0] &= 248
-	kp.PrivateKey[31] &= 127
-	kp.PrivateKey[31] |= 64
+	clampPrivateKey(&kp.PrivateKey)
 
 	pub, err := curve25519.X25519(kp.PrivateKey[:], curve25519.Basepoint)
 	if err != nil {
@@ -42,6 +39,7 @@ func GenerateKeyPair() (*KeyPair, error) {
 	return kp, nil
 }
 
+// ✅ H8: clamping اضافه شد
 func KeyPairFromPrivate(privKey []byte) (*KeyPair, error) {
 	if len(privKey) != PrivateKeySize {
 		return nil, fmt.Errorf("guarch/crypto: bad private key size: %d", len(privKey))
@@ -50,6 +48,9 @@ func KeyPairFromPrivate(privKey []byte) (*KeyPair, error) {
 	kp := &KeyPair{}
 	copy(kp.PrivateKey[:], privKey)
 
+	// ✅ H8: clamping — قبلاً نبود!
+	clampPrivateKey(&kp.PrivateKey)
+
 	pub, err := curve25519.X25519(kp.PrivateKey[:], curve25519.Basepoint)
 	if err != nil {
 		return nil, fmt.Errorf("guarch/crypto: pubkey: %w", err)
@@ -57,6 +58,13 @@ func KeyPairFromPrivate(privKey []byte) (*KeyPair, error) {
 	copy(kp.PublicKey[:], pub)
 
 	return kp, nil
+}
+
+// ✅ H8: تابع مشترک clamping
+func clampPrivateKey(key *[PrivateKeySize]byte) {
+	key[0] &= 248
+	key[31] &= 127
+	key[31] |= 64
 }
 
 func (kp *KeyPair) SharedSecret(peerPubKey []byte) ([]byte, error) {
@@ -69,7 +77,6 @@ func (kp *KeyPair) SharedSecret(peerPubKey []byte) ([]byte, error) {
 		return nil, fmt.Errorf("guarch/crypto: x25519: %w", err)
 	}
 
-	// Check for zero shared secret (small subgroup attack)
 	allZero := true
 	for _, b := range shared {
 		if b != 0 {
@@ -84,20 +91,14 @@ func (kp *KeyPair) SharedSecret(peerPubKey []byte) ([]byte, error) {
 	return shared, nil
 }
 
-// DeriveKey از HKDF برای استخراج کلید استفاده می‌کند
-// sharedSecret: خروجی X25519
-// psk: کلید از پیش مشترک (اختیاری، می‌تواند nil باشد)
-// info: اطلاعات context (مثل "guarch-session-v1")
 func DeriveKey(sharedSecret, psk, info []byte) ([]byte, error) {
-	// PSK به عنوان salt استفاده می‌شود
-	// اگر PSK نباشد، salt خالی (ولی غیرصفر)
 	salt := psk
 	if len(salt) == 0 {
 		salt = []byte("guarch-default-salt-v1")
 	}
 
 	hkdfReader := hkdf.New(sha256.New, sharedSecret, salt, info)
-	key := make([]byte, KeySize) // KeySize = 32 (from aead.go)
+	key := make([]byte, KeySize)
 	if _, err := io.ReadFull(hkdfReader, key); err != nil {
 		return nil, fmt.Errorf("guarch/crypto: hkdf: %w", err)
 	}
