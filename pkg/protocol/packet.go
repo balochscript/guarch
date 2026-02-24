@@ -178,6 +178,15 @@ func Unmarshal(data []byte) (*Packet, error) {
 		PayloadLen: binary.BigEndian.Uint16(data[14:16]),
 		PaddingLen: binary.BigEndian.Uint16(data[16:18]),
 	}
+
+	// ✅ H7: بررسی حداکثر اندازه
+	if p.PayloadLen > MaxPayloadSize {
+		return nil, fmt.Errorf("%w: payload %d exceeds max %d", ErrPacketTooLarge, p.PayloadLen, MaxPayloadSize)
+	}
+	if p.PaddingLen > MaxPaddingSize {
+		return nil, fmt.Errorf("%w: padding %d exceeds max %d", ErrPacketTooLarge, p.PaddingLen, MaxPaddingSize)
+	}
+
 	expectedSize := HeaderSize + int(p.PayloadLen) + int(p.PaddingLen)
 	if len(data) < expectedSize {
 		return nil, fmt.Errorf("%w: need %d got %d", ErrPacketTooShort, expectedSize, len(data))
@@ -196,6 +205,7 @@ func Unmarshal(data []byte) (*Packet, error) {
 	return p, nil
 }
 
+// ✅ H11: ReadPacket با size limit
 func ReadPacket(r io.Reader) (*Packet, error) {
 	header := make([]byte, HeaderSize)
 	if _, err := io.ReadFull(r, header); err != nil {
@@ -203,6 +213,15 @@ func ReadPacket(r io.Reader) (*Packet, error) {
 	}
 	payloadLen := binary.BigEndian.Uint16(header[14:16])
 	paddingLen := binary.BigEndian.Uint16(header[16:18])
+
+	// ✅ H11: بررسی قبل از allocate
+	if payloadLen > MaxPayloadSize {
+		return nil, fmt.Errorf("%w: payload %d exceeds max %d", ErrPacketTooLarge, payloadLen, MaxPayloadSize)
+	}
+	if paddingLen > MaxPaddingSize {
+		return nil, fmt.Errorf("%w: padding %d exceeds max %d", ErrPacketTooLarge, paddingLen, MaxPaddingSize)
+	}
+
 	bodyLen := int(payloadLen) + int(paddingLen)
 	fullPacket := make([]byte, HeaderSize+bodyLen)
 	copy(fullPacket, header)
@@ -214,6 +233,7 @@ func ReadPacket(r io.Reader) (*Packet, error) {
 	return Unmarshal(fullPacket)
 }
 
+// ✅ H7: Validate حالا max size هم چک میکنه
 func (p *Packet) Validate() error {
 	if p.Version != ProtocolVersion {
 		return fmt.Errorf("%w: got %d want %d", ErrInvalidVersion, p.Version, ProtocolVersion)
@@ -226,6 +246,12 @@ func (p *Packet) Validate() error {
 	}
 	if int(p.PaddingLen) != len(p.Padding) {
 		return fmt.Errorf("guarch: padding length mismatch: header=%d actual=%d", p.PaddingLen, len(p.Padding))
+	}
+	if p.PayloadLen > MaxPayloadSize {
+		return fmt.Errorf("%w: payload %d", ErrPacketTooLarge, p.PayloadLen)
+	}
+	if p.PaddingLen > MaxPaddingSize {
+		return fmt.Errorf("%w: padding %d", ErrPacketTooLarge, p.PaddingLen)
 	}
 	return nil
 }
