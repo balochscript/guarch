@@ -11,21 +11,38 @@ import (
 	"sync/atomic"
 
 	"guarch/pkg/crypto"
+	glog "guarch/pkg/log"
 	"guarch/pkg/protocol"
 )
 
 const (
 	maxEncryptedSize = 1024 * 1024
+	maxSendSize      = maxEncryptedSize
 
-	// ✅ M5: send size limit — متقارن با recv
-	maxSendSize = maxEncryptedSize
-
-	// ✅ M3: key rotation thresholds
-	// Random 12-byte nonce → birthday bound ≈ 2^48
-	// ما خیلی محتاط‌تر: 2^30 ≈ 1 میلیارد پیام
 	keyRotationMsgThreshold  uint64 = 1 << 30
-	keyRotationByteThreshold uint64 = 64 << 30 // 64 GB
+	keyRotationByteThreshold uint64 = 64 << 30
 )
+
+// ✅ L1: sync.Pool — جلوگیری از allocation هر send/recv
+var (
+	lenBufPool = &sync.Pool{
+		New: func() any {
+			b := make([]byte, 4)
+			return &b
+		},
+	}
+)
+
+func getLenBuf() []byte {
+	bp := lenBufPool.Get().(*[]byte)
+	return *bp
+}
+
+func putLenBuf(b []byte) {
+	if len(b) == 4 {
+		lenBufPool.Put(&b)
+	}
+}
 
 type SecureConn struct {
 	raw         net.Conn
@@ -36,7 +53,6 @@ type SecureConn struct {
 	recvMu      sync.Mutex
 	lastRecvSeq atomic.Uint32
 
-	// ✅ M3: key usage tracking
 	sendMsgCount  atomic.Uint64
 	recvMsgCount  atomic.Uint64
 	sendByteCount atomic.Uint64
@@ -52,7 +68,6 @@ func Handshake(raw net.Conn, isServer bool, cfg *HandshakeConfig) (*SecureConn, 
 		cfg = &HandshakeConfig{}
 	}
 
-	// ✅ H9: PSK الزامیه
 	if len(cfg.PSK) == 0 {
 		return nil, fmt.Errorf("guarch: PSK is required for secure handshake")
 	}
@@ -61,7 +76,7 @@ func Handshake(raw net.Conn, isServer bool, cfg *HandshakeConfig) (*SecureConn, 
 	if err != nil {
 		return nil, fmt.Errorf("guarch: keygen: %w", err)
 	}
-	defer kp.Zeroize() // ✅ M7: private key بعد از handshake پاک میشه
+	defer kp.Zeroize()
 
 	var peerPub []byte
 
@@ -87,7 +102,7 @@ func Handshake(raw net.Conn, isServer bool, cfg *HandshakeConfig) (*SecureConn, 
 	if err != nil {
 		return nil, fmt.Errorf("guarch: shared secret: %w", err)
 	}
-	defer crypto.ZeroizeBytes(sharedRaw) // ✅ M7
+	defer crypto.ZeroizeBytes(sharedRaw)
 
 	sendInfo := "guarch-client-send-v1"
 	recvInfo := "guarch-server-send-v1"
@@ -100,19 +115,19 @@ func Handshake(raw net.Conn, isServer bool, cfg *HandshakeConfig) (*SecureConn, 
 	if err != nil {
 		return nil, fmt.Errorf("guarch: send key: %w", err)
 	}
-	defer crypto.ZeroizeBytes(sendKey) // ✅ M7: raw key پاک میشه بعد از ساخت cipher
+	defer crypto.ZeroizeBytes(sendKey)
 
 	recvKey, err := crypto.DeriveKey(sharedRaw, cfg.PSK, []byte(recvInfo))
 	if err != nil {
 		return nil, fmt.Errorf("guarch: recv key: %w", err)
 	}
-	defer crypto.ZeroizeBytes(recvKey) // ✅ M7
+	defer crypto.ZeroizeBytes(recvKey)
 
 	authKey, err := crypto.DeriveKey(sharedRaw, cfg.PSK, []byte("guarch-auth-v1"))
 	if err != nil {
 		return nil, fmt.Errorf("guarch: auth key: %w", err)
 	}
-	defer crypto.ZeroizeBytes(authKey) // ✅ M7
+	defer crypto.ZeroizeBytes(authKey)
 
 	sendCipher, err := crypto.NewAEADCipher(sendKey)
 	if err != nil {
@@ -172,7 +187,6 @@ func computeAuthMAC(key []byte, role string) []byte {
 	return mac.Sum(nil)
 }
 
-// ✅ M3: checkSendKeyUsage — آیا key نزدیک حد مجازه؟
 func (sc *SecureConn) checkSendKeyUsage(dataLen int) error {
 	msgs := sc.sendMsgCount.Add(1)
 	bytes := sc.sendByteCount.Add(uint64(dataLen))
@@ -201,38 +215,39 @@ func (sc *SecureConn) checkRecvKeyUsage(dataLen int) error {
 	return nil
 }
 
+// ✅ L1: sendRaw با sync.Pool — حذف allocation 4-byte buffer هر بار
 func (sc *SecureConn) sendRaw(pkt *protocol.Packet) error {
 	data, err := pkt.Marshal()
 	if err != nil {
 		return err
 	}
 
-	// ✅ M5: send size check
 	if len(data) > maxSendSize {
 		return fmt.Errorf("guarch: packet too large to send: %d > %d", len(data), maxSendSize)
 	}
 
-	// ✅ M3: check key usage before encryption
 	if err := sc.checkSendKeyUsage(len(data)); err != nil {
 		return err
 	}
 
-	// ✅ M10: compute wire length for AAD
-	// len(encrypted) = EncryptOverhead + len(data) — deterministic
 	expectedLen := uint32(crypto.EncryptOverhead + len(data))
-	lenBuf := make([]byte, 4)
+
+	// ✅ L1: pool بجای make
+	lenBuf := getLenBuf()
 	binary.BigEndian.PutUint32(lenBuf, expectedLen)
 
-	// ✅ M9: encrypt with length prefix as AAD
-	// → attacker نمیتونه length رو تغییر بده بدون شکست AEAD
 	encrypted, err := sc.sendCipher.SealWithAAD(data, lenBuf)
 	if err != nil {
+		putLenBuf(lenBuf)
 		return err
 	}
 
 	if _, err := sc.raw.Write(lenBuf); err != nil {
+		putLenBuf(lenBuf)
 		return err
 	}
+	putLenBuf(lenBuf) // ✅ L1: برگردون به pool
+
 	_, err = sc.raw.Write(encrypted)
 	return err
 }
@@ -255,34 +270,38 @@ func (sc *SecureConn) Send(data []byte) error {
 	return sc.sendRaw(pkt)
 }
 
+// ✅ L1: RecvPacket با sync.Pool
 func (sc *SecureConn) RecvPacket() (*protocol.Packet, error) {
 	sc.recvMu.Lock()
 	defer sc.recvMu.Unlock()
 
-	lenBuf := make([]byte, 4)
+	// ✅ L1: pool بجای make
+	lenBuf := getLenBuf()
 	if _, err := io.ReadFull(sc.raw, lenBuf); err != nil {
+		putLenBuf(lenBuf)
 		return nil, err
 	}
 	length := binary.BigEndian.Uint32(lenBuf)
 
 	if length > maxEncryptedSize {
+		putLenBuf(lenBuf)
 		return nil, fmt.Errorf("guarch: packet too large: %d", length)
 	}
 
 	encrypted := make([]byte, length)
 	if _, err := io.ReadFull(sc.raw, encrypted); err != nil {
+		putLenBuf(lenBuf)
 		return nil, err
 	}
 
-	// ✅ M3: check recv key usage
 	if err := sc.checkRecvKeyUsage(len(encrypted)); err != nil {
+		putLenBuf(lenBuf)
 		return nil, err
 	}
 
-	// ✅ M9/M10: decrypt with length prefix as AAD
-	// lenBuf همون مقداری هست که از wire خوندیم
-	// اگه attacker تغییرش داده باشه → AEAD fail
+	// lenBuf همون AAD هست
 	data, err := sc.recvCipher.OpenWithAAD(encrypted, lenBuf)
+	putLenBuf(lenBuf) // ✅ L1: برگردون بعد از استفاده
 	if err != nil {
 		return nil, err
 	}
@@ -322,15 +341,18 @@ func (sc *SecureConn) RemoteAddr() net.Addr {
 	return sc.raw.RemoteAddr()
 }
 
-// ✅ M3: NeedsRotation — برای monitoring/logging
-// true = بیش از ۹۰٪ ظرفیت key مصرف شده → باید reconnect بشه
 func (sc *SecureConn) NeedsRotation() bool {
 	warn := keyRotationMsgThreshold * 90 / 100
 	return sc.sendMsgCount.Load() > warn || sc.recvMsgCount.Load() > warn
 }
 
-// KeyUsageStats — آمار مصرف key (برای debug/monitoring)
 func (sc *SecureConn) KeyUsageStats() (sendMsgs, recvMsgs, sendBytes, recvBytes uint64) {
 	return sc.sendMsgCount.Load(), sc.recvMsgCount.Load(),
 		sc.sendByteCount.Load(), sc.recvByteCount.Load()
+}
+
+func init() {
+	// ✅ L4: library log level
+	// cmd/ files can call glog.SetLevel(glog.LevelDebug) for verbose
+	_ = glog.LevelInfo
 }
