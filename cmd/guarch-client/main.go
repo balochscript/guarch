@@ -64,17 +64,13 @@ func main() {
 
 	if *coverEnabled && modeCfg.CoverEnabled {
 		log.Printf("[guarch] starting cover traffic (mode: %s)...", clientMode)
-
 		adaptive = cover.NewAdaptiveCover(modeCfg)
 		coverCfg := cover.ConfigForMode(clientMode)
 		coverMgr = cover.NewManager(coverCfg, adaptive)
 		coverMgr.Start(ctx)
-
 		time.Sleep(2 * time.Second)
 		log.Printf("[guarch] cover ready: avg_size=%d samples=%d",
-			coverMgr.Stats().AvgPacketSize(),
-			coverMgr.Stats().SampleCount(),
-		)
+			coverMgr.Stats().AvgPacketSize(), coverMgr.Stats().SampleCount())
 	} else {
 		log.Printf("[guarch] cover traffic disabled (mode: %s)", clientMode)
 	}
@@ -103,8 +99,6 @@ func main() {
 	log.Printf("[guarch] client ready on socks5://%s", *listenAddr)
 	log.Printf("[guarch] server: %s", *serverAddr)
 	log.Printf("[guarch] mode: %s", clientMode)
-
-	// ✅ C16: نمایش امن pin
 	if *certPin != "" {
 		pinDisplay := *certPin
 		if len(pinDisplay) > 16 {
@@ -112,7 +106,6 @@ func main() {
 		}
 		log.Printf("[guarch] certificate pin: %s...", pinDisplay)
 	}
-
 	log.Println("[guarch] hidden like a Balochi hunter  🏹")
 
 	go func() {
@@ -149,12 +142,10 @@ func (c *Client) getOrCreateMux() (*mux.Mux, error) {
 	}
 
 	log.Println("[guarch] connecting to server...")
-
 	m, err := c.connect()
 	if err != nil {
 		return nil, err
 	}
-
 	c.activeMux = m
 	log.Println("[guarch] connected successfully ✅")
 	return m, nil
@@ -189,9 +180,7 @@ func (c *Client) connect() (*mux.Mux, error) {
 		return nil, fmt.Errorf("TLS: %w", err)
 	}
 
-	hsCfg := &transport.HandshakeConfig{
-		PSK: c.psk,
-	}
+	hsCfg := &transport.HandshakeConfig{PSK: c.psk}
 
 	tlsConn.SetDeadline(time.Now().Add(30 * time.Second))
 	sc, err := transport.Handshake(tlsConn, false, hsCfg)
@@ -205,12 +194,7 @@ func (c *Client) connect() (*mux.Mux, error) {
 
 	if c.mode != cover.ModeFast && modeCfg.ShapingEnabled {
 		stats := cover.NewStats(100)
-		shaper := cover.NewAdaptiveShaper(
-			stats,
-			modeCfg.ShapingPattern,
-			c.adaptive,
-			modeCfg.MaxPadding,
-		)
+		shaper := cover.NewAdaptiveShaper(stats, modeCfg.ShapingPattern, c.adaptive, modeCfg.MaxPadding)
 		pm := mux.NewPaddedMux(sc, shaper, false)
 		c.activePM = pm
 		return pm.Mux, nil
@@ -256,7 +240,6 @@ func (c *Client) handleSOCKS(socksConn net.Conn, ctx context.Context) {
 	stream, err := m.OpenStream()
 	if err != nil {
 		log.Printf("[guarch] open stream failed: %v, reconnecting...", err)
-
 		c.mu.Lock()
 		c.activeMux = nil
 		c.activePM = nil
@@ -268,7 +251,6 @@ func (c *Client) handleSOCKS(socksConn net.Conn, ctx context.Context) {
 			socks5.SendReply(socksConn, 0x01)
 			return
 		}
-
 		stream, err = m.OpenStream()
 		if err != nil {
 			log.Printf("[guarch] stream failed after reconnect: %v", err)
@@ -289,13 +271,7 @@ func (c *Client) handleSOCKS(socksConn net.Conn, ctx context.Context) {
 		}
 	}
 
-	req := &protocol.ConnectRequest{
-		AddrType: addrType,
-		Addr:     host,
-		Port:     port,
-	}
-
-	// ✅ C6/C7: Marshal حالا error داره
+	req := &protocol.ConnectRequest{AddrType: addrType, Addr: host, Port: port}
 	reqData, err := req.Marshal()
 	if err != nil {
 		log.Printf("[guarch] marshal error: %v", err)
@@ -387,12 +363,16 @@ func (c *Client) relayWithTracking(stream *mux.Stream, conn net.Conn) {
 	conn.Close()
 }
 
+// ✅ H32: parsePort با بررسی overflow
 func parsePort(s string) uint16 {
-	var port uint16
+	var port int
 	for _, c := range s {
 		if c >= '0' && c <= '9' {
-			port = port*10 + uint16(c-'0')
+			port = port*10 + int(c-'0')
+			if port > 65535 {
+				return 0
+			}
 		}
 	}
-	return port
+	return uint16(port)
 }
