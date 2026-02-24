@@ -48,8 +48,10 @@ const (
 	groukStreamHdrSize = 2 + 4 + 4                         // StreamID(2) + SeqNum(4) + AckNum(4) = 10
 
 	// Limits
-	groukMaxPacketSize    = 1400
-	groukMaxPayload       = groukMaxPacketSize - groukHeaderSize - groukNonceSize - groukTagSize - 4 - groukStreamHdrSize
+	groukMaxPacketSize = 1400
+	// ✅ C8: حذف "- 4" — InnerLen دیگه وجود نداره
+	// قبلاً: groukMaxPacketSize - groukHeaderSize - groukNonceSize - groukTagSize - 4 - groukStreamHdrSize
+	groukMaxPayload       = groukMaxPacketSize - groukHeaderSize - groukNonceSize - groukTagSize - groukStreamHdrSize
 	groukMaxSessions      = 256
 	groukHandshakeTimeout = 10 * time.Second
 
@@ -192,6 +194,9 @@ func (s *GroukSession) HandlePacketFromClient(pkt *GroukPacket) {
 	s.handlePacket(pkt)
 }
 
+// ✅ C3: حذف case groukTypeHandshakeDone
+// قبلاً: HandshakeDone بی‌صدا OK میشد — کلاینت HMAC سرور رو verify نمیکرد
+// الان: HandshakeDone فقط در GroukClientHandshake handle میشه (قبل از session فعال شدن)
 func (s *GroukSession) handlePacket(pkt *GroukPacket) {
 	s.lastActive.Store(time.Now().UnixMilli())
 
@@ -218,9 +223,6 @@ func (s *GroukSession) handlePacket(pkt *GroukPacket) {
 
 	case groukTypeClose:
 		s.Close()
-
-	case groukTypeHandshakeDone:
-		// کلاینت: auth تأیید شد — بی‌صدا OK
 	}
 }
 
@@ -579,7 +581,6 @@ func (s *GroukStream) ID() uint16 {
 // ═══════════════════════════════════════
 
 // GroukServerHandshake — handshake سمت سرور
-// shared secret رو هم برمی‌گردونه (برای auth verification بعدی)
 func GroukServerHandshake(udpConn *net.UDPConn, pkt *GroukPacket, remote *net.UDPAddr, psk []byte) (*GroukSession, []byte, error) {
 	if pkt.Type != groukTypeHandshakeInit {
 		return nil, nil, fmt.Errorf("grouk: expected INIT got %d", pkt.Type)
@@ -629,11 +630,12 @@ func GroukServerHandshake(udpConn *net.UDPConn, pkt *GroukPacket, remote *net.UD
 		return nil, nil, err
 	}
 
-	// ✅ shared رو هم برگردون — برای ساختن authKey بعداً
 	return session, shared, nil
 }
 
-// GroukClientHandshake — handshake سمت کلاینت
+// ✅ C3: GroukClientHandshake — حالا منتظر تأیید سرور میمونه و HMAC رو verify میکنه
+// قبلاً: auth ارسال میشد و فوراً session برمیگشت — بدون verify کردن HMAC سرور
+// الان: ۱) auth ارسال میشه ۲) منتظر HandshakeDone ۳) HMAC سرور verify میشه
 func GroukClientHandshake(udpConn *net.UDPConn, serverAddr *net.UDPAddr, psk []byte) (*GroukSession, error) {
 	// ۱. تولید جفت کلید کلاینت
 	clientKP, err := gcrypto.GenerateKeyPair()
@@ -701,8 +703,7 @@ func GroukClientHandshake(udpConn *net.UDPConn, serverAddr *net.UDPAddr, psk []b
 		return nil, err
 	}
 
-	// ۶. استخراج کلید auth — جدا از کلید رمزنگاری!
-	// ✅ از HKDF با info متفاوت — هیچ ربطی به sendKey/recvKey نداره
+	// ۶. استخراج کلید auth
 	authKey, err := gcrypto.DeriveKey(shared, psk, []byte("grouk-auth-v1"))
 	if err != nil {
 		return nil, err
@@ -715,19 +716,53 @@ func GroukClientHandshake(udpConn *net.UDPConn, serverAddr *net.UDPAddr, psk []b
 	}
 
 	// ۸. ارسال Auth HMAC
-	// ✅ plaintext! مقدار HMAC بدون دانستن authKey بی‌معنیه
-	// مهاجم نمی‌تونه forge کنه چون authKey رو نداره
 	authMAC := groukAuthMAC(authKey, "grouk-client")
 	session.sendRawPacket(groukTypeHandshakeAuth, authMAC)
 
-	return session, nil
+	// ✅ C3: منتظر تأیید سرور + verify کردن HMAC سرور
+	expectedServer := groukAuthMAC(authKey, "grouk-server")
+	authDeadline := time.Now().Add(groukHandshakeTimeout)
+
+	for time.Now().Before(authDeadline) {
+		udpConn.SetReadDeadline(time.Now().Add(2 * time.Second))
+
+		buf := make([]byte, 1024)
+		n, _, err := udpConn.ReadFromUDP(buf)
+		if err != nil {
+			// timeout — retry AUTH
+			session.sendRawPacket(groukTypeHandshakeAuth, authMAC)
+			continue
+		}
+
+		pkt, err := UnmarshalGroukPacket(buf[:n])
+		if err != nil {
+			continue
+		}
+
+		if pkt.Type != groukTypeHandshakeDone {
+			continue
+		}
+
+		// ✅ C3: تأیید HMAC سرور — قبلاً اصلاً انجام نمیشد!
+		if !hmac.Equal(pkt.Payload, expectedServer) {
+			udpConn.SetReadDeadline(time.Time{})
+			session.Close()
+			return nil, protocol.ErrAuthFailed
+		}
+
+		// Auth دوطرفه موفق!
+		udpConn.SetReadDeadline(time.Time{})
+		return session, nil
+	}
+
+	// Timeout — سرور پاسخ نداد
+	udpConn.SetReadDeadline(time.Time{})
+	session.Close()
+	return nil, fmt.Errorf("grouk: server auth verification timeout")
 }
 
 // GroukServerVerifyAuth — تأیید auth از کلاینت
-// ✅ shared و psk رو می‌گیره و authKey رو خودش می‌سازه
-// هیچ نیازی به دسترسی به کلید cipher نداره
 func GroukServerVerifyAuth(session *GroukSession, payload []byte, shared []byte, psk []byte) error {
-	// ✅ همون HKDF که کلاینت استفاده کرد → همون authKey
 	authKey, err := gcrypto.DeriveKey(shared, psk, []byte("grouk-auth-v1"))
 	if err != nil {
 		return err
@@ -769,7 +804,7 @@ func generateSessionID() uint32 {
 // pendingSession — session در انتظار auth
 type pendingSession struct {
 	session *GroukSession
-	shared  []byte // shared secret برای ساختن authKey
+	shared  []byte
 }
 
 type GroukListener struct {
@@ -846,7 +881,6 @@ func (gl *GroukListener) readLoop() {
 					continue
 				}
 
-				// ✅ Auth OK → انتقال از pending به active
 				log.Printf("[grouk] authenticated: %s ✅ (session %d)", remote, pkt.SessionID)
 				gl.sessions.Store(pkt.SessionID, pending.session)
 				gl.pendingAuth.Delete(pkt.SessionID)
@@ -868,14 +902,12 @@ func (gl *GroukListener) readLoop() {
 }
 
 func (gl *GroukListener) handleHandshake(pkt *GroukPacket, remote *net.UDPAddr) {
-	// ✅ shared secret رو هم می‌گیره
 	session, shared, err := GroukServerHandshake(gl.conn, pkt, remote, gl.psk)
 	if err != nil {
 		log.Printf("[grouk] handshake failed from %s: %v", remote, err)
 		return
 	}
 
-	// ذخیره در pending — منتظر auth packet
 	gl.pendingAuth.Store(session.ID, &pendingSession{
 		session: session,
 		shared:  shared,
@@ -898,7 +930,6 @@ func (gl *GroukListener) cleanupPending() {
 			gl.pendingAuth.Range(func(key, val any) bool {
 				pending := val.(*pendingSession)
 				lastActive := pending.session.lastActive.Load()
-				// ۳۰ ثانیه بدون auth → حذف
 				if now-lastActive > 30000 {
 					log.Printf("[grouk] pending session %d timed out", key)
 					gl.pendingAuth.Delete(key)
