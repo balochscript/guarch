@@ -17,6 +17,7 @@ import (
 	"sync"
 	"time"
 
+	"guarch/cmd/internal/cmdutil"
 	"guarch/pkg/cover"
 	"guarch/pkg/mux"
 	"guarch/pkg/protocol"
@@ -32,9 +33,10 @@ type Client struct {
 	coverMgr   *cover.Manager
 	adaptive   *cover.AdaptiveCover
 
-	mu        sync.Mutex
-	activeMux *mux.Mux
-	activePM  *mux.PaddedMux
+	mu             sync.Mutex
+	activeMux      *mux.Mux
+	activePM       *mux.PaddedMux
+	connectBackoff time.Duration // ✅ M26
 }
 
 func main() {
@@ -71,8 +73,6 @@ func main() {
 		time.Sleep(2 * time.Second)
 		log.Printf("[guarch] cover ready: avg_size=%d samples=%d",
 			coverMgr.Stats().AvgPacketSize(), coverMgr.Stats().SampleCount())
-	} else {
-		log.Printf("[guarch] cover traffic disabled (mode: %s)", clientMode)
 	}
 
 	client := &Client{
@@ -97,16 +97,10 @@ func main() {
 	log.Println("  ██████   ██████  ██   ██ ██   ██  ██████ ██   ██")
 	log.Println("")
 	log.Printf("[guarch] client ready on socks5://%s", *listenAddr)
-	log.Printf("[guarch] server: %s", *serverAddr)
-	log.Printf("[guarch] mode: %s", clientMode)
+	log.Printf("[guarch] server: %s | mode: %s", *serverAddr, clientMode)
 	if *certPin != "" {
-		pinDisplay := *certPin
-		if len(pinDisplay) > 16 {
-			pinDisplay = pinDisplay[:16]
-		}
-		log.Printf("[guarch] certificate pin: %s...", pinDisplay)
+		log.Printf("[guarch] certificate pin: %s...", (*certPin)[:min(16, len(*certPin))])
 	}
-	log.Println("[guarch] hidden like a Balochi hunter  🏹")
 
 	go func() {
 		for {
@@ -133,20 +127,39 @@ func main() {
 	client.close()
 }
 
+// ✅ M26: exponential backoff on reconnect
 func (c *Client) getOrCreateMux() (*mux.Mux, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
 	if c.activeMux != nil && !c.activeMux.IsClosed() {
+		c.connectBackoff = 0 // reset on success
 		return c.activeMux, nil
+	}
+
+	// ✅ M26: backoff
+	if c.connectBackoff > 0 {
+		log.Printf("[guarch] reconnect backoff: %v", c.connectBackoff)
+		time.Sleep(c.connectBackoff)
 	}
 
 	log.Println("[guarch] connecting to server...")
 	m, err := c.connect()
 	if err != nil {
+		// ✅ M26: increase backoff
+		if c.connectBackoff == 0 {
+			c.connectBackoff = 1 * time.Second
+		} else {
+			c.connectBackoff *= 2
+			if c.connectBackoff > 30*time.Second {
+				c.connectBackoff = 30 * time.Second
+			}
+		}
 		return nil, err
 	}
+
 	c.activeMux = m
+	c.connectBackoff = 0 // reset
 	log.Println("[guarch] connected successfully ✅")
 	return m, nil
 }
@@ -181,7 +194,6 @@ func (c *Client) connect() (*mux.Mux, error) {
 	}
 
 	hsCfg := &transport.HandshakeConfig{PSK: c.psk}
-
 	tlsConn.SetDeadline(time.Now().Add(30 * time.Second))
 	sc, err := transport.Handshake(tlsConn, false, hsCfg)
 	if err != nil {
@@ -247,34 +259,28 @@ func (c *Client) handleSOCKS(socksConn net.Conn, ctx context.Context) {
 
 		m, err = c.getOrCreateMux()
 		if err != nil {
-			log.Printf("[guarch] reconnect failed: %v", err)
 			socks5.SendReply(socksConn, 0x01)
 			return
 		}
 		stream, err = m.OpenStream()
 		if err != nil {
-			log.Printf("[guarch] stream failed after reconnect: %v", err)
 			socks5.SendReply(socksConn, 0x01)
 			return
 		}
 	}
 
-	host, portStr, _ := net.SplitHostPort(target)
-	port := parsePort(portStr)
-
-	addrType := protocol.AddrTypeDomain
-	if ip := net.ParseIP(host); ip != nil {
-		if ip.To4() != nil {
-			addrType = protocol.AddrTypeIPv4
-		} else {
-			addrType = protocol.AddrTypeIPv6
-		}
+	// ✅ M25 + M27: SplitTarget handles error
+	host, port, addrType, err := cmdutil.SplitTarget(target)
+	if err != nil {
+		log.Printf("[guarch] %v", err)
+		stream.Close()
+		socks5.SendReply(socksConn, 0x01)
+		return
 	}
 
 	req := &protocol.ConnectRequest{AddrType: addrType, Addr: host, Port: port}
 	reqData, err := req.Marshal()
 	if err != nil {
-		log.Printf("[guarch] marshal error: %v", err)
 		stream.Close()
 		socks5.SendReply(socksConn, 0x01)
 		return
@@ -302,7 +308,6 @@ func (c *Client) handleSOCKS(socksConn net.Conn, ctx context.Context) {
 	}
 
 	if statusBuf[0] != protocol.ConnectSuccess {
-		log.Printf("[guarch] connect failed: %s", target)
 		stream.Close()
 		socks5.SendReply(socksConn, 0x05)
 		return
@@ -361,18 +366,5 @@ func (c *Client) relayWithTracking(stream *mux.Stream, conn net.Conn) {
 	<-ch
 	stream.Close()
 	conn.Close()
-}
-
-// ✅ H32: parsePort با بررسی overflow
-func parsePort(s string) uint16 {
-	var port int
-	for _, c := range s {
-		if c >= '0' && c <= '9' {
-			port = port*10 + int(c-'0')
-			if port > 65535 {
-				return 0
-			}
-		}
-	}
-	return uint16(port)
+	<-ch // ✅ M19
 }
