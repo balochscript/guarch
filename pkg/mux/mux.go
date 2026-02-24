@@ -10,7 +10,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"guarch/pkg/protocol" // ✅ C12: اضافه شده
+	"guarch/pkg/protocol"
 	"guarch/pkg/transport"
 )
 
@@ -24,10 +24,6 @@ const (
 	muxHeaderSize = 5
 )
 
-// ═══════════════════════════════════════
-// Mux
-// ═══════════════════════════════════════
-
 type Mux struct {
 	sc        *transport.SecureConn
 	streams   sync.Map
@@ -36,22 +32,30 @@ type Mux struct {
 	closeCh   chan struct{}
 	closeOnce sync.Once
 	sendMu    sync.Mutex
+	isServer  bool // ✅ C14
 }
 
-func NewMux(sc *transport.SecureConn) *Mux {
+// ✅ C14: NewMux حالا isServer میگیره
+// کلاینت: ID های ۱,۲,۳,... (شروع از ۰)
+// سرور: ID های ۱۰۰۰۰۰۰۰۰۱, ۱۰۰۰۰۰۰۰۰۲,... (شروع از ۱ میلیارد)
+func NewMux(sc *transport.SecureConn, isServer bool) *Mux {
 	m := &Mux{
 		sc:       sc,
 		acceptCh: make(chan *Stream, 32),
 		closeCh:  make(chan struct{}),
+		isServer: isServer,
 	}
+
+	// ✅ C14: جلوگیری از تداخل Stream ID
+	if isServer {
+		m.nextID.Store(1_000_000_000)
+	}
+
 	go m.readLoop()
 	go m.keepAlive()
 	return m
 }
 
-// ✅ C12: readLoop حالا از RecvPacket استفاده میکنه
-// قبلاً: sc.Recv() → فقط DATA قبول میکرد → PADDING = crash!
-// الان: sc.RecvPacket() → هر نوع پکت رو handle میکنه
 func (m *Mux) readLoop() {
 	defer m.Close()
 
@@ -64,34 +68,24 @@ func (m *Mux) readLoop() {
 
 		switch pkt.Type {
 		case protocol.PacketTypePadding:
-			// ✅ C12: padding رو بی‌صدا نادیده بگیر
 			continue
-
 		case protocol.PacketTypePing:
-			// ✅ پاسخ به ping سطح پروتکل
 			pong := protocol.NewPongPacket(0)
 			m.sc.SendPacket(pong)
 			continue
-
 		case protocol.PacketTypePong:
 			continue
-
 		case protocol.PacketTypeClose:
 			log.Printf("[mux] received CLOSE packet")
 			return
-
 		case protocol.PacketTypeData:
-			// ✅ پردازش فریم‌های Mux (منطق قبلی)
 			m.handleMuxFrame(pkt.Payload)
-
 		default:
-			// نوع ناشناخته — نادیده بگیر
 			continue
 		}
 	}
 }
 
-// ✅ جدا شده از readLoop برای خوانایی
 func (m *Mux) handleMuxFrame(data []byte) {
 	if len(data) < muxHeaderSize {
 		return
@@ -139,14 +133,12 @@ func (m *Mux) handleMuxFrame(data []byte) {
 		m.sendFrame(cmdPong, 0, nil)
 
 	case cmdPong:
-		// OK
 	}
 }
 
 func (m *Mux) keepAlive() {
 	for {
 		jitter := time.Duration(randomMuxInt(25000, 35000)) * time.Millisecond
-
 		select {
 		case <-m.closeCh:
 			return
@@ -232,12 +224,15 @@ func (m *Mux) IsClosed() bool {
 // ═══════════════════════════════════════
 
 type Stream struct {
-	id       uint32
-	mux      *Mux
-	readCh   chan []byte
+	id     uint32
+	mux    *Mux
+	readCh chan []byte
+	doneCh chan struct{}
+	closed atomic.Bool
+
+	// ✅ C13: mutex برای readBuf
+	readMu   sync.Mutex
 	readBuf  []byte
-	doneCh   chan struct{}
-	closed   atomic.Bool
 	doneOnce sync.Once
 }
 
@@ -250,13 +245,19 @@ func newStream(id uint32, m *Mux) *Stream {
 	}
 }
 
+// ✅ C13: Read با mutex روی readBuf
 func (s *Stream) Read(p []byte) (int, error) {
+	// اول بافر موجود رو چک کن (با lock)
+	s.readMu.Lock()
 	if len(s.readBuf) > 0 {
 		n := copy(p, s.readBuf)
 		s.readBuf = s.readBuf[n:]
+		s.readMu.Unlock()
 		return n, nil
 	}
+	s.readMu.Unlock()
 
+	// منتظر داده‌ی جدید (بدون lock — blocking)
 	select {
 	case data, ok := <-s.readCh:
 		if !ok {
@@ -264,8 +265,10 @@ func (s *Stream) Read(p []byte) (int, error) {
 		}
 		n := copy(p, data)
 		if n < len(data) {
+			s.readMu.Lock()
 			s.readBuf = make([]byte, len(data)-n)
 			copy(s.readBuf, data[n:])
+			s.readMu.Unlock()
 		}
 		return n, nil
 	case <-s.doneCh:
@@ -286,7 +289,6 @@ func (s *Stream) Write(p []byte) (int, error) {
 		if end > len(p) {
 			end = len(p)
 		}
-
 		if err := s.mux.sendFrame(cmdData, s.id, p[sent:end]); err != nil {
 			return sent, err
 		}
@@ -300,11 +302,9 @@ func (s *Stream) Close() error {
 	if s.closed.Swap(true) {
 		return nil
 	}
-
 	s.mux.sendFrame(cmdClose, s.id, nil)
 	s.mux.streams.Delete(s.id)
 	s.markClosed()
-
 	return nil
 }
 
