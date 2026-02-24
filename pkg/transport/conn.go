@@ -14,7 +14,18 @@ import (
 	"guarch/pkg/protocol"
 )
 
-const maxEncryptedSize = 1024 * 1024
+const (
+	maxEncryptedSize = 1024 * 1024
+
+	// ✅ M5: send size limit — متقارن با recv
+	maxSendSize = maxEncryptedSize
+
+	// ✅ M3: key rotation thresholds
+	// Random 12-byte nonce → birthday bound ≈ 2^48
+	// ما خیلی محتاط‌تر: 2^30 ≈ 1 میلیارد پیام
+	keyRotationMsgThreshold  uint64 = 1 << 30
+	keyRotationByteThreshold uint64 = 64 << 30 // 64 GB
+)
 
 type SecureConn struct {
 	raw         net.Conn
@@ -24,6 +35,12 @@ type SecureConn struct {
 	sendMu      sync.Mutex
 	recvMu      sync.Mutex
 	lastRecvSeq atomic.Uint32
+
+	// ✅ M3: key usage tracking
+	sendMsgCount  atomic.Uint64
+	recvMsgCount  atomic.Uint64
+	sendByteCount atomic.Uint64
+	recvByteCount atomic.Uint64
 }
 
 type HandshakeConfig struct {
@@ -35,7 +52,7 @@ func Handshake(raw net.Conn, isServer bool, cfg *HandshakeConfig) (*SecureConn, 
 		cfg = &HandshakeConfig{}
 	}
 
-	// ✅ H9: بدون PSK اجازه نمیدیم
+	// ✅ H9: PSK الزامیه
 	if len(cfg.PSK) == 0 {
 		return nil, fmt.Errorf("guarch: PSK is required for secure handshake")
 	}
@@ -44,6 +61,7 @@ func Handshake(raw net.Conn, isServer bool, cfg *HandshakeConfig) (*SecureConn, 
 	if err != nil {
 		return nil, fmt.Errorf("guarch: keygen: %w", err)
 	}
+	defer kp.Zeroize() // ✅ M7: private key بعد از handshake پاک میشه
 
 	var peerPub []byte
 
@@ -69,6 +87,7 @@ func Handshake(raw net.Conn, isServer bool, cfg *HandshakeConfig) (*SecureConn, 
 	if err != nil {
 		return nil, fmt.Errorf("guarch: shared secret: %w", err)
 	}
+	defer crypto.ZeroizeBytes(sharedRaw) // ✅ M7
 
 	sendInfo := "guarch-client-send-v1"
 	recvInfo := "guarch-server-send-v1"
@@ -81,16 +100,19 @@ func Handshake(raw net.Conn, isServer bool, cfg *HandshakeConfig) (*SecureConn, 
 	if err != nil {
 		return nil, fmt.Errorf("guarch: send key: %w", err)
 	}
+	defer crypto.ZeroizeBytes(sendKey) // ✅ M7: raw key پاک میشه بعد از ساخت cipher
 
 	recvKey, err := crypto.DeriveKey(sharedRaw, cfg.PSK, []byte(recvInfo))
 	if err != nil {
 		return nil, fmt.Errorf("guarch: recv key: %w", err)
 	}
+	defer crypto.ZeroizeBytes(recvKey) // ✅ M7
 
 	authKey, err := crypto.DeriveKey(sharedRaw, cfg.PSK, []byte("guarch-auth-v1"))
 	if err != nil {
 		return nil, fmt.Errorf("guarch: auth key: %w", err)
 	}
+	defer crypto.ZeroizeBytes(authKey) // ✅ M7
 
 	sendCipher, err := crypto.NewAEADCipher(sendKey)
 	if err != nil {
@@ -108,7 +130,6 @@ func Handshake(raw net.Conn, isServer bool, cfg *HandshakeConfig) (*SecureConn, 
 		recvCipher: recvCipher,
 	}
 
-	// ✅ H9: همیشه authenticate (PSK الزامیه)
 	if err := sc.authenticate(isServer, authKey); err != nil {
 		return nil, err
 	}
@@ -151,19 +172,63 @@ func computeAuthMAC(key []byte, role string) []byte {
 	return mac.Sum(nil)
 }
 
+// ✅ M3: checkSendKeyUsage — آیا key نزدیک حد مجازه؟
+func (sc *SecureConn) checkSendKeyUsage(dataLen int) error {
+	msgs := sc.sendMsgCount.Add(1)
+	bytes := sc.sendByteCount.Add(uint64(dataLen))
+
+	if msgs > keyRotationMsgThreshold {
+		return fmt.Errorf("guarch: key exhausted — sent %d messages (max %d), reconnect required",
+			msgs, keyRotationMsgThreshold)
+	}
+	if bytes > keyRotationByteThreshold {
+		return fmt.Errorf("guarch: key exhausted — sent %d bytes (max %d), reconnect required",
+			bytes, keyRotationByteThreshold)
+	}
+	return nil
+}
+
+func (sc *SecureConn) checkRecvKeyUsage(dataLen int) error {
+	msgs := sc.recvMsgCount.Add(1)
+	bytes := sc.recvByteCount.Add(uint64(dataLen))
+
+	if msgs > keyRotationMsgThreshold {
+		return fmt.Errorf("guarch: key exhausted — received %d messages, reconnect required", msgs)
+	}
+	if bytes > keyRotationByteThreshold {
+		return fmt.Errorf("guarch: key exhausted — received %d bytes, reconnect required", bytes)
+	}
+	return nil
+}
+
 func (sc *SecureConn) sendRaw(pkt *protocol.Packet) error {
 	data, err := pkt.Marshal()
 	if err != nil {
 		return err
 	}
 
-	encrypted, err := sc.sendCipher.Seal(data)
-	if err != nil {
+	// ✅ M5: send size check
+	if len(data) > maxSendSize {
+		return fmt.Errorf("guarch: packet too large to send: %d > %d", len(data), maxSendSize)
+	}
+
+	// ✅ M3: check key usage before encryption
+	if err := sc.checkSendKeyUsage(len(data)); err != nil {
 		return err
 	}
 
+	// ✅ M10: compute wire length for AAD
+	// len(encrypted) = EncryptOverhead + len(data) — deterministic
+	expectedLen := uint32(crypto.EncryptOverhead + len(data))
 	lenBuf := make([]byte, 4)
-	binary.BigEndian.PutUint32(lenBuf, uint32(len(encrypted)))
+	binary.BigEndian.PutUint32(lenBuf, expectedLen)
+
+	// ✅ M9: encrypt with length prefix as AAD
+	// → attacker نمیتونه length رو تغییر بده بدون شکست AEAD
+	encrypted, err := sc.sendCipher.SealWithAAD(data, lenBuf)
+	if err != nil {
+		return err
+	}
 
 	if _, err := sc.raw.Write(lenBuf); err != nil {
 		return err
@@ -209,7 +274,15 @@ func (sc *SecureConn) RecvPacket() (*protocol.Packet, error) {
 		return nil, err
 	}
 
-	data, err := sc.recvCipher.Open(encrypted)
+	// ✅ M3: check recv key usage
+	if err := sc.checkRecvKeyUsage(len(encrypted)); err != nil {
+		return nil, err
+	}
+
+	// ✅ M9/M10: decrypt with length prefix as AAD
+	// lenBuf همون مقداری هست که از wire خوندیم
+	// اگه attacker تغییرش داده باشه → AEAD fail
+	data, err := sc.recvCipher.OpenWithAAD(encrypted, lenBuf)
 	if err != nil {
 		return nil, err
 	}
@@ -247,4 +320,17 @@ func (sc *SecureConn) Close() error {
 
 func (sc *SecureConn) RemoteAddr() net.Addr {
 	return sc.raw.RemoteAddr()
+}
+
+// ✅ M3: NeedsRotation — برای monitoring/logging
+// true = بیش از ۹۰٪ ظرفیت key مصرف شده → باید reconnect بشه
+func (sc *SecureConn) NeedsRotation() bool {
+	warn := keyRotationMsgThreshold * 90 / 100
+	return sc.sendMsgCount.Load() > warn || sc.recvMsgCount.Load() > warn
+}
+
+// KeyUsageStats — آمار مصرف key (برای debug/monitoring)
+func (sc *SecureConn) KeyUsageStats() (sendMsgs, recvMsgs, sendBytes, recvBytes uint64) {
+	return sc.sendMsgCount.Load(), sc.recvMsgCount.Load(),
+		sc.sendByteCount.Load(), sc.recvByteCount.Load()
 }
