@@ -63,6 +63,14 @@ type Packet struct {
 	Padding    []byte
 }
 
+// ✅ M8: coarsenedTimestamp — دقت ثانیه به جای میلی‌ثانیه
+// Timestamp داخل AEAD رمزنگاری شده ولی اگه key لو بره:
+//   - UnixMilli → زمان دقیق فعالیت لو میره
+//   - Unix (ثانیه) → ۱۰۰۰× کمتر اطلاعات نشت میکنه
+func coarsenedTimestamp() int64 {
+	return time.Now().Unix()
+}
+
 func NewDataPacket(payload []byte, seqNum uint32) (*Packet, error) {
 	if len(payload) > MaxPayloadSize {
 		return nil, ErrPacketTooLarge
@@ -71,7 +79,7 @@ func NewDataPacket(payload []byte, seqNum uint32) (*Packet, error) {
 		Version:    ProtocolVersion,
 		Type:       PacketTypeData,
 		SeqNum:     seqNum,
-		Timestamp:  time.Now().UnixMilli(),
+		Timestamp:  coarsenedTimestamp(), // ✅ M8
 		PayloadLen: uint16(len(payload)),
 		Payload:    payload,
 	}, nil
@@ -85,7 +93,7 @@ func NewPaddedDataPacket(payload []byte, seqNum uint32, totalSize int) (*Packet,
 		Version:    ProtocolVersion,
 		Type:       PacketTypeData,
 		SeqNum:     seqNum,
-		Timestamp:  time.Now().UnixMilli(),
+		Timestamp:  coarsenedTimestamp(), // ✅ M8
 		PayloadLen: uint16(len(payload)),
 		Payload:    payload,
 	}
@@ -112,7 +120,7 @@ func NewPaddingPacket(size int, seqNum uint32) (*Packet, error) {
 		Version:    ProtocolVersion,
 		Type:       PacketTypePadding,
 		SeqNum:     seqNum,
-		Timestamp:  time.Now().UnixMilli(),
+		Timestamp:  coarsenedTimestamp(), // ✅ M8
 		PaddingLen: uint16(size),
 		Padding:    padding,
 	}, nil
@@ -123,7 +131,7 @@ func NewPingPacket(seqNum uint32) *Packet {
 		Version:   ProtocolVersion,
 		Type:      PacketTypePing,
 		SeqNum:    seqNum,
-		Timestamp: time.Now().UnixMilli(),
+		Timestamp: coarsenedTimestamp(), // ✅ M8
 	}
 }
 
@@ -132,7 +140,7 @@ func NewPongPacket(seqNum uint32) *Packet {
 		Version:   ProtocolVersion,
 		Type:      PacketTypePong,
 		SeqNum:    seqNum,
-		Timestamp: time.Now().UnixMilli(),
+		Timestamp: coarsenedTimestamp(), // ✅ M8
 	}
 }
 
@@ -141,7 +149,7 @@ func NewClosePacket(seqNum uint32) *Packet {
 		Version:   ProtocolVersion,
 		Type:      PacketTypeClose,
 		SeqNum:    seqNum,
-		Timestamp: time.Now().UnixMilli(),
+		Timestamp: coarsenedTimestamp(), // ✅ M8
 	}
 }
 
@@ -179,7 +187,7 @@ func Unmarshal(data []byte) (*Packet, error) {
 		PaddingLen: binary.BigEndian.Uint16(data[16:18]),
 	}
 
-	// ✅ H7: بررسی حداکثر اندازه
+	// ✅ H7/H11: بررسی حداکثر اندازه
 	if p.PayloadLen > MaxPayloadSize {
 		return nil, fmt.Errorf("%w: payload %d exceeds max %d", ErrPacketTooLarge, p.PayloadLen, MaxPayloadSize)
 	}
@@ -214,7 +222,6 @@ func ReadPacket(r io.Reader) (*Packet, error) {
 	payloadLen := binary.BigEndian.Uint16(header[14:16])
 	paddingLen := binary.BigEndian.Uint16(header[16:18])
 
-	// ✅ H11: بررسی قبل از allocate
 	if payloadLen > MaxPayloadSize {
 		return nil, fmt.Errorf("%w: payload %d exceeds max %d", ErrPacketTooLarge, payloadLen, MaxPayloadSize)
 	}
@@ -233,7 +240,6 @@ func ReadPacket(r io.Reader) (*Packet, error) {
 	return Unmarshal(fullPacket)
 }
 
-// ✅ H7: Validate حالا max size هم چک میکنه
 func (p *Packet) Validate() error {
 	if p.Version != ProtocolVersion {
 		return fmt.Errorf("%w: got %d want %d", ErrInvalidVersion, p.Version, ProtocolVersion)
@@ -261,5 +267,6 @@ func (p *Packet) TotalSize() int {
 }
 
 func (p *Packet) String() string {
-	return fmt.Sprintf("Packet{v=%d type=%s seq=%d payload=%d padding=%d}", p.Version, p.Type, p.SeqNum, p.PayloadLen, p.PaddingLen)
+	return fmt.Sprintf("Packet{v=%d type=%s seq=%d payload=%d padding=%d}",
+		p.Version, p.Type, p.SeqNum, p.PayloadLen, p.PaddingLen)
 }
