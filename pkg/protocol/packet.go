@@ -52,6 +52,12 @@ func (pt PacketType) IsValid() bool {
 	return pt >= PacketTypeData && pt <= PacketTypePong
 }
 
+// ✅ L7: Note on PaddingLen visibility
+//
+// PaddingLen is part of the Packet header which is INSIDE the AEAD ciphertext
+// (see conn.go sendRaw → pkt.Marshal() → cipher.SealWithAAD).
+// An attacker sees only the outer 4-byte encrypted length.
+// PaddingLen is NOT visible on the wire.
 type Packet struct {
 	Version    byte
 	Type       PacketType
@@ -63,10 +69,6 @@ type Packet struct {
 	Padding    []byte
 }
 
-// ✅ M8: coarsenedTimestamp — دقت ثانیه به جای میلی‌ثانیه
-// Timestamp داخل AEAD رمزنگاری شده ولی اگه key لو بره:
-//   - UnixMilli → زمان دقیق فعالیت لو میره
-//   - Unix (ثانیه) → ۱۰۰۰× کمتر اطلاعات نشت میکنه
 func coarsenedTimestamp() int64 {
 	return time.Now().Unix()
 }
@@ -79,7 +81,7 @@ func NewDataPacket(payload []byte, seqNum uint32) (*Packet, error) {
 		Version:    ProtocolVersion,
 		Type:       PacketTypeData,
 		SeqNum:     seqNum,
-		Timestamp:  coarsenedTimestamp(), // ✅ M8
+		Timestamp:  coarsenedTimestamp(),
 		PayloadLen: uint16(len(payload)),
 		Payload:    payload,
 	}, nil
@@ -93,7 +95,7 @@ func NewPaddedDataPacket(payload []byte, seqNum uint32, totalSize int) (*Packet,
 		Version:    ProtocolVersion,
 		Type:       PacketTypeData,
 		SeqNum:     seqNum,
-		Timestamp:  coarsenedTimestamp(), // ✅ M8
+		Timestamp:  coarsenedTimestamp(),
 		PayloadLen: uint16(len(payload)),
 		Payload:    payload,
 	}
@@ -104,7 +106,10 @@ func NewPaddedDataPacket(payload []byte, seqNum uint32, totalSize int) (*Packet,
 			padSize = MaxPaddingSize
 		}
 		pkt.Padding = make([]byte, padSize)
-		rand.Read(pkt.Padding)
+		// ✅ L6: handle rand.Read error
+		if _, err := rand.Read(pkt.Padding); err != nil {
+			return nil, fmt.Errorf("guarch: generate padding: %w", err)
+		}
 		pkt.PaddingLen = uint16(padSize)
 	}
 	return pkt, nil
@@ -114,13 +119,19 @@ func NewPaddingPacket(size int, seqNum uint32) (*Packet, error) {
 	if size > MaxPaddingSize {
 		size = MaxPaddingSize
 	}
+	if size <= 0 {
+		size = 1
+	}
 	padding := make([]byte, size)
-	rand.Read(padding)
+	// ✅ L6: handle rand.Read error
+	if _, err := rand.Read(padding); err != nil {
+		return nil, fmt.Errorf("guarch: generate padding: %w", err)
+	}
 	return &Packet{
 		Version:    ProtocolVersion,
 		Type:       PacketTypePadding,
 		SeqNum:     seqNum,
-		Timestamp:  coarsenedTimestamp(), // ✅ M8
+		Timestamp:  coarsenedTimestamp(),
 		PaddingLen: uint16(size),
 		Padding:    padding,
 	}, nil
@@ -131,7 +142,7 @@ func NewPingPacket(seqNum uint32) *Packet {
 		Version:   ProtocolVersion,
 		Type:      PacketTypePing,
 		SeqNum:    seqNum,
-		Timestamp: coarsenedTimestamp(), // ✅ M8
+		Timestamp: coarsenedTimestamp(),
 	}
 }
 
@@ -140,7 +151,7 @@ func NewPongPacket(seqNum uint32) *Packet {
 		Version:   ProtocolVersion,
 		Type:      PacketTypePong,
 		SeqNum:    seqNum,
-		Timestamp: coarsenedTimestamp(), // ✅ M8
+		Timestamp: coarsenedTimestamp(),
 	}
 }
 
@@ -149,7 +160,7 @@ func NewClosePacket(seqNum uint32) *Packet {
 		Version:   ProtocolVersion,
 		Type:      PacketTypeClose,
 		SeqNum:    seqNum,
-		Timestamp: coarsenedTimestamp(), // ✅ M8
+		Timestamp: coarsenedTimestamp(),
 	}
 }
 
@@ -187,7 +198,6 @@ func Unmarshal(data []byte) (*Packet, error) {
 		PaddingLen: binary.BigEndian.Uint16(data[16:18]),
 	}
 
-	// ✅ H7/H11: بررسی حداکثر اندازه
 	if p.PayloadLen > MaxPayloadSize {
 		return nil, fmt.Errorf("%w: payload %d exceeds max %d", ErrPacketTooLarge, p.PayloadLen, MaxPayloadSize)
 	}
@@ -213,7 +223,6 @@ func Unmarshal(data []byte) (*Packet, error) {
 	return p, nil
 }
 
-// ✅ H11: ReadPacket با size limit
 func ReadPacket(r io.Reader) (*Packet, error) {
 	header := make([]byte, HeaderSize)
 	if _, err := io.ReadFull(r, header); err != nil {
