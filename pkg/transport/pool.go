@@ -9,14 +9,21 @@ import (
 	"time"
 )
 
+// ✅ C1: poolEntry با زمان ساخت — جایگزین isAlive
+type poolEntry struct {
+	sc      *SecureConn
+	created time.Time
+}
+
 type Pool struct {
 	serverAddr string
 	tlsConfig  *tls.Config
 	hsCfg      *HandshakeConfig
-	conns      []*SecureConn
+	conns      []poolEntry
 	mu         sync.Mutex
 	maxSize    int
 	maxRetry   int
+	maxAge     time.Duration
 }
 
 func NewPool(serverAddr string, maxSize int, hsCfg *HandshakeConfig) *Pool {
@@ -29,25 +36,32 @@ func NewPool(serverAddr string, maxSize int, hsCfg *HandshakeConfig) *Pool {
 		hsCfg:    hsCfg,
 		maxSize:  maxSize,
 		maxRetry: 3,
+		maxAge:   5 * time.Minute,
 	}
 }
 
+// ✅ C1: Get بدون isAlive
+// قبلاً: isAlive() یک بایت میخوند و گمش میکرد → data corruption
+// الان: فقط سن connection چک میشه — بدون خوندن داده
 func (p *Pool) Get() (*SecureConn, error) {
 	p.mu.Lock()
 
-	if len(p.conns) > 0 {
-		sc := p.conns[len(p.conns)-1]
+	for len(p.conns) > 0 {
+		// از آخر بردار (LIFO — تازه‌ترین)
+		entry := p.conns[len(p.conns)-1]
 		p.conns = p.conns[:len(p.conns)-1]
-		p.mu.Unlock()
 
-		if isAlive(sc) {
-			return sc, nil
+		// ✅ C1: بررسی سن به جای خوندن داده
+		if time.Since(entry.created) > p.maxAge {
+			entry.sc.Close()
+			continue // بعدی رو امتحان کن
 		}
-		sc.Close()
-	} else {
+
 		p.mu.Unlock()
+		return entry.sc, nil
 	}
 
+	p.mu.Unlock()
 	return p.createConn()
 }
 
@@ -60,7 +74,10 @@ func (p *Pool) Put(sc *SecureConn) {
 		return
 	}
 
-	p.conns = append(p.conns, sc)
+	p.conns = append(p.conns, poolEntry{
+		sc:      sc,
+		created: time.Now(),
+	})
 }
 
 func (p *Pool) createConn() (*SecureConn, error) {
@@ -102,8 +119,8 @@ func (p *Pool) Close() {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	for _, sc := range p.conns {
-		sc.Close()
+	for _, entry := range p.conns {
+		entry.sc.Close()
 	}
 	p.conns = nil
 }
@@ -112,19 +129,4 @@ func (p *Pool) Size() int {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	return len(p.conns)
-}
-
-func isAlive(sc *SecureConn) bool {
-	sc.raw.SetReadDeadline(time.Now().Add(1 * time.Millisecond))
-	buf := make([]byte, 1)
-	_, err := sc.raw.Read(buf)
-	sc.raw.SetReadDeadline(time.Time{})
-
-	if err != nil {
-		if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
-			return true
-		}
-		return false
-	}
-	return true
 }
