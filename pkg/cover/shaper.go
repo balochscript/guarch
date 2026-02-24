@@ -3,17 +3,18 @@ package cover
 import (
 	"crypto/rand"
 	"math/big"
+	"sync/atomic"
 	"time"
 )
 
 type Shaper struct {
 	stats    *Stats
-	pattern  Pattern
-	adaptive *AdaptiveCover // ✅ جدید: ارتباط با سیستم تطبیقی
-	padder   *SmartPadder   // ✅ جدید: padding هوشمند
+	pattern  atomic.Int32 // ✅ H13: atomic به جای plain field
+	adaptive *AdaptiveCover
+	padder   *SmartPadder
 }
 
-type Pattern int
+type Pattern int32
 
 const (
 	PatternWebBrowsing Pattern = iota
@@ -21,31 +22,34 @@ const (
 	PatternFileDownload
 )
 
-// ✅ اصلاح: حالا adaptive و padder هم می‌گیره
 func NewShaper(stats *Stats, pattern Pattern) *Shaper {
-	return &Shaper{
-		stats:   stats,
-		pattern: pattern,
+	s := &Shaper{
+		stats: stats,
 	}
+	s.pattern.Store(int32(pattern))
+	return s
 }
 
-// NewAdaptiveShaper — شیپر با سیستم تطبیقی
 func NewAdaptiveShaper(stats *Stats, pattern Pattern, adaptive *AdaptiveCover, maxPadding int) *Shaper {
-	return &Shaper{
+	s := &Shaper{
 		stats:    stats,
-		pattern:  pattern,
 		adaptive: adaptive,
 		padder:   NewSmartPadder(maxPadding, adaptive),
 	}
+	s.pattern.Store(int32(pattern))
+	return s
 }
 
-// ✅ اصلاح: حالا از SmartPadder استفاده می‌کنه
+// ✅ H13: getPattern thread-safe
+func (s *Shaper) getPattern() Pattern {
+	return Pattern(s.pattern.Load())
+}
+
 func (s *Shaper) PaddingSize(dataSize int) int {
 	if s.padder != nil {
 		return s.padder.Calculate(dataSize)
 	}
 
-	// fallback به روش قدیمی
 	targetSize := s.stats.AvgPacketSize()
 	if targetSize <= dataSize {
 		return 0
@@ -70,48 +74,34 @@ func (s *Shaper) PaddingSize(dataSize int) int {
 	return padding
 }
 
-// ✅ FIX B3: تأخیر واقعی!
-// قبلاً: از AvgInterval() cover traffic استفاده می‌کرد → ۵+ ثانیه!
-// الان: تأخیر واقعی TCP-level (میلی‌ثانیه)
 func (s *Shaper) Delay() time.Duration {
-	switch s.pattern {
+	switch s.getPattern() {
 	case PatternWebBrowsing:
-		// وبگردی عادی: ۰-۵۰ میلی‌ثانیه jitter
-		// بسته‌های TCP واقعی وب فاصله‌ی خیلی کمی دارن
 		return time.Duration(randomInt(0, 50)) * time.Millisecond
-
 	case PatternVideoStream:
-		// استریم ویدئو: ۵-۳۰ میلی‌ثانیه
-		// chunk‌ها پشت سر هم میان
 		return time.Duration(randomInt(5, 30)) * time.Millisecond
-
 	case PatternFileDownload:
-		// دانلود: ۰-۱۰ میلی‌ثانیه
-		// حداکثر سرعت
 		return time.Duration(randomInt(0, 10)) * time.Millisecond
-
 	default:
 		return time.Duration(randomInt(0, 30)) * time.Millisecond
 	}
 }
 
-// ShouldSendPadding — آیا padding خالی بفرسته؟
 func (s *Shaper) ShouldSendPadding() bool {
-	switch s.pattern {
+	switch s.getPattern() {
 	case PatternWebBrowsing:
-		return randomInt(0, 10) < 3 // ۳۰%
+		return randomInt(0, 10) < 3
 	case PatternVideoStream:
-		return randomInt(0, 10) < 1 // ۱۰%
+		return randomInt(0, 10) < 1
 	case PatternFileDownload:
-		return randomInt(0, 10) < 1 // ۱۰%
+		return randomInt(0, 10) < 1
 	default:
-		return randomInt(0, 10) < 2 // ۲۰%
+		return randomInt(0, 10) < 2
 	}
 }
 
-// IdleDelay — تأخیر زمان بی‌کاری
 func (s *Shaper) IdleDelay() time.Duration {
-	switch s.pattern {
+	switch s.getPattern() {
 	case PatternWebBrowsing:
 		return time.Duration(randomInt(1000, 5000)) * time.Millisecond
 	case PatternVideoStream:
@@ -128,7 +118,6 @@ func (s *Shaper) FragmentSize() int {
 	if avg < 100 {
 		avg = 512
 	}
-
 	result := avg + randomInt(-64, 64)
 	if result < 64 {
 		result = 64
@@ -136,13 +125,12 @@ func (s *Shaper) FragmentSize() int {
 	if result > 1024 {
 		result = 1024
 	}
-
 	return result
 }
 
-// ✅ جدید: تغییر Pattern در runtime
+// ✅ H13: SetPattern thread-safe
 func (s *Shaper) SetPattern(p Pattern) {
-	s.pattern = p
+	s.pattern.Store(int32(p))
 }
 
 func randomInt(min, max int) int {
