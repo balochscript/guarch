@@ -58,7 +58,100 @@ const (
 
 	// ✅ H5: timeout برای session بی‌فعالیت
 	groukSessionTimeout = 5 * time.Minute
+
+	// ✅ H2: rate limit defaults
+	groukDefaultMaxHandshakeRate = 10            // حداکثر handshake در هر window
+	groukDefaultRateWindow       = time.Minute   // پنجره زمانی rate limit
+
+	// ✅ H4: pre-auth resource limit
+	groukDefaultMaxPending = 64
 )
+
+// ═══════════════════════════════════════
+// ✅ H2: IP Rate Limiter
+// ═══════════════════════════════════════
+
+type ipRateLimiter struct {
+	mu      sync.Mutex
+	counts  map[string][]time.Time
+	maxRate int
+	window  time.Duration
+}
+
+func newIPRateLimiter(maxRate int, window time.Duration) *ipRateLimiter {
+	if maxRate <= 0 {
+		maxRate = groukDefaultMaxHandshakeRate
+	}
+	if window <= 0 {
+		window = groukDefaultRateWindow
+	}
+	return &ipRateLimiter{
+		counts:  make(map[string][]time.Time),
+		maxRate: maxRate,
+		window:  window,
+	}
+}
+
+// Allow — آیا این IP مجاز به ارسال handshake هست؟
+func (rl *ipRateLimiter) Allow(ip string) bool {
+	rl.mu.Lock()
+	defer rl.mu.Unlock()
+
+	now := time.Now()
+	cutoff := now.Add(-rl.window)
+
+	// حذف رکوردهای قدیمی
+	times := rl.counts[ip]
+	valid := times[:0]
+	for _, t := range times {
+		if t.After(cutoff) {
+			valid = append(valid, t)
+		}
+	}
+
+	if len(valid) >= rl.maxRate {
+		rl.counts[ip] = valid
+		return false
+	}
+
+	rl.counts[ip] = append(valid, now)
+	return true
+}
+
+// cleanupLoop — پاکسازی دوره‌ای حافظه rate limiter
+func (rl *ipRateLimiter) cleanupLoop(closeCh <-chan struct{}) {
+	ticker := time.NewTicker(2 * time.Minute)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-closeCh:
+			return
+		case <-ticker.C:
+			rl.cleanup()
+		}
+	}
+}
+
+func (rl *ipRateLimiter) cleanup() {
+	rl.mu.Lock()
+	defer rl.mu.Unlock()
+
+	cutoff := time.Now().Add(-rl.window)
+	for ip, times := range rl.counts {
+		valid := times[:0]
+		for _, t := range times {
+			if t.After(cutoff) {
+				valid = append(valid, t)
+			}
+		}
+		if len(valid) == 0 {
+			delete(rl.counts, ip)
+		} else {
+			rl.counts[ip] = valid
+		}
+	}
+}
 
 // ═══════════════════════════════════════
 // GroukPacket
@@ -742,12 +835,13 @@ func generateSessionID() uint32 {
 }
 
 // ═══════════════════════════════════════
-// GroukListener
+// GroukListener — ✅ H2 + H4
 // ═══════════════════════════════════════
 
 type pendingSession struct {
-	session *GroukSession
-	shared  []byte
+	session   *GroukSession
+	shared    []byte
+	createdAt time.Time // ✅ H4: زمان ساخت برای timeout دقیق‌تر
 }
 
 type GroukListener struct {
@@ -757,6 +851,13 @@ type GroukListener struct {
 	pendingAuth sync.Map
 	acceptCh    chan *GroukSession
 	closeCh     chan struct{}
+
+	// ✅ H2: rate limiter
+	rateLimiter *ipRateLimiter
+
+	// ✅ H4: محدودیت pending sessions
+	maxPending  int
+	pendingCount atomic.Int32
 }
 
 func GroukListen(addr string, psk []byte) (*GroukListener, error) {
@@ -772,14 +873,18 @@ func GroukListen(addr string, psk []byte) (*GroukListener, error) {
 	conn.SetWriteBuffer(4 * 1024 * 1024)
 
 	gl := &GroukListener{
-		conn:     conn,
-		psk:      psk,
-		acceptCh: make(chan *GroukSession, 16),
-		closeCh:  make(chan struct{}),
+		conn:        conn,
+		psk:         psk,
+		acceptCh:    make(chan *GroukSession, 16),
+		closeCh:     make(chan struct{}),
+		rateLimiter: newIPRateLimiter(groukDefaultMaxHandshakeRate, groukDefaultRateWindow), // ✅ H2
+		maxPending:  groukDefaultMaxPending,                                                  // ✅ H4
 	}
+
 	go gl.readLoop()
 	go gl.cleanupPending()
-	go gl.cleanupSessions() // ✅ H5
+	go gl.cleanupSessions()
+	go gl.rateLimiter.cleanupLoop(gl.closeCh) // ✅ H2: cleanup memory
 	return gl, nil
 }
 
@@ -807,6 +912,20 @@ func (gl *GroukListener) readLoop() {
 		}
 
 		if pkt.SessionID == 0 && pkt.Type == groukTypeHandshakeInit {
+			// ✅ H2: rate limit check
+			remoteIP := remote.IP.String()
+			if !gl.rateLimiter.Allow(remoteIP) {
+				log.Printf("[grouk] ⚠️  rate limited handshake from %s", remoteIP)
+				continue
+			}
+
+			// ✅ H4: pending limit check
+			if int(gl.pendingCount.Load()) >= gl.maxPending {
+				log.Printf("[grouk] ⚠️  too many pending sessions (%d), rejecting %s",
+					gl.pendingCount.Load(), remoteIP)
+				continue
+			}
+
 			go gl.handleHandshake(pkt, remote)
 			continue
 		}
@@ -817,12 +936,14 @@ func (gl *GroukListener) readLoop() {
 				if err := GroukServerVerifyAuth(pending.session, pkt.Payload, pending.shared, gl.psk); err != nil {
 					log.Printf("[grouk] auth failed from %s: %v", remote, err)
 					gl.pendingAuth.Delete(pkt.SessionID)
+					gl.pendingCount.Add(-1) // ✅ H4
 					pending.session.Close()
 					continue
 				}
 				log.Printf("[grouk] authenticated: %s ✅ (session %d)", remote, pkt.SessionID)
 				gl.sessions.Store(pkt.SessionID, pending.session)
 				gl.pendingAuth.Delete(pkt.SessionID)
+				gl.pendingCount.Add(-1) // ✅ H4
 				select {
 				case gl.acceptCh <- pending.session:
 				case <-gl.closeCh:
@@ -844,8 +965,14 @@ func (gl *GroukListener) handleHandshake(pkt *GroukPacket, remote *net.UDPAddr) 
 		log.Printf("[grouk] handshake failed from %s: %v", remote, err)
 		return
 	}
-	gl.pendingAuth.Store(session.ID, &pendingSession{session: session, shared: shared})
-	log.Printf("[grouk] session %d created for %s (waiting for auth)", session.ID, remote)
+	gl.pendingAuth.Store(session.ID, &pendingSession{
+		session:   session,
+		shared:    shared,
+		createdAt: time.Now(), // ✅ H4
+	})
+	gl.pendingCount.Add(1) // ✅ H4
+	log.Printf("[grouk] session %d created for %s (waiting for auth, pending=%d)",
+		session.ID, remote, gl.pendingCount.Load())
 }
 
 func (gl *GroukListener) cleanupPending() {
@@ -857,12 +984,13 @@ func (gl *GroukListener) cleanupPending() {
 		case <-gl.closeCh:
 			return
 		case <-ticker.C:
-			now := time.Now().UnixMilli()
+			now := time.Now()
 			gl.pendingAuth.Range(func(key, val any) bool {
 				pending := val.(*pendingSession)
-				if now-pending.session.lastActive.Load() > 30000 {
+				if now.Sub(pending.createdAt) > 30*time.Second {
 					log.Printf("[grouk] pending session %d timed out", key)
 					gl.pendingAuth.Delete(key)
+					gl.pendingCount.Add(-1) // ✅ H4
 					pending.session.Close()
 				}
 				return true
