@@ -68,7 +68,8 @@ func (m *Mux) readLoop() {
 		case protocol.PacketTypePadding:
 			continue
 		case protocol.PacketTypePing:
-			pong := protocol.NewPongPacket(0)
+			// ✅ M24: echo seq number
+			pong := protocol.NewPongPacket(pkt.SeqNum)
 			m.sc.SendPacket(pong)
 			continue
 		case protocol.PacketTypePong:
@@ -128,7 +129,8 @@ func (m *Mux) handleMuxFrame(data []byte) {
 		}
 
 	case cmdPing:
-		m.sendFrame(cmdPong, 0, nil)
+		// ✅ M24: echo streamID (استفاده شده بعنوان identifier)
+		m.sendFrame(cmdPong, streamID, nil)
 
 	case cmdPong:
 	}
@@ -314,7 +316,7 @@ func (s *Stream) ID() uint32 {
 }
 
 // ═══════════════════════════════════════
-// RelayStream
+// ✅ M19: RelayStream — هر دو goroutine رو wait میکنه
 // ═══════════════════════════════════════
 
 func RelayStream(stream *Stream, conn net.Conn) {
@@ -354,16 +356,17 @@ func RelayStream(stream *Stream, conn net.Conn) {
 		}
 	}()
 
+	// ✅ M19: هر دو goroutine رو drain کن
 	<-ch
 	stream.Close()
 	conn.Close()
+	<-ch
 }
 
 // ═══════════════════════════════════════
 // Helper
 // ═══════════════════════════════════════
 
-// ✅ H19: تصادفی واقعی با crypto/rand
 func randomMuxInt(min, max int) int {
 	if max <= min {
 		return min
