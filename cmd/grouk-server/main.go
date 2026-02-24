@@ -31,6 +31,8 @@ var (
 	healthCheck *health.Checker
 )
 
+var maxSessions = make(chan struct{}, 500)
+
 func main() {
 	addr := flag.String("addr", ":8443", "listen address (UDP)")
 	decoyAddr := flag.String("decoy", ":8080", "HTTP decoy server")
@@ -74,15 +76,24 @@ func main() {
 	log.Println("[grouk] ready — fast as lightning 🌩️")
 
 	go func() {
-		for {
-			session, err := gl.Accept()
-			if err != nil {
-				log.Printf("[grouk] accept error: %v", err)
-				return
-			}
-			go handleSession(session)
+	for {
+		session, err := gl.Accept()
+		if err != nil {
+			log.Printf("[grouk] accept error: %v", err)
+			return
 		}
-	}()
+		select {
+		case maxSessions <- struct{}{}:
+			go func() {
+				defer func() { <-maxSessions }()
+				handleSession(session)
+			}()
+		default:
+			log.Printf("[grouk] session limit reached")
+			session.Close()
+		}
+	}
+}()
 
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, os.Interrupt)
