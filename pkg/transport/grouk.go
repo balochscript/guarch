@@ -55,6 +55,9 @@ const (
 	groukWindowSize     = 128
 	groukRecvBufferSize = 256
 	groukMaxRetransmit  = 10
+
+	// ✅ H5: timeout برای session بی‌فعالیت
+	groukSessionTimeout = 5 * time.Minute
 )
 
 // ═══════════════════════════════════════
@@ -273,6 +276,7 @@ func (s *GroukSession) sendStreamPacket(streamID uint16, cmd byte, seqNum, ackNu
 	return s.sendPacket(groukTypeData, buf)
 }
 
+// ✅ H3: بررسی overflow قبل از cast
 func (s *GroukSession) OpenStream() (*GroukStream, error) {
 	select {
 	case <-s.closeCh:
@@ -280,7 +284,12 @@ func (s *GroukSession) OpenStream() (*GroukStream, error) {
 	default:
 	}
 
-	id := uint16(s.nextStream.Add(1))
+	next := s.nextStream.Add(1)
+	if next > 65535 {
+		return nil, fmt.Errorf("grouk: stream ID overflow (max 65535)")
+	}
+
+	id := uint16(next)
 	stream := newGroukStream(id, s)
 	s.streams.Store(id, stream)
 
@@ -354,7 +363,6 @@ type GroukStream struct {
 	recvNext atomic.Uint32
 	readCh   chan []byte
 
-	// ✅ C5: mutex برای readBuf
 	readMu  sync.Mutex
 	readBuf []byte
 
@@ -386,9 +394,7 @@ func (s *GroukStream) nextSendSeq() uint32 {
 	return s.sendSeq.Add(1)
 }
 
-// ✅ C5: Read با mutex روی readBuf
 func (s *GroukStream) Read(p []byte) (int, error) {
-	// اول بافر موجود رو چک کن
 	s.readMu.Lock()
 	if len(s.readBuf) > 0 {
 		n := copy(p, s.readBuf)
@@ -398,7 +404,6 @@ func (s *GroukStream) Read(p []byte) (int, error) {
 	}
 	s.readMu.Unlock()
 
-	// منتظر داده‌ی جدید
 	select {
 	case data, ok := <-s.readCh:
 		if !ok {
@@ -467,9 +472,6 @@ func (s *GroukStream) handleRecv(seq uint32, data []byte) {
 	s.deliverOrdered()
 }
 
-// ✅ C4: deliverOrdered حالا non-blocking
-// قبلاً: readCh <- data بلاک میشد → readLoop کل سرور قفل میشد
-// الان: اگه readCh پر باشه → داده در recvBuf میمونه و بعداً retry میشه
 func (s *GroukStream) deliverOrdered() {
 	for {
 		next := s.recvNext.Load()
@@ -485,7 +487,6 @@ func (s *GroukStream) deliverOrdered() {
 		case <-s.doneCh:
 			return
 		default:
-			// ✅ C4: readCh پره — داده رو برگردون و بعداً retry کن
 			s.recvBuf.Store(next, data)
 			return
 		}
@@ -527,7 +528,6 @@ func (s *GroukStream) retransmitLoop() {
 				return true
 			})
 
-			// ✅ C4: retry delivery بعد از retransmit check
 			s.deliverOrdered()
 		}
 	}
@@ -779,11 +779,10 @@ func GroukListen(addr string, psk []byte) (*GroukListener, error) {
 	}
 	go gl.readLoop()
 	go gl.cleanupPending()
+	go gl.cleanupSessions() // ✅ H5
 	return gl, nil
 }
 
-// ✅ C2: readLoop حالا داده رو copy میکنه قبل از استفاده
-// قبلاً: buf مشترک → goroutine بعدی buf رو overwrite میکرد
 func (gl *GroukListener) readLoop() {
 	buf := make([]byte, 2048)
 
@@ -799,7 +798,6 @@ func (gl *GroukListener) readLoop() {
 			continue
 		}
 
-		// ✅ C2: کپی داده قبل از هر استفاده
 		data := make([]byte, n)
 		copy(data, buf[:n])
 
@@ -807,7 +805,6 @@ func (gl *GroukListener) readLoop() {
 		if err != nil {
 			continue
 		}
-		// حالا pkt.Payload به data اشاره میکنه (کپی ما) نه buf
 
 		if pkt.SessionID == 0 && pkt.Type == groukTypeHandshakeInit {
 			go gl.handleHandshake(pkt, remote)
@@ -867,6 +864,33 @@ func (gl *GroukListener) cleanupPending() {
 					log.Printf("[grouk] pending session %d timed out", key)
 					gl.pendingAuth.Delete(key)
 					pending.session.Close()
+				}
+				return true
+			})
+		}
+	}
+}
+
+// ✅ H5: cleanup session‌های بی‌فعالیت
+func (gl *GroukListener) cleanupSessions() {
+	ticker := time.NewTicker(60 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-gl.closeCh:
+			return
+		case <-ticker.C:
+			now := time.Now().UnixMilli()
+			timeoutMs := groukSessionTimeout.Milliseconds()
+			gl.sessions.Range(func(key, val any) bool {
+				session := val.(*GroukSession)
+				lastActive := session.lastActive.Load()
+				if now-lastActive > timeoutMs {
+					log.Printf("[grouk] session %d timed out (inactive %ds)",
+						key, (now-lastActive)/1000)
+					gl.sessions.Delete(key)
+					session.Close()
 				}
 				return true
 			})
