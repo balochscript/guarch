@@ -1,6 +1,7 @@
 package health
 
 import (
+	"crypto/subtle"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -24,26 +25,11 @@ func New() *Checker {
 	}
 }
 
-func (c *Checker) AddConn() {
-	c.activeConns.Add(1)
-	c.totalConns.Add(1)
-}
-
-func (c *Checker) RemoveConn() {
-	c.activeConns.Add(-1)
-}
-
-func (c *Checker) AddBytes(n int64) {
-	c.totalBytes.Add(n)
-}
-
-func (c *Checker) AddCoverRequest() {
-	c.coverRequests.Add(1)
-}
-
-func (c *Checker) AddError() {
-	c.errors.Add(1)
-}
+func (c *Checker) AddConn()        { c.activeConns.Add(1); c.totalConns.Add(1) }
+func (c *Checker) RemoveConn()     { c.activeConns.Add(-1) }
+func (c *Checker) AddBytes(n int64) { c.totalBytes.Add(n) }
+func (c *Checker) AddCoverRequest() { c.coverRequests.Add(1) }
+func (c *Checker) AddError()       { c.errors.Add(1) }
 
 type Status struct {
 	Status        string `json:"status"`
@@ -61,7 +47,6 @@ type Status struct {
 func (c *Checker) GetStatus() Status {
 	var mem runtime.MemStats
 	runtime.ReadMemStats(&mem)
-
 	uptime := time.Since(c.startTime)
 
 	return Status{
@@ -80,29 +65,60 @@ func (c *Checker) GetStatus() Status {
 
 func (c *Checker) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	status := c.GetStatus()
-
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(200)
 	json.NewEncoder(w).Encode(status)
 }
 
-func (c *Checker) StartServer(addr string) {
+// ✅ H20: StartServer با auth token
+// اگه token خالی باشه → فقط localhost accept میکنه
+func (c *Checker) StartServer(addr string, authToken ...string) {
 	mux := http.NewServeMux()
-	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+
+	var token string
+	if len(authToken) > 0 {
+		token = authToken[0]
+	}
+
+	authMiddleware := func(next http.HandlerFunc) http.HandlerFunc {
+		return func(w http.ResponseWriter, r *http.Request) {
+			// ✅ H20: اگه token تنظیم شده → بررسی کن
+			if token != "" {
+				got := r.Header.Get("Authorization")
+				if subtle.ConstantTimeCompare([]byte(got), []byte("Bearer "+token)) != 1 {
+					http.Error(w, "unauthorized", http.StatusUnauthorized)
+					return
+				}
+			}
+			next(w, r)
+		}
+	}
+
+	mux.HandleFunc("/health", authMiddleware(func(w http.ResponseWriter, r *http.Request) {
 		c.ServeHTTP(w, r)
-	})
+	}))
 	mux.HandleFunc("/ping", func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte("pong"))
 	})
 
-	go http.ListenAndServe(addr, mux)
+	server := &http.Server{
+		Addr:         addr,
+		Handler:      mux,
+		ReadTimeout:  5 * time.Second,
+		WriteTimeout: 5 * time.Second,
+	}
+
+	go func() {
+		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			fmt.Printf("[health] server error: %v\n", err)
+		}
+	}()
 }
 
 func formatDuration(d time.Duration) string {
 	days := int(d.Hours()) / 24
 	hours := int(d.Hours()) % 24
 	mins := int(d.Minutes()) % 60
-
 	if days > 0 {
 		return fmt.Sprintf("%dd %dh %dm", days, hours, mins)
 	}
