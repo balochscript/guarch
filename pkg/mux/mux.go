@@ -68,7 +68,6 @@ func (m *Mux) readLoop() {
 		case protocol.PacketTypePadding:
 			continue
 		case protocol.PacketTypePing:
-			// ✅ M24: echo seq number
 			pong := protocol.NewPongPacket(pkt.SeqNum)
 			m.sc.SendPacket(pong)
 			continue
@@ -129,20 +128,24 @@ func (m *Mux) handleMuxFrame(data []byte) {
 		}
 
 	case cmdPing:
-		// ✅ M24: echo streamID (استفاده شده بعنوان identifier)
 		m.sendFrame(cmdPong, streamID, nil)
 
 	case cmdPong:
 	}
 }
 
+// ✅ L13: time.NewTimer بجای time.After — جلوگیری از timer leak
+// قبلاً: time.After → هر iteration یه timer ساخته میشد که تا expire نشه GC نمیشد
+// الان: NewTimer + Stop → اگه closeCh زودتر بسته بشه، timer آزاد میشه
 func (m *Mux) keepAlive() {
 	for {
 		jitter := time.Duration(randomMuxInt(25000, 35000)) * time.Millisecond
+		timer := time.NewTimer(jitter)
 		select {
 		case <-m.closeCh:
+			timer.Stop()
 			return
-		case <-time.After(jitter):
+		case <-timer.C:
 			if err := m.sendFrame(cmdPing, 0, nil); err != nil {
 				return
 			}
@@ -316,7 +319,7 @@ func (s *Stream) ID() uint32 {
 }
 
 // ═══════════════════════════════════════
-// ✅ M19: RelayStream — هر دو goroutine رو wait میکنه
+// RelayStream
 // ═══════════════════════════════════════
 
 func RelayStream(stream *Stream, conn net.Conn) {
@@ -356,7 +359,6 @@ func RelayStream(stream *Stream, conn net.Conn) {
 		}
 	}()
 
-	// ✅ M19: هر دو goroutine رو drain کن
 	<-ch
 	stream.Close()
 	conn.Close()
