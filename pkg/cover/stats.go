@@ -12,6 +12,7 @@ type Stats struct {
 	lastSendTime time.Time
 	totalSent    int64
 	totalRecv    int64
+	totalErrors  int64 // ✅ H12: جدا از totalSent
 	maxSamples   int
 }
 
@@ -27,6 +28,7 @@ func NewStats(maxSamples int) *Stats {
 	}
 }
 
+// ✅ H12: circular buffer بدون memory leak
 func (s *Stats) Record(size int) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -34,17 +36,23 @@ func (s *Stats) Record(size int) {
 	now := time.Now()
 	if !s.lastSendTime.IsZero() {
 		interval := now.Sub(s.lastSendTime)
-		s.intervals = append(s.intervals, interval)
-		if len(s.intervals) > s.maxSamples {
-			s.intervals = s.intervals[1:]
+		if len(s.intervals) >= s.maxSamples {
+			// ✅ H12: copy به slice جدید به جای shift
+			newIntervals := make([]time.Duration, s.maxSamples-1, s.maxSamples)
+			copy(newIntervals, s.intervals[1:])
+			s.intervals = newIntervals
 		}
+		s.intervals = append(s.intervals, interval)
 	}
 	s.lastSendTime = now
 
-	s.packetSizes = append(s.packetSizes, size)
-	if len(s.packetSizes) > s.maxSamples {
-		s.packetSizes = s.packetSizes[1:]
+	if len(s.packetSizes) >= s.maxSamples {
+		// ✅ H12: copy به slice جدید — backing array قدیمی GC میشه
+		newSizes := make([]int, s.maxSamples-1, s.maxSamples)
+		copy(newSizes, s.packetSizes[1:])
+		s.packetSizes = newSizes
 	}
+	s.packetSizes = append(s.packetSizes, size)
 
 	s.totalSent++
 }
@@ -118,9 +126,9 @@ func (s *Stats) TotalSent() int64 {
 	return s.totalSent
 }
 
+// ✅ H12: RecordError جدا از totalSent
 func (s *Stats) RecordError() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	// فعلاً فقط شمارنده — بعداً می‌شه بیشتر کرد
-	s.totalSent++ // شمارش به عنوان attempt
+	s.totalErrors++
 }
