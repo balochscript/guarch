@@ -41,11 +41,18 @@ const (
 	groukTypeSize      = 1
 	groukNonceSize     = 12
 	groukTagSize       = 16
-	groukHeaderSize    = groukSessionIDSize + groukTypeSize
-	groukStreamHdrSize = 2 + 4 + 4
+	groukHeaderSize    = groukSessionIDSize + groukTypeSize // 5
 
-	groukMaxPacketSize    = 1400
-	groukMaxPayload       = groukMaxPacketSize - groukHeaderSize - groukNonceSize - groukTagSize - groukStreamHdrSize
+	// ✅ M6/M11: cmd byte حالا صریحاً در header حساب شده
+	// streamID(2) + seq(4) + ack(4) + cmd(1) = 11
+	groukStreamHdrSize = 2 + 4 + 4 + 1
+
+	groukMaxPacketSize = 1400
+
+	// ✅ M6/M11: فرمول واضح
+	// 1400 - 5 - 12 - 16 - 11 = 1356 bytes user data per packet
+	groukMaxPayload = groukMaxPacketSize - groukHeaderSize - groukNonceSize - groukTagSize - groukStreamHdrSize
+
 	groukMaxSessions      = 256
 	groukHandshakeTimeout = 10 * time.Second
 
@@ -56,19 +63,19 @@ const (
 	groukRecvBufferSize = 256
 	groukMaxRetransmit  = 10
 
-	// ✅ H5: timeout برای session بی‌فعالیت
 	groukSessionTimeout = 5 * time.Minute
 
-	// ✅ H2: rate limit defaults
-	groukDefaultMaxHandshakeRate = 10            // حداکثر handshake در هر window
-	groukDefaultRateWindow       = time.Minute   // پنجره زمانی rate limit
+	groukDefaultMaxHandshakeRate = 10
+	groukDefaultRateWindow       = time.Minute
+	groukDefaultMaxPending       = 64
 
-	// ✅ H4: pre-auth resource limit
-	groukDefaultMaxPending = 64
+	// ✅ M4: initial congestion window
+	groukInitialCwnd = 16
+	groukMinCwnd     = 4
 )
 
 // ═══════════════════════════════════════
-// ✅ H2: IP Rate Limiter
+// IP Rate Limiter (H2)
 // ═══════════════════════════════════════
 
 type ipRateLimiter struct {
@@ -92,7 +99,6 @@ func newIPRateLimiter(maxRate int, window time.Duration) *ipRateLimiter {
 	}
 }
 
-// Allow — آیا این IP مجاز به ارسال handshake هست؟
 func (rl *ipRateLimiter) Allow(ip string) bool {
 	rl.mu.Lock()
 	defer rl.mu.Unlock()
@@ -100,7 +106,6 @@ func (rl *ipRateLimiter) Allow(ip string) bool {
 	now := time.Now()
 	cutoff := now.Add(-rl.window)
 
-	// حذف رکوردهای قدیمی
 	times := rl.counts[ip]
 	valid := times[:0]
 	for _, t := range times {
@@ -118,7 +123,6 @@ func (rl *ipRateLimiter) Allow(ip string) bool {
 	return true
 }
 
-// cleanupLoop — پاکسازی دوره‌ای حافظه rate limiter
 func (rl *ipRateLimiter) cleanupLoop(closeCh <-chan struct{}) {
 	ticker := time.NewTicker(2 * time.Minute)
 	defer ticker.Stop()
@@ -297,16 +301,17 @@ func (s *GroukSession) handlePacket(pkt *GroukPacket) {
 	}
 }
 
+// ✅ M6/M11: groukStreamHdrSize حالا cmd رو شامل میشه
 func (s *GroukSession) handleData(data []byte) {
-	if len(data) < groukStreamHdrSize+1 {
+	if len(data) < groukStreamHdrSize {
 		return
 	}
 
 	streamID := binary.BigEndian.Uint16(data[0:2])
 	seqNum := binary.BigEndian.Uint32(data[2:6])
-	_ = binary.BigEndian.Uint32(data[6:10])
+	_ = binary.BigEndian.Uint32(data[6:10]) // ackNum
 	cmd := data[10]
-	payload := data[11:]
+	payload := data[groukStreamHdrSize:]
 
 	switch cmd {
 	case groukStreamOpen:
@@ -357,19 +362,19 @@ func (s *GroukSession) sendStreamAck(streamID uint16, seqNum uint32) {
 	s.sendPacket(groukTypeAck, buf)
 }
 
+// ✅ M6/M11: groukStreamHdrSize شامل cmd
 func (s *GroukSession) sendStreamPacket(streamID uint16, cmd byte, seqNum, ackNum uint32, payload []byte) error {
-	buf := make([]byte, groukStreamHdrSize+1+len(payload))
+	buf := make([]byte, groukStreamHdrSize+len(payload))
 	binary.BigEndian.PutUint16(buf[0:2], streamID)
 	binary.BigEndian.PutUint32(buf[2:6], seqNum)
 	binary.BigEndian.PutUint32(buf[6:10], ackNum)
 	buf[10] = cmd
 	if len(payload) > 0 {
-		copy(buf[11:], payload)
+		copy(buf[groukStreamHdrSize:], payload)
 	}
 	return s.sendPacket(groukTypeData, buf)
 }
 
-// ✅ H3: بررسی overflow قبل از cast
 func (s *GroukSession) OpenStream() (*GroukStream, error) {
 	select {
 	case <-s.closeCh:
@@ -441,7 +446,7 @@ func (s *GroukSession) IsClosed() bool {
 }
 
 // ═══════════════════════════════════════
-// GroukStream
+// GroukStream — ✅ M1 + M4
 // ═══════════════════════════════════════
 
 type GroukStream struct {
@@ -451,6 +456,13 @@ type GroukStream struct {
 	sendSeq atomic.Uint32
 	sendBuf sync.Map
 	sendWin atomic.Int32
+
+	// ✅ M4: AIMD congestion window
+	cwnd     atomic.Int32
+	ssthresh int32
+
+	// ✅ M1: signal channel بجای busy-wait
+	winNotify chan struct{}
 
 	recvBuf  sync.Map
 	recvNext atomic.Uint32
@@ -473,11 +485,14 @@ type sendEntry struct {
 
 func newGroukStream(id uint16, session *GroukSession) *GroukStream {
 	s := &GroukStream{
-		id:      id,
-		session: session,
-		readCh:  make(chan []byte, groukRecvBufferSize),
-		doneCh:  make(chan struct{}),
+		id:        id,
+		session:   session,
+		readCh:    make(chan []byte, groukRecvBufferSize),
+		doneCh:    make(chan struct{}),
+		winNotify: make(chan struct{}, 1),        // ✅ M1: buffered=1
+		ssthresh:  groukWindowSize / 2,           // ✅ M4: initial ssthresh
 	}
+	s.cwnd.Store(groukInitialCwnd) // ✅ M4: initial cwnd=16
 	s.recvNext.Store(1)
 	go s.retransmitLoop()
 	return s
@@ -515,23 +530,32 @@ func (s *GroukStream) Read(p []byte) (int, error) {
 	}
 }
 
+// ✅ M1: channel wait بجای busy-loop
+// ✅ M4: cwnd بجای groukWindowSize ثابت
 func (s *GroukStream) Write(p []byte) (int, error) {
 	if s.closed.Load() {
 		return 0, io.ErrClosedPipe
 	}
 
 	sent := 0
-	maxPayload := groukMaxPayload - 1
 
 	for sent < len(p) {
-		for s.sendWin.Load() >= groukWindowSize {
-			time.Sleep(5 * time.Millisecond)
-			if s.closed.Load() {
+		// ✅ M1 + M4: منتظر بمون تا window باز بشه
+		for s.sendWin.Load() >= s.cwnd.Load() {
+			select {
+			case <-s.winNotify:
+				// window space available
+			case <-s.doneCh:
 				return sent, io.ErrClosedPipe
+			case <-time.After(100 * time.Millisecond):
+				// fallback timeout — جلوگیری از deadlock
+				if s.closed.Load() {
+					return sent, io.ErrClosedPipe
+				}
 			}
 		}
 
-		end := sent + maxPayload
+		end := sent + groukMaxPayload
 		if end > len(p) {
 			end = len(p)
 		}
@@ -586,12 +610,26 @@ func (s *GroukStream) deliverOrdered() {
 	}
 }
 
+// ✅ M1: notify writer + M4: additive increase
 func (s *GroukStream) handleAck(ackNum uint32) {
 	if _, loaded := s.sendBuf.LoadAndDelete(ackNum); loaded {
 		s.sendWin.Add(-1)
+
+		// ✅ M1: notify writer that window space is available
+		select {
+		case s.winNotify <- struct{}{}:
+		default:
+		}
+
+		// ✅ M4: AIMD — additive increase on successful ACK
+		cur := s.cwnd.Load()
+		if cur < groukWindowSize {
+			s.cwnd.Add(1)
+		}
 	}
 }
 
+// ✅ M4: congestion decrease on retransmit
 func (s *GroukStream) retransmitLoop() {
 	ticker := time.NewTicker(50 * time.Millisecond)
 	defer ticker.Stop()
@@ -610,6 +648,18 @@ func (s *GroukStream) retransmitLoop() {
 				}
 				if now.Sub(entry.sentAt) > rto {
 					entry.retries++
+
+					// ✅ M4: multiplicative decrease — فقط اولین retransmit
+					if entry.retries == 1 {
+						cur := s.cwnd.Load()
+						half := cur / 2
+						if half < groukMinCwnd {
+							half = groukMinCwnd
+						}
+						s.cwnd.Store(half)
+						s.ssthresh = half
+					}
+
 					if entry.retries > groukMaxRetransmit {
 						log.Printf("[grouk] stream %d: max retransmit for seq %d", s.id, entry.seq)
 						s.markClosed()
@@ -835,28 +885,24 @@ func generateSessionID() uint32 {
 }
 
 // ═══════════════════════════════════════
-// GroukListener — ✅ H2 + H4
+// GroukListener
 // ═══════════════════════════════════════
 
 type pendingSession struct {
 	session   *GroukSession
 	shared    []byte
-	createdAt time.Time // ✅ H4: زمان ساخت برای timeout دقیق‌تر
+	createdAt time.Time
 }
 
 type GroukListener struct {
-	conn        *net.UDPConn
-	psk         []byte
-	sessions    sync.Map
-	pendingAuth sync.Map
-	acceptCh    chan *GroukSession
-	closeCh     chan struct{}
-
-	// ✅ H2: rate limiter
-	rateLimiter *ipRateLimiter
-
-	// ✅ H4: محدودیت pending sessions
-	maxPending  int
+	conn         *net.UDPConn
+	psk          []byte
+	sessions     sync.Map
+	pendingAuth  sync.Map
+	acceptCh     chan *GroukSession
+	closeCh      chan struct{}
+	rateLimiter  *ipRateLimiter
+	maxPending   int
 	pendingCount atomic.Int32
 }
 
@@ -877,14 +923,14 @@ func GroukListen(addr string, psk []byte) (*GroukListener, error) {
 		psk:         psk,
 		acceptCh:    make(chan *GroukSession, 16),
 		closeCh:     make(chan struct{}),
-		rateLimiter: newIPRateLimiter(groukDefaultMaxHandshakeRate, groukDefaultRateWindow), // ✅ H2
-		maxPending:  groukDefaultMaxPending,                                                  // ✅ H4
+		rateLimiter: newIPRateLimiter(groukDefaultMaxHandshakeRate, groukDefaultRateWindow),
+		maxPending:  groukDefaultMaxPending,
 	}
 
 	go gl.readLoop()
 	go gl.cleanupPending()
 	go gl.cleanupSessions()
-	go gl.rateLimiter.cleanupLoop(gl.closeCh) // ✅ H2: cleanup memory
+	go gl.rateLimiter.cleanupLoop(gl.closeCh)
 	return gl, nil
 }
 
@@ -912,14 +958,12 @@ func (gl *GroukListener) readLoop() {
 		}
 
 		if pkt.SessionID == 0 && pkt.Type == groukTypeHandshakeInit {
-			// ✅ H2: rate limit check
 			remoteIP := remote.IP.String()
 			if !gl.rateLimiter.Allow(remoteIP) {
 				log.Printf("[grouk] ⚠️  rate limited handshake from %s", remoteIP)
 				continue
 			}
 
-			// ✅ H4: pending limit check
 			if int(gl.pendingCount.Load()) >= gl.maxPending {
 				log.Printf("[grouk] ⚠️  too many pending sessions (%d), rejecting %s",
 					gl.pendingCount.Load(), remoteIP)
@@ -936,14 +980,14 @@ func (gl *GroukListener) readLoop() {
 				if err := GroukServerVerifyAuth(pending.session, pkt.Payload, pending.shared, gl.psk); err != nil {
 					log.Printf("[grouk] auth failed from %s: %v", remote, err)
 					gl.pendingAuth.Delete(pkt.SessionID)
-					gl.pendingCount.Add(-1) // ✅ H4
+					gl.pendingCount.Add(-1)
 					pending.session.Close()
 					continue
 				}
 				log.Printf("[grouk] authenticated: %s ✅ (session %d)", remote, pkt.SessionID)
 				gl.sessions.Store(pkt.SessionID, pending.session)
 				gl.pendingAuth.Delete(pkt.SessionID)
-				gl.pendingCount.Add(-1) // ✅ H4
+				gl.pendingCount.Add(-1)
 				select {
 				case gl.acceptCh <- pending.session:
 				case <-gl.closeCh:
@@ -968,9 +1012,9 @@ func (gl *GroukListener) handleHandshake(pkt *GroukPacket, remote *net.UDPAddr) 
 	gl.pendingAuth.Store(session.ID, &pendingSession{
 		session:   session,
 		shared:    shared,
-		createdAt: time.Now(), // ✅ H4
+		createdAt: time.Now(),
 	})
-	gl.pendingCount.Add(1) // ✅ H4
+	gl.pendingCount.Add(1)
 	log.Printf("[grouk] session %d created for %s (waiting for auth, pending=%d)",
 		session.ID, remote, gl.pendingCount.Load())
 }
@@ -990,7 +1034,7 @@ func (gl *GroukListener) cleanupPending() {
 				if now.Sub(pending.createdAt) > 30*time.Second {
 					log.Printf("[grouk] pending session %d timed out", key)
 					gl.pendingAuth.Delete(key)
-					gl.pendingCount.Add(-1) // ✅ H4
+					gl.pendingCount.Add(-1)
 					pending.session.Close()
 				}
 				return true
@@ -999,7 +1043,6 @@ func (gl *GroukListener) cleanupPending() {
 	}
 }
 
-// ✅ H5: cleanup session‌های بی‌فعالیت
 func (gl *GroukListener) cleanupSessions() {
 	ticker := time.NewTicker(60 * time.Second)
 	defer ticker.Stop()
