@@ -5,9 +5,17 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"time"
 )
 
+// ✅ H24: timeout ثابت برای handshake
+const handshakeTimeout = 30 * time.Second
+
 func Handshake(conn net.Conn) (string, error) {
+	// ✅ H24: deadline روی کل handshake
+	conn.SetDeadline(time.Now().Add(handshakeTimeout))
+	defer conn.SetDeadline(time.Time{}) // reset بعد از handshake
+
 	buf := make([]byte, 2)
 	if _, err := io.ReadFull(conn, buf); err != nil {
 		return "", fmt.Errorf("socks5: read greeting: %w", err)
@@ -17,7 +25,12 @@ func Handshake(conn net.Conn) (string, error) {
 		return "", fmt.Errorf("socks5: invalid version: %d", buf[0])
 	}
 
-	methods := make([]byte, buf[1])
+	nMethods := buf[1]
+	if nMethods == 0 {
+		return "", fmt.Errorf("socks5: no methods")
+	}
+
+	methods := make([]byte, nMethods)
 	if _, err := io.ReadFull(conn, methods); err != nil {
 		return "", fmt.Errorf("socks5: read methods: %w", err)
 	}
@@ -53,6 +66,9 @@ func Handshake(conn net.Conn) (string, error) {
 		lenBuf := make([]byte, 1)
 		if _, err := io.ReadFull(conn, lenBuf); err != nil {
 			return "", err
+		}
+		if lenBuf[0] == 0 {
+			return "", fmt.Errorf("socks5: empty domain")
 		}
 		domain := make([]byte, lenBuf[0])
 		if _, err := io.ReadFull(conn, domain); err != nil {
