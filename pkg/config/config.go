@@ -4,6 +4,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"log"
 	"os"
 	"time"
 )
@@ -11,9 +12,9 @@ import (
 type ClientConfig struct {
 	Listen   string      `json:"listen"`
 	Server   string      `json:"server"`
-	PSK      string      `json:"psk"`                // ✅ H21: Pre-shared key (hex-encoded)
-	CertPin  string      `json:"cert_pin,omitempty"`  // ✅ H21: Server cert SHA-256 pin (hex)
-	Protocol string      `json:"protocol,omitempty"`  // ✅ H21: "guarch", "grouk", "zhip"
+	PSK      string      `json:"psk"`
+	CertPin  string      `json:"cert_pin,omitempty"`
+	Protocol string      `json:"protocol,omitempty"`
 	Cover    CoverConfig `json:"cover"`
 	Shaping  ShapeConfig `json:"shaping"`
 }
@@ -21,10 +22,10 @@ type ClientConfig struct {
 type ServerConfig struct {
 	Listen    string      `json:"listen"`
 	DecoyAddr string      `json:"decoy_addr"`
-	PSK       string      `json:"psk"`                // ✅ H21: Pre-shared key (hex-encoded)
-	TLSCert   string      `json:"tls_cert,omitempty"`  // ✅ H21: Path to TLS certificate file
-	TLSKey    string      `json:"tls_key,omitempty"`   // ✅ H21: Path to TLS private key file
-	Protocol  string      `json:"protocol,omitempty"`  // ✅ H21: "guarch", "grouk", "zhip"
+	PSK       string      `json:"psk"`
+	TLSCert   string      `json:"tls_cert,omitempty"`
+	TLSKey    string      `json:"tls_key,omitempty"`
+	Protocol  string      `json:"protocol,omitempty"`
 	Probe     ProbeConfig `json:"probe"`
 }
 
@@ -62,7 +63,6 @@ func LoadClient(path string) (*ClientConfig, error) {
 		return nil, fmt.Errorf("config: parse: %w", err)
 	}
 
-	// defaults
 	if cfg.Listen == "" {
 		cfg.Listen = "127.0.0.1:1080"
 	}
@@ -70,7 +70,6 @@ func LoadClient(path string) (*ClientConfig, error) {
 		cfg.Protocol = "guarch"
 	}
 
-	// ✅ H21: validation
 	if err := cfg.Validate(); err != nil {
 		return nil, err
 	}
@@ -89,7 +88,6 @@ func LoadServer(path string) (*ServerConfig, error) {
 		return nil, fmt.Errorf("config: parse: %w", err)
 	}
 
-	// defaults
 	if cfg.Listen == "" {
 		cfg.Listen = ":8443"
 	}
@@ -100,7 +98,6 @@ func LoadServer(path string) (*ServerConfig, error) {
 		cfg.Protocol = "guarch"
 	}
 
-	// ✅ H21: validation
 	if err := cfg.Validate(); err != nil {
 		return nil, err
 	}
@@ -108,7 +105,6 @@ func LoadServer(path string) (*ServerConfig, error) {
 	return cfg, nil
 }
 
-// ✅ H21: Validate client config
 func (c *ClientConfig) Validate() error {
 	if c.Server == "" {
 		return fmt.Errorf("config: server address required")
@@ -140,7 +136,6 @@ func (c *ClientConfig) Validate() error {
 	return nil
 }
 
-// ✅ H21: Validate server config
 func (c *ServerConfig) Validate() error {
 	if c.PSK == "" {
 		return fmt.Errorf("config: psk required (hex-encoded shared secret)")
@@ -151,7 +146,6 @@ func (c *ServerConfig) Validate() error {
 	if len(c.PSK) < 32 {
 		return fmt.Errorf("config: psk too short (minimum 16 bytes = 32 hex chars)")
 	}
-	// TLS cert/key: هر دو یا هیچکدوم
 	if (c.TLSCert == "") != (c.TLSKey == "") {
 		return fmt.Errorf("config: both tls_cert and tls_key must be set, or neither")
 	}
@@ -172,7 +166,6 @@ func (c *ServerConfig) Validate() error {
 	return nil
 }
 
-// ✅ H21: helper ها برای خوندن PSK و CertPin بصورت bytes
 func (c *ClientConfig) PSKBytes() ([]byte, error) {
 	return hex.DecodeString(c.PSK)
 }
@@ -192,7 +185,7 @@ func DefaultClientConfig() *ClientConfig {
 	return &ClientConfig{
 		Listen:   "127.0.0.1:1080",
 		Server:   "YOUR_SERVER_IP:8443",
-		PSK:      "0000000000000000000000000000000000000000000000000000000000000000", // ✅ H21: باید عوض بشه!
+		PSK:      "0000000000000000000000000000000000000000000000000000000000000000",
 		Protocol: "guarch",
 		Cover: CoverConfig{
 			Enabled: true,
@@ -231,7 +224,7 @@ func DefaultServerConfig() *ServerConfig {
 	return &ServerConfig{
 		Listen:    ":8443",
 		DecoyAddr: ":8080",
-		PSK:       "0000000000000000000000000000000000000000000000000000000000000000", // ✅ H21: باید عوض بشه!
+		PSK:       "0000000000000000000000000000000000000000000000000000000000000000",
 		Protocol:  "guarch",
 		Probe: ProbeConfig{
 			MaxRate: 10,
@@ -240,7 +233,6 @@ func DefaultServerConfig() *ServerConfig {
 	}
 }
 
-// ✅ H22: فایل permissions 0600 (فقط owner بتونه بخونه)
 func (c *ClientConfig) Save(path string) error {
 	data, err := json.MarshalIndent(c, "", "  ")
 	if err != nil {
@@ -249,7 +241,6 @@ func (c *ClientConfig) Save(path string) error {
 	return os.WriteFile(path, data, 0600)
 }
 
-// ✅ H22: فایل permissions 0600
 func (c *ServerConfig) Save(path string) error {
 	data, err := json.MarshalIndent(c, "", "  ")
 	if err != nil {
@@ -258,9 +249,14 @@ func (c *ServerConfig) Save(path string) error {
 	return os.WriteFile(path, data, 0600)
 }
 
+// ✅ M22: ParseDuration حالا warning لاگ میکنه وقتی fallback میزنه
 func ParseDuration(s string) time.Duration {
+	if s == "" {
+		return 5 * time.Second
+	}
 	d, err := time.ParseDuration(s)
 	if err != nil {
+		log.Printf("[config] ⚠️  invalid duration %q, using default 5s: %v", s, err)
 		return 5 * time.Second
 	}
 	return d
