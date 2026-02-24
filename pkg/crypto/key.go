@@ -48,7 +48,6 @@ func KeyPairFromPrivate(privKey []byte) (*KeyPair, error) {
 	kp := &KeyPair{}
 	copy(kp.PrivateKey[:], privKey)
 
-	// ✅ H8: clamping — قبلاً نبود!
 	clampPrivateKey(&kp.PrivateKey)
 
 	pub, err := curve25519.X25519(kp.PrivateKey[:], curve25519.Basepoint)
@@ -60,7 +59,6 @@ func KeyPairFromPrivate(privKey []byte) (*KeyPair, error) {
 	return kp, nil
 }
 
-// ✅ H8: تابع مشترک clamping
 func clampPrivateKey(key *[PrivateKeySize]byte) {
 	key[0] &= 248
 	key[31] &= 127
@@ -112,4 +110,21 @@ func (kp *KeyPair) PublicKeyHex() string {
 
 func (kp *KeyPair) PrivateKeyHex() string {
 	return hex.EncodeToString(kp.PrivateKey[:])
+}
+
+// ✅ M7: Zeroize — پاک کردن private key از حافظه
+// باید بعد از SharedSecret فراخوانی بشه
+// ⚠️ Go GC ممکنه قبلاً کپی کرده باشه — best-effort
+func (kp *KeyPair) Zeroize() {
+	for i := range kp.PrivateKey {
+		kp.PrivateKey[i] = 0
+	}
+}
+
+// ✅ M7: ZeroizeBytes — پاک کردن هر بایت‌اسلایس حساس
+// برای shared secret، derived keys، و غیره
+func ZeroizeBytes(b []byte) {
+	for i := range b {
+		b[i] = 0
+	}
 }
