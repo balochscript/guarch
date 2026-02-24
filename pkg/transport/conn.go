@@ -16,7 +16,6 @@ import (
 
 const maxEncryptedSize = 1024 * 1024
 
-// ✅ FIX C1: دو cipher جدا
 type SecureConn struct {
 	raw         net.Conn
 	sendCipher  *crypto.AEADCipher
@@ -36,7 +35,11 @@ func Handshake(raw net.Conn, isServer bool, cfg *HandshakeConfig) (*SecureConn, 
 		cfg = &HandshakeConfig{}
 	}
 
-	// ۱. تولید جفت کلید زودگذر
+	// ✅ H9: بدون PSK اجازه نمیدیم
+	if len(cfg.PSK) == 0 {
+		return nil, fmt.Errorf("guarch: PSK is required for secure handshake")
+	}
+
 	kp, err := crypto.GenerateKeyPair()
 	if err != nil {
 		return nil, fmt.Errorf("guarch: keygen: %w", err)
@@ -44,7 +47,6 @@ func Handshake(raw net.Conn, isServer bool, cfg *HandshakeConfig) (*SecureConn, 
 
 	var peerPub []byte
 
-	// ۲. تبادل کلید عمومی
 	if isServer {
 		peerPub = make([]byte, crypto.PublicKeySize)
 		if _, err := io.ReadFull(raw, peerPub); err != nil {
@@ -63,13 +65,11 @@ func Handshake(raw net.Conn, isServer bool, cfg *HandshakeConfig) (*SecureConn, 
 		}
 	}
 
-	// ۳. محاسبه رمز مشترک
 	sharedRaw, err := kp.SharedSecret(peerPub)
 	if err != nil {
 		return nil, fmt.Errorf("guarch: shared secret: %w", err)
 	}
 
-	// ✅ FIX C1: دو کلید جدا برای هر جهت
 	sendInfo := "guarch-client-send-v1"
 	recvInfo := "guarch-server-send-v1"
 	if isServer {
@@ -92,7 +92,6 @@ func Handshake(raw net.Conn, isServer bool, cfg *HandshakeConfig) (*SecureConn, 
 		return nil, fmt.Errorf("guarch: auth key: %w", err)
 	}
 
-	// ۵. ساخت رمزنگارها
 	sendCipher, err := crypto.NewAEADCipher(sendKey)
 	if err != nil {
 		return nil, fmt.Errorf("guarch: send cipher: %w", err)
@@ -109,11 +108,9 @@ func Handshake(raw net.Conn, isServer bool, cfg *HandshakeConfig) (*SecureConn, 
 		recvCipher: recvCipher,
 	}
 
-	// ۶. احراز هویت متقابل
-	if len(cfg.PSK) > 0 {
-		if err := sc.authenticate(isServer, authKey); err != nil {
-			return nil, err
-		}
+	// ✅ H9: همیشه authenticate (PSK الزامیه)
+	if err := sc.authenticate(isServer, authKey); err != nil {
+		return nil, err
 	}
 
 	return sc, nil
