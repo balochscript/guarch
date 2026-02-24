@@ -211,12 +211,12 @@ func (c *Client) connect() (*mux.Mux, error) {
 			c.adaptive,
 			modeCfg.MaxPadding,
 		)
-		pm := mux.NewPaddedMux(sc, shaper)
+		pm := mux.NewPaddedMux(sc, shaper, false)
 		c.activePM = pm
 		return pm.Mux, nil
 	}
 
-	m := mux.NewMux(sc)
+	m := mux.NewMux(sc, false)
 	c.activePM = nil
 	return m, nil
 }
