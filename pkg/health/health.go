@@ -4,6 +4,8 @@ import (
 	"crypto/subtle"
 	"encoding/json"
 	"fmt"
+	"log"
+	"net"
 	"net/http"
 	"runtime"
 	"sync/atomic"
@@ -25,11 +27,11 @@ func New() *Checker {
 	}
 }
 
-func (c *Checker) AddConn()        { c.activeConns.Add(1); c.totalConns.Add(1) }
-func (c *Checker) RemoveConn()     { c.activeConns.Add(-1) }
+func (c *Checker) AddConn()         { c.activeConns.Add(1); c.totalConns.Add(1) }
+func (c *Checker) RemoveConn()      { c.activeConns.Add(-1) }
 func (c *Checker) AddBytes(n int64) { c.totalBytes.Add(n) }
 func (c *Checker) AddCoverRequest() { c.coverRequests.Add(1) }
-func (c *Checker) AddError()       { c.errors.Add(1) }
+func (c *Checker) AddError()        { c.errors.Add(1) }
 
 type Status struct {
 	Status        string `json:"status"`
@@ -70,9 +72,10 @@ func (c *Checker) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(status)
 }
 
-// ✅ H20: StartServer با auth token
-// اگه token خالی باشه → فقط localhost accept میکنه
-func (c *Checker) StartServer(addr string, authToken ...string) {
+// ✅ M21: StartServer حالا server برمیگردونه + خطای startup رو detect میکنه
+// قبلاً: fire-and-forget → خطای port conflict نادیده گرفته میشد
+// الان: listener اول ساخته میشه → خطا فوری برمیگرده + server برای shutdown
+func (c *Checker) StartServer(addr string, authToken ...string) (*http.Server, error) {
 	mux := http.NewServeMux()
 
 	var token string
@@ -82,7 +85,6 @@ func (c *Checker) StartServer(addr string, authToken ...string) {
 
 	authMiddleware := func(next http.HandlerFunc) http.HandlerFunc {
 		return func(w http.ResponseWriter, r *http.Request) {
-			// ✅ H20: اگه token تنظیم شده → بررسی کن
 			if token != "" {
 				got := r.Header.Get("Authorization")
 				if subtle.ConstantTimeCompare([]byte(got), []byte("Bearer "+token)) != 1 {
@@ -106,13 +108,23 @@ func (c *Checker) StartServer(addr string, authToken ...string) {
 		Handler:      mux,
 		ReadTimeout:  5 * time.Second,
 		WriteTimeout: 5 * time.Second,
+		IdleTimeout:  60 * time.Second,
+	}
+
+	// ✅ M21: listener اول بساز تا port conflict فوری تشخیص داده بشه
+	ln, err := net.Listen("tcp", addr)
+	if err != nil {
+		return nil, fmt.Errorf("health: listen %s: %w", addr, err)
 	}
 
 	go func() {
-		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			fmt.Printf("[health] server error: %v\n", err)
+		if err := server.Serve(ln); err != nil && err != http.ErrServerClosed {
+			log.Printf("[health] server error: %v", err)
 		}
 	}()
+
+	log.Printf("[health] server started on %s", addr)
+	return server, nil
 }
 
 func formatDuration(d time.Duration) string {
