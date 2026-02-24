@@ -1,6 +1,7 @@
 package transport
 
 import (
+	"context"
 	"crypto/sha256"
 	"crypto/subtle"
 	"crypto/tls"
@@ -12,7 +13,6 @@ import (
 	"time"
 )
 
-// ✅ C1: poolEntry با زمان ساخت — جایگزین isAlive
 type poolEntry struct {
 	sc      *SecureConn
 	created time.Time
@@ -27,12 +27,9 @@ type Pool struct {
 	maxSize    int
 	maxRetry   int
 	maxAge     time.Duration
-	certPin    []byte // ✅ H1: SHA-256 pin of server cert (32 bytes)
+	certPin    []byte
 }
 
-// NewPool — حالا با cert pinning
-// certPin: اگه nil باشه cert check نمیشه (dev mode)
-// اگه 32 بایت SHA-256 باشه، cert سرور باید match کنه
 func NewPool(serverAddr string, maxSize int, hsCfg *HandshakeConfig, certPin []byte) *Pool {
 	p := &Pool{
 		serverAddr: serverAddr,
@@ -48,9 +45,6 @@ func NewPool(serverAddr string, maxSize int, hsCfg *HandshakeConfig, certPin []b
 	}
 
 	if len(certPin) == 32 {
-		// ✅ H1: cert pinning فعال
-		// InsecureSkipVerify=true چون CA نداریم (self-signed)
-		// ولی VerifyPeerCertificate pin رو چک میکنه
 		tlsCfg.InsecureSkipVerify = true
 		pin := make([]byte, 32)
 		copy(pin, certPin)
@@ -67,7 +61,6 @@ func NewPool(serverAddr string, maxSize int, hsCfg *HandshakeConfig, certPin []b
 		}
 		log.Println("[pool] cert pinning enabled ✅")
 	} else {
-		// ⚠️ بدون pin — فقط برای dev
 		tlsCfg.InsecureSkipVerify = true
 		if certPin != nil {
 			log.Println("[pool] ⚠️  invalid cert pin length (need 32 bytes SHA-256), pinning disabled")
@@ -80,8 +73,8 @@ func NewPool(serverAddr string, maxSize int, hsCfg *HandshakeConfig, certPin []b
 	return p
 }
 
-// ✅ C1: Get بدون isAlive — فقط سن connection چک میشه
-func (p *Pool) Get() (*SecureConn, error) {
+// ✅ M2: Get با context — قابل cancel
+func (p *Pool) Get(ctx context.Context) (*SecureConn, error) {
 	p.mu.Lock()
 
 	for len(p.conns) > 0 {
@@ -98,7 +91,7 @@ func (p *Pool) Get() (*SecureConn, error) {
 	}
 
 	p.mu.Unlock()
-	return p.createConn()
+	return p.createConn(ctx)
 }
 
 func (p *Pool) Put(sc *SecureConn) {
@@ -116,27 +109,43 @@ func (p *Pool) Put(sc *SecureConn) {
 	})
 }
 
-func (p *Pool) createConn() (*SecureConn, error) {
+// ✅ M2: createConn با context — cancel در هر مرحله
+func (p *Pool) createConn(ctx context.Context) (*SecureConn, error) {
 	var lastErr error
 
 	for i := 0; i < p.maxRetry; i++ {
+		// ✅ M2: context cancellation check
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		default:
+		}
+
 		if i > 0 {
-			wait := time.Duration(1<<uint(i)) * time.Second // exponential backoff
+			wait := time.Duration(1<<uint(i)) * time.Second
 			if wait > 16*time.Second {
 				wait = 16 * time.Second
 			}
 			log.Printf("[pool] retry %d/%d in %v", i+1, p.maxRetry, wait)
-			time.Sleep(wait)
+			select {
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			case <-time.After(wait):
+			}
 		}
 
-		tlsConn, err := tls.DialWithDialer(
-			&net.Dialer{Timeout: 10 * time.Second},
-			"tcp",
-			p.serverAddr,
-			p.tlsConfig,
-		)
+		// ✅ M2: dial with context
+		dialer := &net.Dialer{Timeout: 10 * time.Second}
+		rawConn, err := dialer.DialContext(ctx, "tcp", p.serverAddr)
 		if err != nil {
 			lastErr = fmt.Errorf("dial: %w", err)
+			continue
+		}
+
+		tlsConn := tls.Client(rawConn, p.tlsConfig)
+		if err := tlsConn.HandshakeContext(ctx); err != nil {
+			rawConn.Close()
+			lastErr = fmt.Errorf("tls: %w", err)
 			continue
 		}
 
@@ -170,7 +179,6 @@ func (p *Pool) Size() int {
 	return len(p.conns)
 }
 
-// CertPin — خوندن pin فعلی (برای debug/logging)
 func (p *Pool) CertPin() []byte {
 	return p.certPin
 }
