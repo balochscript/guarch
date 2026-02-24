@@ -43,6 +43,8 @@ func main() {
 	decoyAddr := flag.String("decoy", ":8080", "decoy web server")
 	healthAddr := flag.String("health", "127.0.0.1:9090", "health check")
 	psk := flag.String("psk", "", "pre-shared key (required)")
+	certFile := flag.String("cert", "cert.pem", "TLS certificate file") // ✅ H26
+	keyFile := flag.String("key", "key.pem", "TLS private key file")    // ✅ H26
 	coverEnabled := flag.Bool("cover", true, "enable server cover traffic")
 	mode := flag.String("mode", "balanced", "mode: stealth|balanced|fast")
 	flag.Parse()
@@ -56,7 +58,6 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	// ═══ Init ═══
 	healthCheck = health.New()
 	probeDetector = antidetect.NewProbeDetector(10, time.Minute)
 	decoyServer = antidetect.NewDecoyServer()
@@ -64,18 +65,19 @@ func main() {
 	go startDecoy(*decoyAddr)
 	healthCheck.StartServer(*healthAddr)
 
-	// ═══ Server Cover Traffic ═══
+	// Cover Traffic
+	var adaptive *cover.AdaptiveCover
 	if *coverEnabled && serverMode != cover.ModeFast {
 		modeCfg := cover.GetModeConfig(serverMode)
-		adaptive := cover.NewAdaptiveCover(modeCfg)
+		adaptive = cover.NewAdaptiveCover(modeCfg)
 		coverCfg := cover.ConfigForMode(serverMode)
 		coverMgr := cover.NewManager(coverCfg, adaptive)
 		coverMgr.Start(ctx)
 		log.Printf("[guarch] server cover traffic started (mode: %s)", serverMode)
 	}
 
-	// ═══ TLS Certificate ═══
-	cert, err := generateCert()
+	// ✅ H26: بارگذاری یا تولید certificate
+	cert, err := loadOrGenerateCert(*certFile, *keyFile)
 	if err != nil {
 		log.Fatal("cert:", err)
 	}
@@ -133,6 +135,10 @@ func main() {
 	log.Println("[guarch] shutting down...")
 	cancel()
 	ln.Close()
+	probeDetector.Close() // ✅ H31
+	if adaptive != nil {
+		adaptive.Close() // ✅ C9
+	}
 }
 
 func startDecoy(addr string) {
@@ -149,6 +155,7 @@ func handleConn(raw net.Conn) {
 	healthCheck.AddConn()
 	defer healthCheck.RemoveConn()
 
+	// بررسی probe — اینجا هنوز فقط TLS شده، دیتای باینری ارسال نشده
 	if probeDetector.Check(remoteAddr) {
 		log.Printf("[probe] suspicious: %s → serving decoy", remoteAddr)
 		healthCheck.AddError()
@@ -166,14 +173,15 @@ func handleConn(raw net.Conn) {
 	if err != nil {
 		log.Printf("[guarch] handshake failed %s: %v", remoteAddr, err)
 		healthCheck.AddError()
-		serveDecoyToRaw(raw)
+		// ✅ H27: فقط close! decoy نمیدیم
+		// بعد از Handshake ممکنه ۳۲ بایت کلید عمومی ارسال شده باشه
+		// → HTTP بعد از باینری = fingerprint واضح
 		return
 	}
 
 	raw.SetDeadline(time.Time{})
 	log.Printf("[guarch] authenticated: %s ✅", remoteAddr)
 
-	// ✅ استفاده از PaddedMux بر اساس mode
 	var m *mux.Mux
 	if serverMode != cover.ModeFast {
 		modeCfg := cover.GetModeConfig(serverMode)
@@ -181,7 +189,7 @@ func handleConn(raw net.Conn) {
 		shaper := cover.NewAdaptiveShaper(
 			stats,
 			modeCfg.ShapingPattern,
-			nil, // سرور adaptive خودش رو ندار — از کلاینت تبعیت می‌کنه
+			nil,
 			modeCfg.MaxPadding,
 		)
 		pm := mux.NewPaddedMux(sc, shaper)
@@ -207,25 +215,21 @@ func handleStream(stream *mux.Stream, remoteAddr string) {
 
 	lenBuf := make([]byte, 2)
 	if _, err := io.ReadFull(stream, lenBuf); err != nil {
-		log.Printf("[stream %d] read length: %v", stream.ID(), err)
 		return
 	}
 	reqLen := binary.BigEndian.Uint16(lenBuf)
 
 	if reqLen > 1024 {
-		log.Printf("[stream %d] request too large: %d", stream.ID(), reqLen)
 		return
 	}
 
 	reqData := make([]byte, reqLen)
 	if _, err := io.ReadFull(stream, reqData); err != nil {
-		log.Printf("[stream %d] read request: %v", stream.ID(), err)
 		return
 	}
 
 	req, err := protocol.UnmarshalConnectRequest(reqData)
 	if err != nil {
-		log.Printf("[stream %d] parse request: %v", stream.ID(), err)
 		stream.Write([]byte{protocol.ConnectFailed})
 		return
 	}
@@ -242,7 +246,6 @@ func handleStream(stream *mux.Stream, remoteAddr string) {
 	defer targetConn.Close()
 
 	if _, err := stream.Write([]byte{protocol.ConnectSuccess}); err != nil {
-		log.Printf("[stream %d] write response: %v", stream.ID(), err)
 		return
 	}
 
@@ -251,7 +254,6 @@ func handleStream(stream *mux.Stream, remoteAddr string) {
 	log.Printf("[guarch] ✖ done %s (stream %d)", target, stream.ID())
 }
 
-// ✅ FIX C3: استفاده از decoyServer گلوبال
 func serveDecoyToRaw(conn net.Conn) {
 	response := "HTTP/1.1 200 OK\r\n" +
 		"Server: nginx/1.24.0\r\n" +
@@ -264,7 +266,19 @@ func serveDecoyToRaw(conn net.Conn) {
 	conn.Write([]byte(page))
 }
 
-func generateCert() (tls.Certificate, error) {
+// ✅ H26: بارگذاری یا تولید certificate
+func loadOrGenerateCert(certFile, keyFile string) (tls.Certificate, error) {
+	// اول سعی کن از فایل بخون
+	if _, err := os.Stat(certFile); err == nil {
+		cert, err := tls.LoadX509KeyPair(certFile, keyFile)
+		if err == nil {
+			log.Printf("[guarch] loaded existing certificate from %s", certFile)
+			return cert, nil
+		}
+		log.Printf("[guarch] failed to load cert: %v, generating new", err)
+	}
+
+	// تولید certificate جدید
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
 		return tls.Certificate{}, err
@@ -279,24 +293,26 @@ func generateCert() (tls.Certificate, error) {
 		BasicConstraintsValid: true,
 	}
 
-	certDER, err := x509.CreateCertificate(
-		rand.Reader, template, template, &key.PublicKey, key,
-	)
+	certDER, err := x509.CreateCertificate(rand.Reader, template, template, &key.PublicKey, key)
 	if err != nil {
 		return tls.Certificate{}, err
 	}
 
-	certPEM := pem.EncodeToMemory(&pem.Block{
-		Type: "CERTIFICATE", Bytes: certDER,
-	})
+	certPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: certDER})
 	keyDER, err := x509.MarshalECPrivateKey(key)
 	if err != nil {
 		return tls.Certificate{}, err
 	}
-	keyPEM := pem.EncodeToMemory(&pem.Block{
-		Type: "EC PRIVATE KEY", Bytes: keyDER,
-	})
+	keyPEM := pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: keyDER})
 
-	fmt.Println("[guarch] TLS certificate generated (ECDSA P-256)")
+	// ✅ H22: ذخیره با permission 0600
+	if err := os.WriteFile(certFile, certPEM, 0600); err != nil {
+		log.Printf("[guarch] warning: could not save cert: %v", err)
+	}
+	if err := os.WriteFile(keyFile, keyPEM, 0600); err != nil {
+		log.Printf("[guarch] warning: could not save key: %v", err)
+	}
+
+	log.Printf("[guarch] TLS certificate generated and saved to %s", certFile)
 	return tls.X509KeyPair(certPEM, keyPEM)
 }
