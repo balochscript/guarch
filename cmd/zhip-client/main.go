@@ -2,9 +2,7 @@ package main
 
 import (
 	"context"
-	"crypto/sha256"
 	"encoding/binary"
-	"encoding/hex"
 	"flag"
 	"fmt"
 	"io"
@@ -13,7 +11,6 @@ import (
 	"os"
 	"os/signal"
 	"sync"
-	"time"
 
 	"github.com/quic-go/quic-go"
 
@@ -86,8 +83,6 @@ func main() {
 	fmt.Println("")
 	log.Printf("[zhip] ⚡ client ready on socks5://%s", *listenAddr)
 	log.Printf("[zhip] server: %s (QUIC/UDP)", *serverAddr)
-
-	// ✅ C16: نمایش امن pin
 	if *certPin != "" {
 		pinDisplay := *certPin
 		if len(pinDisplay) > 16 {
@@ -95,7 +90,6 @@ func main() {
 		}
 		log.Printf("[zhip] certificate pin: %s...", pinDisplay)
 	}
-
 	log.Println("[zhip] fast as a blink ⚡")
 
 	go func() {
@@ -138,12 +132,10 @@ func (c *ZhipClient) getOrCreateConn(ctx context.Context) (quic.Connection, erro
 	}
 
 	log.Println("[zhip] connecting to server...")
-
 	conn, err := c.connect(ctx)
 	if err != nil {
 		return nil, err
 	}
-
 	c.activeConn = conn
 	log.Println("[zhip] connected ✅")
 	return conn, nil
@@ -154,12 +146,10 @@ func (c *ZhipClient) connect(ctx context.Context) (quic.Connection, error) {
 	if err != nil {
 		return nil, fmt.Errorf("zhip dial: %w", err)
 	}
-
 	if err := transport.ZhipClientAuth(conn, c.psk); err != nil {
 		conn.CloseWithError(0, "auth failed")
 		return nil, fmt.Errorf("zhip auth: %w", err)
 	}
-
 	return conn, nil
 }
 
@@ -196,7 +186,6 @@ func (c *ZhipClient) handleSOCKS(socksConn net.Conn, ctx context.Context) {
 	stream, err := conn.OpenStreamSync(ctx)
 	if err != nil {
 		log.Printf("[zhip] open stream failed: %v, reconnecting...", err)
-
 		c.mu.Lock()
 		c.activeConn = nil
 		c.mu.Unlock()
@@ -207,7 +196,6 @@ func (c *ZhipClient) handleSOCKS(socksConn net.Conn, ctx context.Context) {
 			socks5.SendReply(socksConn, 0x01)
 			return
 		}
-
 		stream, err = conn.OpenStreamSync(ctx)
 		if err != nil {
 			log.Printf("[zhip] stream failed after reconnect: %v", err)
@@ -228,13 +216,7 @@ func (c *ZhipClient) handleSOCKS(socksConn net.Conn, ctx context.Context) {
 		}
 	}
 
-	req := &protocol.ConnectRequest{
-		AddrType: addrType,
-		Addr:     host,
-		Port:     port,
-	}
-
-	// ✅ C6/C7: Marshal حالا error داره
+	req := &protocol.ConnectRequest{AddrType: addrType, Addr: host, Port: port}
 	reqData, err := req.Marshal()
 	if err != nil {
 		log.Printf("[zhip] marshal error: %v", err)
@@ -327,12 +309,16 @@ func (c *ZhipClient) relay(stream quic.Stream, conn net.Conn) {
 	conn.Close()
 }
 
+// ✅ H32: parsePort با بررسی overflow
 func parsePort(s string) uint16 {
-	var port uint16
+	var port int
 	for _, c := range s {
 		if c >= '0' && c <= '9' {
-			port = port*10 + uint16(c-'0')
+			port = port*10 + int(c-'0')
+			if port > 65535 {
+				return 0
+			}
 		}
 	}
-	return port
+	return uint16(port)
 }
