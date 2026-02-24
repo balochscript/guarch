@@ -9,18 +9,14 @@ import (
 )
 
 const (
-	KeySize   = chacha20poly1305.KeySize
-	NonceSize = chacha20poly1305.NonceSize
-	TagSize   = 16
-	// ✅ C8: EncryptOverhead جایگزین EncryptHeaderSize
-	// قبلاً: NonceSize + 4 (InnerLen) = 16
-	// الان: NonceSize + TagSize = 28 (کل overhead رمزنگاری)
+	KeySize         = chacha20poly1305.KeySize
+	NonceSize       = chacha20poly1305.NonceSize
+	TagSize         = 16
 	EncryptOverhead = NonceSize + TagSize
 )
 
 type AEADCipher struct {
 	aead cipher.AEAD
-	// ✅ H10: mutex حذف شد — cipher.AEAD در Go thread-safe هست
 }
 
 func NewAEADCipher(key []byte) (*AEADCipher, error) {
@@ -36,26 +32,36 @@ func NewAEADCipher(key []byte) (*AEADCipher, error) {
 	return &AEADCipher{aead: aead}, nil
 }
 
-// ✅ C8: فرمت ساده‌تر و امن‌تر
-// قبلاً: [Nonce 12B][InnerLen 4B][Ciphertext+Tag] ← InnerLen بدون auth!
-// الان:   [Nonce 12B][Ciphertext+Tag]              ← AEAD خودش integrity داره
+// Seal — رمزنگاری بدون AAD (سازگار با کد قبلی — grouk و غیره)
 func (c *AEADCipher) Seal(plaintext []byte) ([]byte, error) {
+	return c.SealWithAAD(plaintext, nil)
+}
+
+// ✅ M9: SealWithAAD — رمزنگاری با Additional Authenticated Data
+// AAD رمزنگاری نمیشه ولی integrity اش تضمین میشه
+func (c *AEADCipher) SealWithAAD(plaintext, aad []byte) ([]byte, error) {
 	nonce := make([]byte, NonceSize)
 	if _, err := rand.Read(nonce); err != nil {
 		return nil, fmt.Errorf("guarch/crypto: nonce: %w", err)
 	}
 
-	ciphertext := c.aead.Seal(nil, nonce, plaintext, nil)
+	ciphertext := c.aead.Seal(nil, nonce, plaintext, aad)
 
 	result := make([]byte, NonceSize+len(ciphertext))
-	copy(result[0:NonceSize], nonce)
+	copy(result[:NonceSize], nonce)
 	copy(result[NonceSize:], ciphertext)
 
 	return result, nil
 }
 
-// ✅ C8: Open ساده‌تر — بدون InnerLen
+// Open — رمزگشایی بدون AAD (سازگار با کد قبلی)
 func (c *AEADCipher) Open(encrypted []byte) ([]byte, error) {
+	return c.OpenWithAAD(encrypted, nil)
+}
+
+// ✅ M9: OpenWithAAD — رمزگشایی با بررسی AAD
+// اگه AAD روی sender و receiver یکی نباشه → decrypt failed
+func (c *AEADCipher) OpenWithAAD(encrypted, aad []byte) ([]byte, error) {
 	if len(encrypted) < NonceSize+TagSize {
 		return nil, fmt.Errorf("guarch/crypto: data too short: %d bytes", len(encrypted))
 	}
@@ -63,7 +69,7 @@ func (c *AEADCipher) Open(encrypted []byte) ([]byte, error) {
 	nonce := encrypted[:NonceSize]
 	ciphertext := encrypted[NonceSize:]
 
-	plaintext, err := c.aead.Open(nil, nonce, ciphertext, nil)
+	plaintext, err := c.aead.Open(nil, nonce, ciphertext, aad)
 	if err != nil {
 		return nil, fmt.Errorf("guarch/crypto: decrypt failed: %w", err)
 	}
