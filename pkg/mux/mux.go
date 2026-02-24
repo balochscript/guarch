@@ -10,6 +10,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"guarch/pkg/protocol" // ✅ C12: اضافه شده
 	"guarch/pkg/transport"
 )
 
@@ -24,7 +25,7 @@ const (
 )
 
 // ═══════════════════════════════════════
-// Mux — مالتی‌پلکسر اتصالات
+// Mux
 // ═══════════════════════════════════════
 
 type Mux struct {
@@ -48,76 +49,102 @@ func NewMux(sc *transport.SecureConn) *Mux {
 	return m
 }
 
+// ✅ C12: readLoop حالا از RecvPacket استفاده میکنه
+// قبلاً: sc.Recv() → فقط DATA قبول میکرد → PADDING = crash!
+// الان: sc.RecvPacket() → هر نوع پکت رو handle میکنه
 func (m *Mux) readLoop() {
 	defer m.Close()
 
 	for {
-		data, err := m.sc.Recv()
+		pkt, err := m.sc.RecvPacket()
 		if err != nil {
 			log.Printf("[mux] read loop ended: %v", err)
 			return
 		}
 
-		if len(data) < muxHeaderSize {
+		switch pkt.Type {
+		case protocol.PacketTypePadding:
+			// ✅ C12: padding رو بی‌صدا نادیده بگیر
 			continue
-		}
 
-		cmd := data[0]
-		streamID := binary.BigEndian.Uint32(data[1:5])
-		payload := data[muxHeaderSize:]
+		case protocol.PacketTypePing:
+			// ✅ پاسخ به ping سطح پروتکل
+			pong := protocol.NewPongPacket(0)
+			m.sc.SendPacket(pong)
+			continue
 
-		switch cmd {
-		case cmdOpen:
-			s := newStream(streamID, m)
-			m.streams.Store(streamID, s)
-			log.Printf("[mux] accepted stream %d", streamID)
-			select {
-			case m.acceptCh <- s:
-			case <-m.closeCh:
-				return
-			}
+		case protocol.PacketTypePong:
+			continue
 
-		case cmdData:
-			if val, ok := m.streams.Load(streamID); ok {
-				s := val.(*Stream)
-				if !s.closed.Load() {
-					p := make([]byte, len(payload))
-					copy(p, payload)
-					// ✅ FIX A1: بدون default — blocking select
-					// اگه بافر پره، منتظر می‌مونه تا جا باز بشه
-					// یا stream بسته بشه یا mux بسته بشه
-					select {
-					case s.readCh <- p:
-					case <-s.doneCh:
-						// stream بسته شده — داده رو دور بریز
-					case <-m.closeCh:
-						// mux بسته شده
-						return
-					}
-				}
-			}
+		case protocol.PacketTypeClose:
+			log.Printf("[mux] received CLOSE packet")
+			return
 
-		case cmdClose:
-			if val, ok := m.streams.Load(streamID); ok {
-				s := val.(*Stream)
-				s.markClosed()
-				m.streams.Delete(streamID)
-				log.Printf("[mux] stream %d closed by remote", streamID)
-			}
+		case protocol.PacketTypeData:
+			// ✅ پردازش فریم‌های Mux (منطق قبلی)
+			m.handleMuxFrame(pkt.Payload)
 
-		case cmdPing:
-			m.sendFrame(cmdPong, 0, nil)
-
-		case cmdPong:
-			// OK
+		default:
+			// نوع ناشناخته — نادیده بگیر
+			continue
 		}
 	}
 }
 
-// ✅ FIX C2: keepAlive تصادفی (۲۵-۳۵ ثانیه به جای ۳۰ ثابت)
+// ✅ جدا شده از readLoop برای خوانایی
+func (m *Mux) handleMuxFrame(data []byte) {
+	if len(data) < muxHeaderSize {
+		return
+	}
+
+	cmd := data[0]
+	streamID := binary.BigEndian.Uint32(data[1:5])
+	payload := data[muxHeaderSize:]
+
+	switch cmd {
+	case cmdOpen:
+		s := newStream(streamID, m)
+		m.streams.Store(streamID, s)
+		log.Printf("[mux] accepted stream %d", streamID)
+		select {
+		case m.acceptCh <- s:
+		case <-m.closeCh:
+			return
+		}
+
+	case cmdData:
+		if val, ok := m.streams.Load(streamID); ok {
+			s := val.(*Stream)
+			if !s.closed.Load() {
+				p := make([]byte, len(payload))
+				copy(p, payload)
+				select {
+				case s.readCh <- p:
+				case <-s.doneCh:
+				case <-m.closeCh:
+					return
+				}
+			}
+		}
+
+	case cmdClose:
+		if val, ok := m.streams.Load(streamID); ok {
+			s := val.(*Stream)
+			s.markClosed()
+			m.streams.Delete(streamID)
+			log.Printf("[mux] stream %d closed by remote", streamID)
+		}
+
+	case cmdPing:
+		m.sendFrame(cmdPong, 0, nil)
+
+	case cmdPong:
+		// OK
+	}
+}
+
 func (m *Mux) keepAlive() {
 	for {
-		// فاصله‌ی تصادفی بین ۲۵ تا ۳۵ ثانیه
 		jitter := time.Duration(randomMuxInt(25000, 35000)) * time.Millisecond
 
 		select {
@@ -218,8 +245,6 @@ func newStream(id uint32, m *Mux) *Stream {
 	return &Stream{
 		id:     id,
 		mux:    m,
-		// ✅ بافر بزرگ‌تر: ۲۵۶ به جای ۶۴
-		// فشار بیشتری رو تحمل می‌کنه قبل از block شدن
 		readCh: make(chan []byte, 256),
 		doneCh: make(chan struct{}),
 	}
@@ -344,14 +369,10 @@ func RelayStream(stream *Stream, conn net.Conn) {
 // Helper
 // ═══════════════════════════════════════
 
-// ✅ تصادفی برای jitter — بدون نیاز به crypto/rand
-// (اینجا امنیت مهم نیست، فقط تصادفی بودن تایمینگ)
 func randomMuxInt(min, max int) int {
 	if max <= min {
 		return min
 	}
-	// از time.Now().UnixNano() به عنوان seed ساده
-	// برای jitter کافیه — نیازی به crypto/rand نیست
 	n := time.Now().UnixNano()
 	diff := int64(max - min)
 	return min + int(n%diff)
