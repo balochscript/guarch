@@ -13,6 +13,9 @@ const (
 
 	ConnectSuccess byte = 0x00
 	ConnectFailed  byte = 0x01
+
+	// ✅ C7: حداکثر طول domain
+	MaxDomainLength = 255
 )
 
 type ConnectRequest struct {
@@ -25,28 +28,57 @@ func (cr *ConnectRequest) Address() string {
 	return fmt.Sprintf("%s:%d", cr.Addr, cr.Port)
 }
 
-func (cr *ConnectRequest) Marshal() []byte {
+// ✅ C6/C7: Marshal حالا error برمیگردونه
+// قبلاً: func (cr *ConnectRequest) Marshal() []byte
+func (cr *ConnectRequest) Marshal() ([]byte, error) {
 	var buf []byte
-
 	buf = append(buf, cr.AddrType)
 
 	switch cr.AddrType {
 	case AddrTypeIPv4:
-		ip := net.ParseIP(cr.Addr).To4()
-		buf = append(buf, ip...)
+		// ✅ C6: بررسی IP قبل از استفاده
+		ip := net.ParseIP(cr.Addr)
+		if ip == nil {
+			return nil, fmt.Errorf("guarch: invalid IPv4 address: %q", cr.Addr)
+		}
+		ip4 := ip.To4()
+		if ip4 == nil {
+			return nil, fmt.Errorf("guarch: address is not IPv4: %q", cr.Addr)
+		}
+		buf = append(buf, ip4...)
+
 	case AddrTypeDomain:
+		// ✅ C7: بررسی طول domain
+		if len(cr.Addr) == 0 {
+			return nil, fmt.Errorf("guarch: empty domain")
+		}
+		if len(cr.Addr) > MaxDomainLength {
+			return nil, fmt.Errorf("guarch: domain too long: %d (max %d)", len(cr.Addr), MaxDomainLength)
+		}
 		buf = append(buf, byte(len(cr.Addr)))
 		buf = append(buf, []byte(cr.Addr)...)
+
 	case AddrTypeIPv6:
-		ip := net.ParseIP(cr.Addr).To16()
-		buf = append(buf, ip...)
+		// ✅ C6: بررسی IP قبل از استفاده
+		ip := net.ParseIP(cr.Addr)
+		if ip == nil {
+			return nil, fmt.Errorf("guarch: invalid IPv6 address: %q", cr.Addr)
+		}
+		ip16 := ip.To16()
+		if ip16 == nil {
+			return nil, fmt.Errorf("guarch: address is not IPv6: %q", cr.Addr)
+		}
+		buf = append(buf, ip16...)
+
+	default:
+		return nil, fmt.Errorf("guarch: unknown addr type: %d", cr.AddrType)
 	}
 
 	portBuf := make([]byte, 2)
 	binary.BigEndian.PutUint16(portBuf, cr.Port)
 	buf = append(buf, portBuf...)
 
-	return buf
+	return buf, nil
 }
 
 func UnmarshalConnectRequest(data []byte) (*ConnectRequest, error) {
