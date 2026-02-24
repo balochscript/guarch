@@ -48,9 +48,8 @@ type AdaptiveCover struct {
 	windowSize    time.Duration
 	levels        []LevelConfig
 	maxPaddingCap int
-	// ✅ C9: done channel برای متوقف کردن goroutine
-	doneCh   chan struct{}
-	doneOnce sync.Once
+	doneCh        chan struct{}
+	doneOnce      sync.Once
 }
 
 type trafficSample struct {
@@ -58,12 +57,15 @@ type trafficSample struct {
 	timestamp time.Time
 }
 
+// ✅ H16: حداکثر تعداد نمونه‌ها بین cleanup ها
+const maxTrafficSamples = 10000
+
 func NewAdaptiveCover(modeCfg *ModeConfig) *AdaptiveCover {
 	ac := &AdaptiveCover{
 		bytesWindow:   make([]trafficSample, 0, 600),
 		windowSize:    1 * time.Minute,
 		maxPaddingCap: modeCfg.MaxPadding,
-		doneCh:        make(chan struct{}), // ✅ C9
+		doneCh:        make(chan struct{}),
 		levels: []LevelConfig{
 			{
 				Level:            ActivityIdle,
@@ -115,6 +117,7 @@ func capPadding(desired, max int) int {
 	return desired
 }
 
+// ✅ H16: محدودیت اندازه bytesWindow
 func (ac *AdaptiveCover) RecordTraffic(bytes int64) {
 	ac.mu.Lock()
 	defer ac.mu.Unlock()
@@ -123,9 +126,16 @@ func (ac *AdaptiveCover) RecordTraffic(bytes int64) {
 		bytes:     bytes,
 		timestamp: time.Now(),
 	})
+
+	// ✅ H16: اگه بیش از حد بزرگ شد → کوچکش کن
+	if len(ac.bytesWindow) > maxTrafficSamples {
+		half := maxTrafficSamples / 2
+		newWindow := make([]trafficSample, half)
+		copy(newWindow, ac.bytesWindow[len(ac.bytesWindow)-half:])
+		ac.bytesWindow = newWindow
+	}
 }
 
-// ✅ C9: updateLoop حالا با doneCh متوقف میشه
 func (ac *AdaptiveCover) updateLoop() {
 	ticker := time.NewTicker(10 * time.Second)
 	defer ticker.Stop()
@@ -172,7 +182,6 @@ func (ac *AdaptiveCover) recalculate() {
 	ac.currentLevel.Store(int32(newLevel))
 }
 
-// ✅ C9: متد Close اضافه شد
 func (ac *AdaptiveCover) Close() {
 	ac.doneOnce.Do(func() {
 		close(ac.doneCh)
