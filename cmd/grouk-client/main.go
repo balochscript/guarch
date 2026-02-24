@@ -11,7 +11,9 @@ import (
 	"os"
 	"os/signal"
 	"sync"
+	"time"
 
+	"guarch/cmd/internal/cmdutil"
 	"guarch/pkg/protocol"
 	"guarch/pkg/socks5"
 	"guarch/pkg/transport"
@@ -22,8 +24,9 @@ type GroukClient struct {
 	psk        []byte
 	udpConn    *net.UDPConn
 
-	mu      sync.Mutex
-	session *transport.GroukSession
+	mu             sync.Mutex
+	session        *transport.GroukSession
+	connectBackoff time.Duration // ✅ M26
 }
 
 func main() {
@@ -51,7 +54,6 @@ func main() {
 	if err != nil {
 		log.Fatal("udp listen:", err)
 	}
-
 	udpConn.SetReadBuffer(4 * 1024 * 1024)
 	udpConn.SetWriteBuffer(4 * 1024 * 1024)
 
@@ -75,7 +77,6 @@ func main() {
 	fmt.Println("")
 	log.Printf("[grouk] 🌩️ client ready on socks5://%s", *listenAddr)
 	log.Printf("[grouk] server: %s (Raw UDP)", *serverAddr)
-	log.Println("[grouk] fast as lightning 🌩️")
 
 	go func() {
 		for {
@@ -102,11 +103,13 @@ func main() {
 	client.close()
 }
 
+// ✅ M26: backoff
 func (c *GroukClient) getOrCreateSession() (*transport.GroukSession, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
 	if c.session != nil && !c.session.IsClosed() {
+		c.connectBackoff = 0
 		return c.session, nil
 	}
 	if c.session != nil {
@@ -114,16 +117,29 @@ func (c *GroukClient) getOrCreateSession() (*transport.GroukSession, error) {
 		c.session = nil
 	}
 
-	log.Println("[grouk] connecting to server...")
+	if c.connectBackoff > 0 {
+		log.Printf("[grouk] reconnect backoff: %v", c.connectBackoff)
+		time.Sleep(c.connectBackoff)
+	}
 
+	log.Println("[grouk] connecting to server...")
 	session, err := transport.GroukClientHandshake(c.udpConn, c.serverAddr, c.psk)
 	if err != nil {
+		if c.connectBackoff == 0 {
+			c.connectBackoff = 1 * time.Second
+		} else {
+			c.connectBackoff *= 2
+			if c.connectBackoff > 30*time.Second {
+				c.connectBackoff = 30 * time.Second
+			}
+		}
 		return nil, fmt.Errorf("grouk handshake: %w", err)
 	}
 
 	go c.sessionReadLoop(session)
 
 	c.session = session
+	c.connectBackoff = 0
 	log.Println("[grouk] connected ✅")
 	return session, nil
 }
@@ -147,7 +163,10 @@ func (c *GroukClient) sessionReadLoop(session *transport.GroukSession) {
 			continue
 		}
 
-		pkt, err := transport.UnmarshalGroukPacket(buf[:n])
+		data := make([]byte, n)
+		copy(data, buf[:n])
+
+		pkt, err := transport.UnmarshalGroukPacket(data)
 		if err != nil {
 			continue
 		}
@@ -203,22 +222,18 @@ func (c *GroukClient) handleSOCKS(socksConn net.Conn) {
 		}
 	}
 
-	host, portStr, _ := net.SplitHostPort(target)
-	port := parsePort(portStr)
-
-	addrType := protocol.AddrTypeDomain
-	if ip := net.ParseIP(host); ip != nil {
-		if ip.To4() != nil {
-			addrType = protocol.AddrTypeIPv4
-		} else {
-			addrType = protocol.AddrTypeIPv6
-		}
+	// ✅ M25 + M27
+	host, port, addrType, err := cmdutil.SplitTarget(target)
+	if err != nil {
+		log.Printf("[grouk] %v", err)
+		stream.Close()
+		socks5.SendReply(socksConn, 0x01)
+		return
 	}
 
 	req := &protocol.ConnectRequest{AddrType: addrType, Addr: host, Port: port}
 	reqData, err := req.Marshal()
 	if err != nil {
-		log.Printf("[grouk] marshal error: %v", err)
 		stream.Close()
 		socks5.SendReply(socksConn, 0x01)
 		return
@@ -265,18 +280,5 @@ func relay(stream *transport.GroukStream, conn net.Conn) {
 	<-ch
 	stream.Close()
 	conn.Close()
-}
-
-// ✅ H32: parsePort با بررسی overflow
-func parsePort(s string) uint16 {
-	var port int
-	for _, c := range s {
-		if c >= '0' && c <= '9' {
-			port = port*10 + int(c-'0')
-			if port > 65535 {
-				return 0
-			}
-		}
-	}
-	return uint16(port)
+	<-ch // ✅ M19
 }
