@@ -50,6 +50,11 @@ type AdaptiveCover struct {
 	maxPaddingCap int
 	doneCh        chan struct{}
 	doneOnce      sync.Once
+
+	// ✅ M17: hysteresis — سطح جدید باید چند بار پشت سر هم تأیید بشه
+	pendingLevel    ActivityLevel
+	pendingSince    time.Time
+	hysteresisDelay time.Duration
 }
 
 type trafficSample struct {
@@ -57,15 +62,16 @@ type trafficSample struct {
 	timestamp time.Time
 }
 
-// ✅ H16: حداکثر تعداد نمونه‌ها بین cleanup ها
 const maxTrafficSamples = 10000
 
 func NewAdaptiveCover(modeCfg *ModeConfig) *AdaptiveCover {
 	ac := &AdaptiveCover{
-		bytesWindow:   make([]trafficSample, 0, 600),
-		windowSize:    1 * time.Minute,
-		maxPaddingCap: modeCfg.MaxPadding,
-		doneCh:        make(chan struct{}),
+		bytesWindow:     make([]trafficSample, 0, 600),
+		windowSize:      1 * time.Minute,
+		maxPaddingCap:   modeCfg.MaxPadding,
+		doneCh:          make(chan struct{}),
+		hysteresisDelay: 30 * time.Second, // ✅ M17: ۳ بار ۱۰ ثانیه‌ای
+		pendingLevel:    ActivityIdle,
 		levels: []LevelConfig{
 			{
 				Level:            ActivityIdle,
@@ -117,7 +123,6 @@ func capPadding(desired, max int) int {
 	return desired
 }
 
-// ✅ H16: محدودیت اندازه bytesWindow
 func (ac *AdaptiveCover) RecordTraffic(bytes int64) {
 	ac.mu.Lock()
 	defer ac.mu.Unlock()
@@ -127,7 +132,6 @@ func (ac *AdaptiveCover) RecordTraffic(bytes int64) {
 		timestamp: time.Now(),
 	})
 
-	// ✅ H16: اگه بیش از حد بزرگ شد → کوچکش کن
 	if len(ac.bytesWindow) > maxTrafficSamples {
 		half := maxTrafficSamples / 2
 		newWindow := make([]trafficSample, half)
@@ -150,6 +154,9 @@ func (ac *AdaptiveCover) updateLoop() {
 	}
 }
 
+// ✅ M17: recalculate با hysteresis
+// قبلاً: سطح فوری عوض میشد → oscillation روی مرز threshold
+// الان: سطح جدید باید ≥30 ثانیه پایدار بمونه قبل از switch
 func (ac *AdaptiveCover) recalculate() {
 	ac.mu.Lock()
 	defer ac.mu.Unlock()
@@ -167,19 +174,49 @@ func (ac *AdaptiveCover) recalculate() {
 	}
 	ac.bytesWindow = valid
 
-	newLevel := ActivityIdle
+	// محاسبه سطح پیشنهادی
+	proposedLevel := ActivityIdle
 	for _, cfg := range ac.levels {
 		if totalBytes >= cfg.MinBytesPerMin {
-			newLevel = cfg.Level
+			proposedLevel = cfg.Level
 		}
 	}
 
-	oldLevel := ActivityLevel(ac.currentLevel.Load())
-	if newLevel != oldLevel {
-		log.Printf("[adaptive] level changed: %s → %s (bytes/min: %d)",
-			oldLevel, newLevel, totalBytes)
+	currentLevel := ActivityLevel(ac.currentLevel.Load())
+
+	// ✅ M17: اگه سطح پیشنهادی با فعلی یکیه → ریست pending
+	if proposedLevel == currentLevel {
+		ac.pendingLevel = currentLevel
+		ac.pendingSince = time.Time{}
+		return
 	}
-	ac.currentLevel.Store(int32(newLevel))
+
+	// ✅ M17: اگه سطح پیشنهادی جدیده → شروع countdown
+	if proposedLevel != ac.pendingLevel {
+		ac.pendingLevel = proposedLevel
+		ac.pendingSince = now
+		log.Printf("[adaptive] level %s proposed (current: %s, waiting %.0fs for hysteresis)",
+			proposedLevel, currentLevel, ac.hysteresisDelay.Seconds())
+		return
+	}
+
+	// ✅ M17: همون pending level — آیا به اندازه کافی پایدار بوده؟
+	if ac.pendingSince.IsZero() {
+		ac.pendingSince = now
+		return
+	}
+
+	if now.Sub(ac.pendingSince) < ac.hysteresisDelay {
+		// هنوز زوده
+		return
+	}
+
+	// ✅ M17: پایدار بوده → switch
+	log.Printf("[adaptive] level changed: %s → %s (bytes/min: %d, sustained %.0fs)",
+		currentLevel, proposedLevel, totalBytes, now.Sub(ac.pendingSince).Seconds())
+	ac.currentLevel.Store(int32(proposedLevel))
+	ac.pendingLevel = proposedLevel
+	ac.pendingSince = time.Time{}
 }
 
 func (ac *AdaptiveCover) Close() {
