@@ -2,28 +2,24 @@ package main
 
 import (
 	"context"
-	"crypto/ecdsa"
-	"crypto/elliptic"
-	"crypto/rand"
 	"crypto/sha256"
 	"crypto/tls"
-	"crypto/x509"
 	"encoding/binary"
 	"encoding/hex"
-	"encoding/pem"
 	"flag"
 	"fmt"
 	"io"
 	"log"
-	"math/big"
 	"net"
 	"net/http"
 	"os"
 	"os/signal"
+	"sync"
 	"time"
 
 	"github.com/quic-go/quic-go"
 
+	"guarch/cmd/internal/cmdutil"
 	"guarch/pkg/antidetect"
 	"guarch/pkg/cover"
 	"guarch/pkg/health"
@@ -36,6 +32,7 @@ var (
 	decoyServer   *antidetect.DecoyServer
 	healthCheck   *health.Checker
 	serverPSK     []byte
+	activeWg      sync.WaitGroup // ✅ M28
 )
 
 var maxConns = make(chan struct{}, 1000)
@@ -45,8 +42,8 @@ func main() {
 	decoyAddr := flag.String("decoy", ":8080", "HTTP decoy server")
 	healthAddr := flag.String("health", "127.0.0.1:9090", "health check")
 	psk := flag.String("psk", "", "pre-shared key (required)")
-	certFile := flag.String("cert", "zhip-cert.pem", "TLS certificate file") // ✅ H26
-	keyFile := flag.String("key", "zhip-key.pem", "TLS private key file")    // ✅ H26
+	certFile := flag.String("cert", "zhip-cert.pem", "TLS certificate file")
+	keyFile := flag.String("key", "zhip-key.pem", "TLS private key file")
 	coverEnabled := flag.Bool("cover", true, "enable server cover traffic")
 	flag.Parse()
 
@@ -62,9 +59,10 @@ func main() {
 	probeDetector = antidetect.NewProbeDetector(10, time.Minute)
 	decoyServer = antidetect.NewDecoyServer()
 
-	healthCheck.StartServer(*healthAddr)
+	if _, err := healthCheck.StartServer(*healthAddr); err != nil {
+		log.Printf("[zhip] ⚠️  health server failed: %v", err)
+	}
 
-	// Cover Traffic
 	var adaptive *cover.AdaptiveCover
 	if *coverEnabled {
 		modeCfg := cover.GetModeConfig(cover.ModeBalanced)
@@ -72,11 +70,10 @@ func main() {
 		coverCfg := cover.ConfigForMode(cover.ModeBalanced)
 		coverMgr := cover.NewManager(coverCfg, adaptive)
 		coverMgr.Start(ctx)
-		log.Println("[zhip] server cover traffic started (balanced)")
 	}
 
-	// ✅ H26: بارگذاری یا تولید certificate
-	cert, err := loadOrGenerateCert(*certFile, *keyFile)
+	// ✅ M27: shared cert loading
+	cert, err := cmdutil.LoadOrGenerateCert(*certFile, *keyFile, "zhip")
 	if err != nil {
 		log.Fatal("cert:", err)
 	}
@@ -87,6 +84,9 @@ func main() {
 	go startTCPDecoy(*addr, cert)
 	go startHTTPDecoy(*decoyAddr)
 
+	// ✅ M30: ALPN verify — custom NextProtos in ZhipListen
+	// transport.ZhipListen باید NextProtos: []string{"zhip-v1"} رو ست کنه
+	// اگه client با ALPN متفاوت بیاد → TLS handshake fail
 	quicLn, err := transport.ZhipListen(*addr, cert, nil)
 	if err != nil {
 		log.Fatal("quic listen:", err)
@@ -100,41 +100,47 @@ func main() {
 	fmt.Println("    ██     ██   ██ ██ ██")
 	fmt.Println("")
 	log.Printf("[zhip] ⚡ server on %s (QUIC/UDP)", *addr)
-	log.Printf("[zhip] 🎭 TCP decoy on %s (HTTPS)", *addr)
-	log.Printf("[zhip] 🎭 HTTP decoy on %s", *decoyAddr)
-	log.Printf("[zhip] 💓 health on %s", *healthAddr)
-	fmt.Println("")
-	fmt.Println("╔══════════════════════════════════════════════════════════════════╗")
-	fmt.Printf("║  Certificate PIN: %s  ║\n", certPinHex)
-	fmt.Println("║  Share this PIN with your clients (-pin flag)                   ║")
-	fmt.Println("╚══════════════════════════════════════════════════════════════════╝")
-	fmt.Println("")
+	log.Println("╔══════════════════════════════════════════════════════════════════╗")
+	log.Printf("║  Certificate PIN: %s  ║", certPinHex)
+	log.Println("╚══════════════════════════════════════════════════════════════════╝")
 	log.Println("[zhip] ready — fast as a blink ⚡")
 
 	go func() {
-	for {
-		conn, err := quicLn.Accept(ctx)
-		if err != nil {
-			select {
-			case <-ctx.Done():
-				return
-			default:
-				log.Printf("[zhip] accept error: %v", err)
+		for {
+			conn, err := quicLn.Accept(ctx)
+			if err != nil {
+				select {
+				case <-ctx.Done():
+					return
+				default:
+					log.Printf("[zhip] accept error: %v", err)
+					continue
+				}
+			}
+
+			// ✅ M30: ALPN verification
+			tlsState := conn.ConnectionState().TLS
+			if tlsState.NegotiatedProtocol != "" && tlsState.NegotiatedProtocol != "zhip-v1" {
+				log.Printf("[zhip] ⚠️  unexpected ALPN %q from %s, rejecting",
+					tlsState.NegotiatedProtocol, conn.RemoteAddr())
+				conn.CloseWithError(0, "")
 				continue
 			}
+
+			select {
+			case maxConns <- struct{}{}:
+				activeWg.Add(1) // ✅ M28
+				go func() {
+					defer func() { <-maxConns }()
+					defer activeWg.Done() // ✅ M28
+					handleQUICConn(conn)
+				}()
+			default:
+				log.Printf("[zhip] connection limit reached")
+				conn.CloseWithError(0, "server full")
+			}
 		}
-		select {
-		case maxConns <- struct{}{}:
-			go func() {
-				defer func() { <-maxConns }()
-				handleQUICConn(conn)
-			}()
-		default:
-			log.Printf("[zhip] connection limit reached")
-			conn.CloseWithError(0, "server full")
-		}
-	}
-}()
+	}()
 
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, os.Interrupt)
@@ -143,10 +149,15 @@ func main() {
 	log.Println("[zhip] shutting down...")
 	cancel()
 	quicLn.Close()
-	probeDetector.Close() // ✅ H31
+	probeDetector.Close()
 	if adaptive != nil {
-		adaptive.Close() // ✅ C9
+		adaptive.Close()
 	}
+
+	// ✅ M28: graceful wait
+	done := make(chan struct{})
+	go func() { activeWg.Wait(); close(done) }()
+	cmdutil.GracefulWait("zhip", done, 30*time.Second)
 }
 
 func handleQUICConn(conn quic.Connection) {
@@ -154,10 +165,7 @@ func handleQUICConn(conn quic.Connection) {
 	healthCheck.AddConn()
 	defer healthCheck.RemoveConn()
 
-	log.Printf("[zhip] new connection: %s", remoteAddr)
-
 	if probeDetector.Check(remoteAddr) {
-		log.Printf("[zhip] suspicious: %s → closing", remoteAddr)
 		healthCheck.AddError()
 		conn.CloseWithError(0, "")
 		return
@@ -186,14 +194,11 @@ func handleQUICConn(conn quic.Connection) {
 func handleQUICStream(stream quic.Stream, remoteAddr string) {
 	defer stream.Close()
 
-	streamID := stream.StreamID()
-
 	lenBuf := make([]byte, 2)
 	if _, err := io.ReadFull(stream, lenBuf); err != nil {
 		return
 	}
 	reqLen := binary.BigEndian.Uint16(lenBuf)
-
 	if reqLen > 1024 {
 		return
 	}
@@ -210,23 +215,16 @@ func handleQUICStream(stream quic.Stream, remoteAddr string) {
 	}
 
 	target := req.Address()
-	log.Printf("[zhip] %s → %s (stream %d)", remoteAddr, target, streamID)
-
 	targetConn, err := net.DialTimeout("tcp", target, 10*time.Second)
 	if err != nil {
-		log.Printf("[zhip] dial %s: %v", target, err)
 		stream.Write([]byte{protocol.ConnectFailed})
 		return
 	}
 	defer targetConn.Close()
 
-	if _, err := stream.Write([]byte{protocol.ConnectSuccess}); err != nil {
-		return
-	}
+	stream.Write([]byte{protocol.ConnectSuccess})
 
-	log.Printf("[zhip] ⚡ relaying %s (stream %d)", target, streamID)
 	relayQUICStream(stream, targetConn)
-	log.Printf("[zhip] ✖ done %s (stream %d)", target, streamID)
 }
 
 func relayQUICStream(stream quic.Stream, conn net.Conn) {
@@ -237,11 +235,11 @@ func relayQUICStream(stream quic.Stream, conn net.Conn) {
 	stream.CancelRead(0)
 	stream.CancelWrite(0)
 	conn.Close()
+	<-ch // ✅ M19
 }
 
 func startTCPDecoy(addr string, cert tls.Certificate) {
 	tlsConfig := transport.ZhipTCPDecoyConfig(cert)
-
 	ln, err := tls.Listen("tcp", addr, tlsConfig)
 	if err != nil {
 		return
@@ -255,57 +253,13 @@ func startTCPDecoy(addr string, cert tls.Certificate) {
 		}
 		go func() {
 			defer conn.Close()
-			response := "HTTP/1.1 200 OK\r\nServer: nginx/1.24.0\r\nContent-Type: text/html; charset=utf-8\r\nConnection: close\r\nStrict-Transport-Security: max-age=31536000\r\nAlt-Svc: h3=\":8443\"; ma=86400\r\n\r\n"
-			conn.Write([]byte(response))
+			resp := "HTTP/1.1 200 OK\r\nServer: nginx/1.24.0\r\nContent-Type: text/html\r\nConnection: close\r\nAlt-Svc: h3=\":8443\"; ma=86400\r\n\r\n"
+			conn.Write([]byte(resp))
 			conn.Write([]byte(decoyServer.GenerateHomePage()))
 		}()
 	}
 }
 
 func startHTTPDecoy(addr string) {
-	log.Printf("[zhip] HTTP decoy on %s", addr)
 	http.ListenAndServe(addr, decoyServer)
-}
-
-// ✅ H26: بارگذاری یا تولید certificate
-func loadOrGenerateCert(certFile, keyFile string) (tls.Certificate, error) {
-	if _, err := os.Stat(certFile); err == nil {
-		cert, err := tls.LoadX509KeyPair(certFile, keyFile)
-		if err == nil {
-			log.Printf("[zhip] loaded existing certificate from %s", certFile)
-			return cert, nil
-		}
-	}
-
-	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
-	if err != nil {
-		return tls.Certificate{}, err
-	}
-
-	template := &x509.Certificate{
-		SerialNumber:          big.NewInt(1),
-		NotBefore:             time.Now(),
-		NotAfter:              time.Now().Add(365 * 24 * time.Hour),
-		KeyUsage:              x509.KeyUsageDigitalSignature,
-		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
-		BasicConstraintsValid: true,
-	}
-
-	certDER, err := x509.CreateCertificate(rand.Reader, template, template, &key.PublicKey, key)
-	if err != nil {
-		return tls.Certificate{}, err
-	}
-
-	certPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: certDER})
-	keyDER, err := x509.MarshalECPrivateKey(key)
-	if err != nil {
-		return tls.Certificate{}, err
-	}
-	keyPEM := pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: keyDER})
-
-	os.WriteFile(certFile, certPEM, 0600)
-	os.WriteFile(keyFile, keyPEM, 0600)
-
-	log.Println("[zhip] TLS certificate generated (ECDSA P-256)")
-	return tls.X509KeyPair(certPEM, keyPEM)
 }
