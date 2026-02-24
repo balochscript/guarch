@@ -1,7 +1,10 @@
 package transport
 
 import (
+	"crypto/sha256"
+	"crypto/subtle"
 	"crypto/tls"
+	"crypto/x509"
 	"fmt"
 	"log"
 	"net"
@@ -24,37 +27,70 @@ type Pool struct {
 	maxSize    int
 	maxRetry   int
 	maxAge     time.Duration
+	certPin    []byte // ✅ H1: SHA-256 pin of server cert (32 bytes)
 }
 
-func NewPool(serverAddr string, maxSize int, hsCfg *HandshakeConfig) *Pool {
-	return &Pool{
+// NewPool — حالا با cert pinning
+// certPin: اگه nil باشه cert check نمیشه (dev mode)
+// اگه 32 بایت SHA-256 باشه، cert سرور باید match کنه
+func NewPool(serverAddr string, maxSize int, hsCfg *HandshakeConfig, certPin []byte) *Pool {
+	p := &Pool{
 		serverAddr: serverAddr,
-		tlsConfig: &tls.Config{
-			InsecureSkipVerify: true,
-			MinVersion:         tls.VersionTLS13,
-		},
-		hsCfg:    hsCfg,
-		maxSize:  maxSize,
-		maxRetry: 3,
-		maxAge:   5 * time.Minute,
+		hsCfg:      hsCfg,
+		maxSize:    maxSize,
+		maxRetry:   3,
+		maxAge:     5 * time.Minute,
+		certPin:    certPin,
 	}
+
+	tlsCfg := &tls.Config{
+		MinVersion: tls.VersionTLS13,
+	}
+
+	if len(certPin) == 32 {
+		// ✅ H1: cert pinning فعال
+		// InsecureSkipVerify=true چون CA نداریم (self-signed)
+		// ولی VerifyPeerCertificate pin رو چک میکنه
+		tlsCfg.InsecureSkipVerify = true
+		pin := make([]byte, 32)
+		copy(pin, certPin)
+
+		tlsCfg.VerifyPeerCertificate = func(rawCerts [][]byte, _ [][]*x509.Certificate) error {
+			if len(rawCerts) == 0 {
+				return fmt.Errorf("pool: server sent no certificate")
+			}
+			hash := sha256.Sum256(rawCerts[0])
+			if subtle.ConstantTimeCompare(hash[:], pin) != 1 {
+				return fmt.Errorf("pool: certificate pin mismatch")
+			}
+			return nil
+		}
+		log.Println("[pool] cert pinning enabled ✅")
+	} else {
+		// ⚠️ بدون pin — فقط برای dev
+		tlsCfg.InsecureSkipVerify = true
+		if certPin != nil {
+			log.Println("[pool] ⚠️  invalid cert pin length (need 32 bytes SHA-256), pinning disabled")
+		} else {
+			log.Println("[pool] ⚠️  no cert pin — InsecureSkipVerify=true (dev mode)")
+		}
+	}
+
+	p.tlsConfig = tlsCfg
+	return p
 }
 
-// ✅ C1: Get بدون isAlive
-// قبلاً: isAlive() یک بایت میخوند و گمش میکرد → data corruption
-// الان: فقط سن connection چک میشه — بدون خوندن داده
+// ✅ C1: Get بدون isAlive — فقط سن connection چک میشه
 func (p *Pool) Get() (*SecureConn, error) {
 	p.mu.Lock()
 
 	for len(p.conns) > 0 {
-		// از آخر بردار (LIFO — تازه‌ترین)
 		entry := p.conns[len(p.conns)-1]
 		p.conns = p.conns[:len(p.conns)-1]
 
-		// ✅ C1: بررسی سن به جای خوندن داده
 		if time.Since(entry.created) > p.maxAge {
 			entry.sc.Close()
-			continue // بعدی رو امتحان کن
+			continue
 		}
 
 		p.mu.Unlock()
@@ -85,7 +121,10 @@ func (p *Pool) createConn() (*SecureConn, error) {
 
 	for i := 0; i < p.maxRetry; i++ {
 		if i > 0 {
-			wait := time.Duration(i) * 2 * time.Second
+			wait := time.Duration(1<<uint(i)) * time.Second // exponential backoff
+			if wait > 16*time.Second {
+				wait = 16 * time.Second
+			}
 			log.Printf("[pool] retry %d/%d in %v", i+1, p.maxRetry, wait)
 			time.Sleep(wait)
 		}
@@ -129,4 +168,9 @@ func (p *Pool) Size() int {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	return len(p.conns)
+}
+
+// CertPin — خوندن pin فعلی (برای debug/logging)
+func (p *Pool) CertPin() []byte {
+	return p.certPin
 }
