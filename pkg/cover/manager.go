@@ -14,10 +14,9 @@ import (
 )
 
 // ═══════════════════════════════════════
-// ✅ H17: Crypto-secure random helpers
+// Crypto-secure random helpers
 // ═══════════════════════════════════════
 
-// cryptoRandIntn — unbiased random [0, n) with crypto/rand
 func cryptoRandIntn(n int) int {
 	if n <= 0 {
 		return 0
@@ -29,7 +28,6 @@ func cryptoRandIntn(n int) int {
 	return int(val.Int64())
 }
 
-// cryptoRandDuration — crypto-random duration in [min, max)
 func cryptoRandDuration(min, max time.Duration) time.Duration {
 	if max <= min {
 		return min
@@ -104,6 +102,8 @@ func (m *Manager) Start(ctx context.Context) {
 	}
 }
 
+// ✅ M15: time.NewTimer بجای time.After — جلوگیری از timer leak
+// ✅ M16: random initial delay — desync workers
 func (m *Manager) domainWorker(ctx context.Context, dc DomainConfig, index int) {
 	defer m.wg.Done()
 	defer func() {
@@ -112,7 +112,17 @@ func (m *Manager) domainWorker(ctx context.Context, dc DomainConfig, index int) 
 		m.mu.Unlock()
 	}()
 
-	log.Printf("[cover] worker started for %s", dc.Domain)
+	// ✅ M16: random initial delay — همه worker ها همزمان شروع نکنن
+	initDelay := cryptoRandDuration(0, 5*time.Second)
+	initTimer := time.NewTimer(initDelay)
+	select {
+	case <-ctx.Done():
+		initTimer.Stop()
+		return
+	case <-initTimer.C:
+	}
+
+	log.Printf("[cover] worker started for %s (delayed %v)", dc.Domain, initDelay)
 
 	for {
 		select {
@@ -120,42 +130,51 @@ func (m *Manager) domainWorker(ctx context.Context, dc DomainConfig, index int) 
 			log.Printf("[cover] worker stopped for %s", dc.Domain)
 			return
 		default:
-			if m.adaptive != nil {
-				activeDomains := m.adaptive.GetActiveDomains()
-				if index >= activeDomains {
-					select {
-					case <-ctx.Done():
-						return
-					case <-time.After(5 * time.Second):
-						continue
-					}
-				}
-			}
+		}
 
-			// ✅ H17: احتمال 5% skip (شبیه بستن تب مرورگر)
-			if cryptoRandIntn(100) < 5 {
+		if m.adaptive != nil {
+			activeDomains := m.adaptive.GetActiveDomains()
+			if index >= activeDomains {
+				// ✅ M15: NewTimer + Stop
+				waitTimer := time.NewTimer(5 * time.Second)
 				select {
 				case <-ctx.Done():
+					waitTimer.Stop()
 					return
-				case <-time.After(cryptoRandDuration(2*time.Second, 10*time.Second)):
-					continue
+				case <-waitTimer.C:
 				}
+				continue
 			}
+		}
 
-			m.sendRequest(ctx, dc)
-
-			interval := m.coverInterval(dc)
-
+		// 5% skip — شبیه بستن تب مرورگر
+		if cryptoRandIntn(100) < 5 {
+			skipTimer := time.NewTimer(cryptoRandDuration(2*time.Second, 10*time.Second))
 			select {
 			case <-ctx.Done():
+				skipTimer.Stop()
 				return
-			case <-time.After(interval):
+			case <-skipTimer.C:
 			}
+			continue
+		}
+
+		m.sendRequest(ctx, dc)
+
+		interval := m.coverInterval(dc)
+
+		// ✅ M15: NewTimer بجای time.After
+		intervalTimer := time.NewTimer(interval)
+		select {
+		case <-ctx.Done():
+			intervalTimer.Stop()
+			return
+		case <-intervalTimer.C:
 		}
 	}
 }
 
-// ✅ H17: heavy-tailed distribution — شبیه رفتار واقعی مرورگر
+// heavy-tailed distribution — شبیه رفتار واقعی مرورگر
 func (m *Manager) coverInterval(dc DomainConfig) time.Duration {
 	var min, max time.Duration
 	if m.adaptive != nil {
@@ -165,25 +184,21 @@ func (m *Manager) coverInterval(dc DomainConfig) time.Duration {
 		max = dc.MaxInterval
 	}
 
-	// توزیع heavy-tail: ۱۵% burst، ۱۰% مکث طولانی، ۷۵% عادی
 	r := cryptoRandIntn(100)
 	switch {
 	case r < 15:
-		// burst — کلیک سریع (min/4 to min)
 		short := min / 4
 		if short < 200*time.Millisecond {
 			short = 200 * time.Millisecond
 		}
 		return cryptoRandDuration(short, min)
 	case r < 25:
-		// مکث طولانی (max to max*3) — مثل خوندن صفحه
 		long := max * 3
 		if long > 2*time.Minute {
 			long = 2 * time.Minute
 		}
 		return cryptoRandDuration(max, long)
 	default:
-		// عادی
 		return cryptoRandDuration(min, max)
 	}
 }
@@ -203,29 +218,24 @@ func (m *Manager) sendRequest(ctx context.Context, dc DomainConfig) {
 		return
 	}
 
-	// ✅ H17: تنوع بیشتر در headers
 	req.Header.Set("User-Agent", randomUserAgent())
 	req.Header.Set("Accept", randomAcceptHeader())
 	req.Header.Set("Accept-Language", randomAcceptLanguage())
 	req.Header.Set("Accept-Encoding", "gzip, deflate, br")
 	req.Header.Set("Connection", "keep-alive")
 
-	// ✅ H17: Referrer تصادفی (80% بدون، 20% با referrer)
 	if cryptoRandIntn(100) < 20 {
 		req.Header.Set("Referer", randomReferer(dc.Domain))
 	}
 
-	// ✅ H17: Cache-Control تصادفی
 	if cryptoRandIntn(100) < 30 {
 		req.Header.Set("Cache-Control", "no-cache")
 	}
 
-	// ✅ H17: Upgrade-Insecure فقط 70% (بعضی مرورگرها نمی‌فرستن)
 	if cryptoRandIntn(100) < 70 {
 		req.Header.Set("Upgrade-Insecure-Requests", "1")
 	}
 
-	// ✅ H17: Sec-Fetch headers (Chrome-like)
 	if cryptoRandIntn(100) < 60 {
 		req.Header.Set("Sec-Fetch-Dest", "document")
 		req.Header.Set("Sec-Fetch-Mode", "navigate")
@@ -240,7 +250,6 @@ func (m *Manager) sendRequest(ctx context.Context, dc DomainConfig) {
 	}
 	defer resp.Body.Close()
 
-	// ✅ H17: سایز خوندن تصادفی (10KB–100KB) — نه همیشه 50KB
 	readLimit := int64(10*1024 + cryptoRandIntn(90*1024))
 	written, err := io.Copy(io.Discard, io.LimitReader(resp.Body, readLimit))
 	if err != nil {
@@ -279,7 +288,7 @@ func (m *Manager) pickDomain() *DomainConfig {
 		return &dc
 	}
 
-	r := cryptoRandIntn(totalWeight) // ✅ H17: crypto/rand
+	r := cryptoRandIntn(totalWeight)
 	for _, dc := range m.config.Domains {
 		r -= dc.Weight
 		if r < 0 {
@@ -306,29 +315,22 @@ func (m *Manager) IsRunning() bool {
 }
 
 // ═══════════════════════════════════════
-// ✅ H17: تنوع بیشتر در header ها
+// Header helpers
 // ═══════════════════════════════════════
 
 func randomUserAgent() string {
 	agents := []string{
-		// Chrome Windows
 		"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
 		"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
 		"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-		// Chrome Mac
 		"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
 		"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
-		// Firefox
 		"Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:123.0) Gecko/20100101 Firefox/123.0",
 		"Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:122.0) Gecko/20100101 Firefox/122.0",
 		"Mozilla/5.0 (X11; Linux x86_64; rv:122.0) Gecko/20100101 Firefox/122.0",
-		// Chrome Linux
 		"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-		// Edge
 		"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36 Edg/122.0.0.0",
-		// Safari
 		"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.3 Safari/605.1.15",
-		// Mobile
 		"Mozilla/5.0 (iPhone; CPU iPhone OS 17_3_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.3 Mobile/15E148 Safari/604.1",
 		"Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Mobile Safari/537.36",
 	}
@@ -351,7 +353,6 @@ func randomAcceptLanguage() string {
 	return langs[cryptoRandIntn(len(langs))]
 }
 
-// ✅ H17: Accept header متنوع
 func randomAcceptHeader() string {
 	accepts := []string{
 		"text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
@@ -362,7 +363,6 @@ func randomAcceptHeader() string {
 	return accepts[cryptoRandIntn(len(accepts))]
 }
 
-// ✅ H17: Referrer واقع‌گرایانه
 func randomReferer(domain string) string {
 	refs := []string{
 		"https://www.google.com/",
