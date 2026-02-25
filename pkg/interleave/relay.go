@@ -1,13 +1,9 @@
 package interleave
 
 import (
-	"log"
 	"net"
 )
 
-// ✅ M19: Relay حالا هر دو goroutine رو wait میکنه
-// قبلاً: فقط اولین خطا خونده میشد → goroutine دوم leak/race
-// الان: هر دو خطا drain میشن → هر دو goroutine تمام میشن
 func Relay(il *Interleaver, conn net.Conn) {
 	ch := make(chan error, 2)
 
@@ -41,14 +37,11 @@ func Relay(il *Interleaver, conn net.Conn) {
 		}
 	}()
 
-	// ✅ M19: اولین خطا → close both → صبر برای دومی
 	err1 := <-ch
 	conn.Close()
 	il.Close()
-	err2 := <-ch // صبر تا goroutine دوم هم تمام بشه
+	err2 := <-ch
 
 	_ = err1
 	_ = err2
-	// خطاها معمولاً io.EOF/closed هستن — فقط در debug لاگ بزن:
-	// log.Printf("[relay] finished: err1=%v err2=%v", err1, err2)
 }
