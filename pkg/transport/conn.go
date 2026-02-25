@@ -181,6 +181,10 @@ func (sc *SecureConn) authenticate(isServer bool, key []byte) error {
 	return nil
 }
 
+func (sc *SecureConn) SendSeqNum() uint32 {
+	return sc.sendSeq
+}
+
 func computeAuthMAC(key []byte, role string) []byte {
 	mac := hmac.New(sha256.New, key)
 	mac.Write([]byte("guarch-auth-v1-" + role))
