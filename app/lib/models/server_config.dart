@@ -5,9 +5,10 @@ class ServerConfig {
   String name;
   String address;
   int port;
-  String psk;              // ✅ اضافه شد
-  String? certPin;         // ✅ اضافه شد
-  int listenPort;          // ✅ اضافه شد
+  String psk;
+  String? certPin;
+  int listenPort;
+  String protocol; // ✅ جدید
   bool coverEnabled;
   List<CoverDomain> coverDomains;
   String shapingPattern;
@@ -21,9 +22,10 @@ class ServerConfig {
     required this.name,
     required this.address,
     this.port = 8443,
-    this.psk = '',           // ✅
-    this.certPin,            // ✅
-    this.listenPort = 1080,  // ✅
+    this.psk = '',
+    this.certPin,
+    this.listenPort = 1080,
+    this.protocol = 'guarch', // ✅
     this.coverEnabled = true,
     List<CoverDomain>? coverDomains,
     this.shapingPattern = 'web_browsing',
@@ -50,8 +52,29 @@ class ServerConfig {
     return '🟠';
   }
 
+  // ✅ جدید
+  String get protocolEmoji {
+    switch (protocol) {
+      case 'grouk': return '🌩️';
+      case 'zhip': return '⚡';
+      default: return '🏹';
+    }
+  }
+
+  // ✅ جدید
+  String get protocolLabel {
+    switch (protocol) {
+      case 'grouk': return 'Grouk (UDP)';
+      case 'zhip': return 'Zhip (QUIC)';
+      default: return 'Guarch (TLS)';
+    }
+  }
+
   bool get isValid =>
-      address.isNotEmpty && port > 0 && psk.isNotEmpty;  // ✅
+      address.isNotEmpty &&
+      port > 0 &&
+      psk.isNotEmpty &&
+      ['guarch', 'grouk', 'zhip'].contains(protocol); // ✅
 
   Map<String, dynamic> toJson() {
     return {
@@ -59,9 +82,10 @@ class ServerConfig {
       'name': name,
       'address': address,
       'port': port,
-      'psk': psk,                    // ✅
-      'cert_pin': certPin,           // ✅
-      'listen_port': listenPort,     // ✅
+      'psk': psk,
+      'cert_pin': certPin,
+      'listen_port': listenPort,
+      'protocol': protocol, // ✅
       'cover_enabled': coverEnabled,
       'cover_domains': coverDomains.map((d) => d.toJson()).toList(),
       'shaping_pattern': shapingPattern,
@@ -77,9 +101,10 @@ class ServerConfig {
       name: json['name'] ?? 'Server',
       address: json['address'] ?? json['server'] ?? '',
       port: json['port'] ?? 8443,
-      psk: json['psk'] ?? '',                          // ✅
-      certPin: json['cert_pin'] ?? json['pin'],        // ✅
-      listenPort: json['listen_port'] ?? 1080,         // ✅
+      psk: json['psk'] ?? '',
+      certPin: json['cert_pin'] ?? json['pin'],
+      listenPort: json['listen_port'] ?? 1080,
+      protocol: json['protocol'] ?? 'guarch', // ✅
       coverEnabled: json['cover_enabled'] ?? json['cover']?['enabled'] ?? true,
       coverDomains: json['cover_domains'] != null
           ? (json['cover_domains'] as List)
@@ -95,29 +120,40 @@ class ServerConfig {
     );
   }
 
+  // ✅ آپدیت: URI مخصوص هر پروتکل
   String toShareString() {
     final data = {
       'name': name,
       'address': address,
       'port': port,
-      'psk': psk,                    // ✅
-      'cert_pin': certPin,           // ✅
+      'psk': psk,
+      'cert_pin': certPin,
+      'protocol': protocol,
       'cover_enabled': coverEnabled,
       'cover_domains': coverDomains.map((d) => d.toJson()).toList(),
     };
     final jsonStr = jsonEncode(data);
     final encoded = base64Encode(utf8.encode(jsonStr));
-    return 'guarch://$encoded';
+    return '$protocol://$encoded';
   }
 
+  // ✅ آپدیت: تشخیص پروتکل از URI
   factory ServerConfig.fromShareString(String shareStr) {
     String data = shareStr;
-    if (data.startsWith('guarch://')) {
-      data = data.substring(9);
+    String detectedProtocol = 'guarch';
+
+    for (final proto in ['guarch', 'grouk', 'zhip']) {
+      if (data.startsWith('$proto://')) {
+        detectedProtocol = proto;
+        data = data.substring(proto.length + 3);
+        break;
+      }
     }
+
     final decoded = utf8.decode(base64Decode(data));
     final json = jsonDecode(decoded) as Map<String, dynamic>;
     json['id'] = DateTime.now().millisecondsSinceEpoch.toString();
+    json['protocol'] = detectedProtocol;
     return ServerConfig.fromJson(json);
   }
 
@@ -128,6 +164,7 @@ class ServerConfig {
     String? psk,
     String? certPin,
     int? listenPort,
+    String? protocol, // ✅
     bool? coverEnabled,
     List<CoverDomain>? coverDomains,
     bool? isActive,
@@ -141,6 +178,7 @@ class ServerConfig {
       psk: psk ?? this.psk,
       certPin: certPin ?? this.certPin,
       listenPort: listenPort ?? this.listenPort,
+      protocol: protocol ?? this.protocol, // ✅
       coverEnabled: coverEnabled ?? this.coverEnabled,
       coverDomains: coverDomains ?? this.coverDomains,
       shapingPattern: shapingPattern,
@@ -157,8 +195,8 @@ class ServerConfig {
       CoverDomain(domain: 'www.microsoft.com', weight: 20),
       CoverDomain(domain: 'github.com', weight: 15),
       CoverDomain(domain: 'stackoverflow.com', weight: 15),
-      CoverDomain(domain: 'www.cloudflare.com', weight: 10),     // ✅ بجای amazon
-      CoverDomain(domain: 'learn.microsoft.com', weight: 10),    // ✅ بجای wikipedia
+      CoverDomain(domain: 'www.cloudflare.com', weight: 10),
+      CoverDomain(domain: 'learn.microsoft.com', weight: 10),
     ];
   }
 }
@@ -167,20 +205,11 @@ class CoverDomain {
   String domain;
   int weight;
 
-  CoverDomain({
-    required this.domain,
-    this.weight = 10,
-  });
+  CoverDomain({required this.domain, this.weight = 10});
 
-  Map<String, dynamic> toJson() => {
-        'domain': domain,
-        'weight': weight,
-      };
+  Map<String, dynamic> toJson() => {'domain': domain, 'weight': weight};
 
   factory CoverDomain.fromJson(Map<String, dynamic> json) {
-    return CoverDomain(
-      domain: json['domain'] ?? '',
-      weight: json['weight'] ?? 10,
-    );
+    return CoverDomain(domain: json['domain'] ?? '', weight: json['weight'] ?? 10);
   }
 }
