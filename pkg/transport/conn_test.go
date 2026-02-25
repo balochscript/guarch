@@ -165,7 +165,7 @@ func TestSendPacket(t *testing.T) {
 	}
 
 	pkt, _ := protocol.NewPaddedDataPacket(
-		[]byte("padded data"), 1, 200,
+		[]byte("padded data"), 100, 200,
 	)
 
 	go func() {
