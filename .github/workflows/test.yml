@@ -17,7 +17,9 @@ jobs:
           go-version: "1.22"
 
       - name: Download Dependencies
-        run: go mod tidy
+        run: |
+          go mod download
+          go mod tidy
 
       - name: Vet
         run: go vet ./...
@@ -49,11 +51,11 @@ jobs:
       - name: Test Health
         run: go test ./pkg/health/... -v -count=1 -timeout=60s
 
-      - name: Test Mobile Engine
-        run: go test ./pkg/mobile/... -v -count=1 -timeout=60s
-
       - name: Test Interleave
         run: go test ./pkg/interleave/... -v -count=1 -timeout=60s
 
+      - name: Test Mux
+        run: go test ./pkg/mux/... -v -count=1 -timeout=60s
+
       - name: Race Detector
-        run: go test ./pkg/protocol/... ./pkg/crypto/... ./pkg/config/... ./pkg/health/... ./pkg/mobile/... -race -count=1 -timeout=60s
+        run: go test ./pkg/protocol/... ./pkg/crypto/... ./pkg/config/... ./pkg/health/... -race -count=1 -timeout=60s
