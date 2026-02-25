@@ -80,19 +80,19 @@ class GuarchEngine {
   Future<bool> connect({
     required String serverAddr,
     int serverPort = 8443,
-    required String psk,                    // ✅ اجباری
-    String? certPin,                        // ✅ اختیاری
+    required String psk,
+    String? certPin,
     String listenAddr = '127.0.0.1',
     int listenPort = 1080,
     bool coverEnabled = true,
+    String protocol = 'guarch', // ✅ جدید
   }) async {
-    // ✅ بررسی اولیه
     if (serverAddr.isEmpty) {
       _logController.add('Error: server address is empty');
       return false;
     }
     if (psk.isEmpty) {
-      _logController.add('Error: PSK is required for secure connection');
+      _logController.add('Error: PSK is required');
       return false;
     }
 
@@ -100,17 +100,15 @@ class GuarchEngine {
       final config = jsonEncode({
         'server_addr': serverAddr,
         'server_port': serverPort,
-        'psk': psk,                          // ✅
-        'cert_pin': certPin ?? '',           // ✅
+        'psk': psk,
+        'cert_pin': certPin ?? '',
         'listen_addr': listenAddr,
         'listen_port': listenPort,
         'cover_enabled': coverEnabled,
+        'protocol': protocol, // ✅ جدید
       });
 
-      _logController.add('Connecting to $serverAddr:$serverPort...');
-      if (certPin != null && certPin.isNotEmpty) {
-        _logController.add('Certificate PIN: ${certPin.substring(0, 16)}...');
-      }
+      _logController.add('Connecting via $protocol to $serverAddr:$serverPort...');
 
       final result = await _channel.invokeMethod('connect', config);
       return result == true;
@@ -120,10 +118,9 @@ class GuarchEngine {
       return false;
     } on MissingPluginException {
       _logController.add('⚠️ Native engine not available');
-      _logController.add('Build with: gomobile bind -target=android');
       _nativeAvailable = false;
       _statusController.add('disconnected');
-      return false;                          // ✅ دیگه simulate نمی‌کنه!
+      return false;
     }
   }
 
