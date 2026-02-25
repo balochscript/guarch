@@ -5,6 +5,7 @@ import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"crypto/tls"
+	"crypto/x509"
 	"encoding/hex"
 	"fmt"
 	"io"
@@ -22,7 +23,6 @@ import (
 // quic-go v0.59 changes:
 //   quic.Connection → *quic.Conn
 //   quic.Stream → *quic.Stream (concrete)
-//   CloseWithError(quic.ApplicationErrorCode, string)
 
 type ZhipQUICConfig struct {
 	MaxIdleTimeout  time.Duration
@@ -40,12 +40,12 @@ func defaultQUICConfig() *ZhipQUICConfig {
 
 func (c *ZhipQUICConfig) toQUICConfig() *quic.Config {
 	return &quic.Config{
-		MaxIdleTimeout:                 c.MaxIdleTimeout,
-		KeepAlivePeriod:                c.KeepAlivePeriod,
-		MaxIncomingStreams:              c.MaxStreams,
-		MaxIncomingUniStreams:           c.MaxStreams,
-		Allow0RTT:                      true,
-		EnableDatagrams:                true,
+		MaxIdleTimeout:       c.MaxIdleTimeout,
+		KeepAlivePeriod:      c.KeepAlivePeriod,
+		MaxIncomingStreams:    c.MaxStreams,
+		MaxIncomingUniStreams: c.MaxStreams,
+		Allow0RTT:            true,
+		EnableDatagrams:      true,
 	}
 }
 
@@ -70,7 +70,6 @@ func ZhipListen(addr string, tlsCert tls.Certificate, cfg *ZhipQUICConfig) (*qui
 }
 
 // ZhipServerAuth — server-side PSK authentication
-// conn is now *quic.Conn (not interface)
 func ZhipServerAuth(conn *quic.Conn, psk []byte) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -81,7 +80,6 @@ func ZhipServerAuth(conn *quic.Conn, psk []byte) error {
 	}
 	defer stream.Close()
 
-	// Read client auth
 	authBuf := make([]byte, 64)
 	n, err := stream.Read(authBuf)
 	if err != nil && err != io.EOF {
@@ -89,14 +87,12 @@ func ZhipServerAuth(conn *quic.Conn, psk []byte) error {
 	}
 	clientAuth := authBuf[:n]
 
-	// Verify
 	expected := zhipAuthMAC(psk, "zhip-client")
 	if !hmac.Equal(clientAuth, expected) {
-		stream.Write([]byte{0x00}) // auth failed
+		stream.Write([]byte{0x00})
 		return protocol.ErrAuthFailed
 	}
 
-	// Send server auth
 	serverAuth := zhipAuthMAC(psk, "zhip-server")
 	if _, err := stream.Write(serverAuth); err != nil {
 		return fmt.Errorf("zhip: send server auth: %w", err)
@@ -106,7 +102,6 @@ func ZhipServerAuth(conn *quic.Conn, psk []byte) error {
 }
 
 // ZhipDial — QUIC client dial
-// Returns *quic.Conn (not interface)
 func ZhipDial(ctx context.Context, addr string, certPin string, cfg *ZhipQUICConfig) (*quic.Conn, error) {
 	if cfg == nil {
 		cfg = defaultQUICConfig()
@@ -119,7 +114,7 @@ func ZhipDial(ctx context.Context, addr string, certPin string, cfg *ZhipQUICCon
 	}
 
 	if certPin != "" {
-		tlsConfig.VerifyPeerCertificate = func(rawCerts [][]byte, _ [][]*tls.Certificate) error {
+		tlsConfig.VerifyPeerCertificate = func(rawCerts [][]byte, _ [][]*x509.Certificate) error {
 			if len(rawCerts) == 0 {
 				return fmt.Errorf("zhip: no server certificate")
 			}
@@ -141,7 +136,6 @@ func ZhipDial(ctx context.Context, addr string, certPin string, cfg *ZhipQUICCon
 }
 
 // ZhipClientAuth — client-side PSK authentication
-// conn is now *quic.Conn
 func ZhipClientAuth(conn *quic.Conn, psk []byte) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -152,13 +146,11 @@ func ZhipClientAuth(conn *quic.Conn, psk []byte) error {
 	}
 	defer stream.Close()
 
-	// Send client auth
 	clientAuth := zhipAuthMAC(psk, "zhip-client")
 	if _, err := stream.Write(clientAuth); err != nil {
 		return fmt.Errorf("zhip: send client auth: %w", err)
 	}
 
-	// Read server auth
 	serverBuf := make([]byte, 64)
 	n, err := stream.Read(serverBuf)
 	if err != nil && err != io.EOF {
