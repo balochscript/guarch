@@ -110,7 +110,7 @@ func (e *Engine) connectAsync(ctx context.Context, cfg connectConfig) {
 	var coverMgr *cover.Manager
 	if cfg.CoverEnabled {
 		e.log("Starting cover traffic...")
-		coverMgr = cover.NewManager(cover.DefaultConfig())
+		coverMgr = cover.NewManager(cover.DefaultConfig(), nil)
 		coverMgr.Start(ctx)
 		time.Sleep(2 * time.Second)
 		e.log(fmt.Sprintf("Cover ready: avg=%d samples=%d",
