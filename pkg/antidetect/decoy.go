@@ -9,7 +9,6 @@ import (
 	"time"
 )
 
-// ✅ M29: crypto/rand بجای math/rand
 func cryptoRandIntn(n int) int {
 	if n <= 0 {
 		return 0
@@ -39,7 +38,6 @@ func NewDecoyServer() *DecoyServer {
 func (ds *DecoyServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	log.Printf("[decoy] %s %s from %s", r.Method, r.URL.Path, r.RemoteAddr)
 
-	// ✅ M29: crypto/rand for timing — non-predictable delay
 	delay := time.Duration(cryptoRandIntn(100)+50) * time.Millisecond
 	time.Sleep(delay)
 
@@ -49,8 +47,8 @@ func (ds *DecoyServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("X-Frame-Options", "DENY")
 	w.Header().Set("Strict-Transport-Security", "max-age=31536000")
 	w.Header().Set("Cache-Control", "public, max-age=3600")
-	// ✅ L18: Date header فقط یکبار (http.ResponseWriter خودش اضافه میکنه)
-	// حذف شد: w.Header().Set("Date", ...)
+	// ✅ فیکس: Date رو دستی ست کن چون httptest خودش اضافه نمیکنه
+	w.Header().Set("Date", time.Now().UTC().Format(http.TimeFormat))
 
 	page, ok := ds.pages[r.URL.Path]
 	if !ok {
