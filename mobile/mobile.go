@@ -343,13 +343,22 @@ func (e *Engine) statsReporter(ctx context.Context) {
 	ticker := time.NewTicker(1 * time.Second)
 	defer ticker.Stop()
 
+	var lastUpload, lastDownload int64
+
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
 			e.stats.mu.Lock()
+			uploadSpeed := e.stats.totalUpload - lastUpload
+			downloadSpeed := e.stats.totalDownload - lastDownload
+			lastUpload = e.stats.totalUpload
+			lastDownload = e.stats.totalDownload
+
 			data := map[string]interface{}{
+				"upload_speed":     uploadSpeed,
+				"download_speed":   downloadSpeed,
 				"total_upload":     e.stats.totalUpload,
 				"total_download":   e.stats.totalDownload,
 				"cover_requests":   e.stats.coverRequests,
