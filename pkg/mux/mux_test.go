@@ -171,9 +171,9 @@ func TestMuxStreamID(t *testing.T) {
 	// ✅ فیکس: آرگومان دوم isClient
 	m := NewMux(sc1, true)
 
-	if m.nextID.Load() != 0 {
-		t.Error("initial ID should be 0")
-	}
+	if m.nextID.Load() != 1_000_000_000 {
+        t.Errorf("initial ID should be 1000000000, got %d", m.nextID.Load())
+    }
 
-	t.Log("OK: mux created with initial state")
+    t.Log("OK: mux created with initial state")
 }
