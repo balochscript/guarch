@@ -8,6 +8,13 @@ import (
 	"guarch/pkg/protocol"
 )
 
+// ✅ فیکس: PSK تستی ۳۲ بایتی — Handshake بدون PSK کار نمیکنه
+var testPSK = []byte("test-psk-32-bytes-long-key-here!") // exactly 32 bytes
+
+func testHandshakeConfig() *HandshakeConfig {
+	return &HandshakeConfig{PSK: testPSK}
+}
+
 func TestHandshake(t *testing.T) {
 	c1, c2 := net.Pipe()
 
@@ -16,11 +23,11 @@ func TestHandshake(t *testing.T) {
 	done := make(chan struct{})
 
 	go func() {
-		sc1, err1 = Handshake(c1, false, nil)
+		sc1, err1 = Handshake(c1, false, testHandshakeConfig())
 		close(done)
 	}()
 
-	sc2, err2 := Handshake(c2, true, nil)
+	sc2, err2 := Handshake(c2, true, testHandshakeConfig())
 	<-done
 
 	if err1 != nil {
@@ -46,11 +53,11 @@ func TestSendRecv(t *testing.T) {
 	done := make(chan struct{})
 
 	go func() {
-		client, cerr = Handshake(c1, false, nil)
+		client, cerr = Handshake(c1, false, testHandshakeConfig())
 		close(done)
 	}()
 
-	server, serr := Handshake(c2, true, nil)
+	server, serr := Handshake(c2, true, testHandshakeConfig())
 	<-done
 
 	if cerr != nil {
@@ -94,11 +101,11 @@ func TestSendRecvBothDirections(t *testing.T) {
 	done := make(chan struct{})
 
 	go func() {
-		client, cerr = Handshake(c1, false, nil)
+		client, cerr = Handshake(c1, false, testHandshakeConfig())
 		close(done)
 	}()
 
-	server, serr := Handshake(c2, true, nil)
+	server, serr := Handshake(c2, true, testHandshakeConfig())
 	<-done
 
 	if cerr != nil || serr != nil {
@@ -146,11 +153,11 @@ func TestSendPacket(t *testing.T) {
 	done := make(chan struct{})
 
 	go func() {
-		client, cerr = Handshake(c1, false, nil)
+		client, cerr = Handshake(c1, false, testHandshakeConfig())
 		close(done)
 	}()
 
-	server, serr := Handshake(c2, true, nil)
+	server, serr := Handshake(c2, true, testHandshakeConfig())
 	<-done
 
 	if cerr != nil || serr != nil {
@@ -195,11 +202,11 @@ func TestMultipleMessages(t *testing.T) {
 	done := make(chan struct{})
 
 	go func() {
-		client, cerr = Handshake(c1, false, nil)
+		client, cerr = Handshake(c1, false, testHandshakeConfig())
 		close(done)
 	}()
 
-	server, serr := Handshake(c2, true, nil)
+	server, serr := Handshake(c2, true, testHandshakeConfig())
 	<-done
 
 	if cerr != nil || serr != nil {
