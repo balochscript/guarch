@@ -5,6 +5,7 @@ import 'package:guarch/app.dart';
 import 'package:guarch/providers/app_provider.dart';
 import 'package:guarch/models/server_config.dart';
 import 'package:guarch/screens/add_server_screen.dart';
+import 'package:guarch/screens/server_detail_screen.dart';
 import 'package:share_plus/share_plus.dart';
 
 class ServersScreen extends StatelessWidget {
