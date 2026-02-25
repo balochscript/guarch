@@ -88,6 +88,12 @@ class ServersScreen extends StatelessWidget {
           child: InkWell(
             borderRadius: BorderRadius.circular(16),
             onTap: () => provider.setActiveServer(server.id),
+                onLongPress: () => Navigator.push(
+                    context,
+                MaterialPageRoute(
+                builder: (_) => ServerDetailScreen(server: server),
+            ),
+        ),
             child: Padding(
               padding: const EdgeInsets.all(16),
               child: Column(
