@@ -10,6 +10,13 @@ import (
 	"guarch/pkg/transport"
 )
 
+// ✅ فیکس: PSK تستی
+var testPSK = []byte("test-psk-32-bytes-long-key-here!") // exactly 32 bytes
+
+func testHandshakeConfig() *transport.HandshakeConfig {
+	return &transport.HandshakeConfig{PSK: testPSK}
+}
+
 func setupPair(t *testing.T) (*Interleaver, *Interleaver) {
 	c1, c2 := net.Pipe()
 
@@ -18,11 +25,11 @@ func setupPair(t *testing.T) (*Interleaver, *Interleaver) {
 	done := make(chan struct{})
 
 	go func() {
-		sc1, err1 = transport.Handshake(c1, false, nil)
+		sc1, err1 = transport.Handshake(c1, false, testHandshakeConfig())
 		close(done)
 	}()
 
-	sc2, err2 := transport.Handshake(c2, true, nil)
+	sc2, err2 := transport.Handshake(c2, true, testHandshakeConfig())
 	<-done
 
 	if err1 != nil {
@@ -109,11 +116,11 @@ func TestInterleaverPaddingSkipped(t *testing.T) {
 	done := make(chan struct{})
 
 	go func() {
-		sc1, err1 = transport.Handshake(c1, false, nil)
+		sc1, err1 = transport.Handshake(c1, false, testHandshakeConfig())
 		close(done)
 	}()
 
-	sc2, err2 := transport.Handshake(c2, true, nil)
+	sc2, err2 := transport.Handshake(c2, true, testHandshakeConfig())
 	<-done
 
 	if err1 != nil || err2 != nil {
@@ -177,11 +184,11 @@ func TestInterleaverWithContext(t *testing.T) {
 	done := make(chan struct{})
 
 	go func() {
-		sc1, err1 = transport.Handshake(c1, false, nil)
+		sc1, err1 = transport.Handshake(c1, false, testHandshakeConfig())
 		close(done)
 	}()
 
-	sc2, err2 := transport.Handshake(c2, true, nil)
+	sc2, err2 := transport.Handshake(c2, true, testHandshakeConfig())
 	<-done
 
 	if err1 != nil || err2 != nil {
