@@ -30,8 +30,9 @@ func setupMux(t *testing.T) (*Mux, *Mux) {
 		t.Fatal("server handshake:", err2)
 	}
 
-	clientMux := NewMux(sc1)
-	serverMux := NewMux(sc2)
+	// ✅ فیکس: آرگومان دوم اضافه شد (true=client, false=server)
+	clientMux := NewMux(sc1, true)
+	serverMux := NewMux(sc2, false)
 
 	return clientMux, serverMux
 }
@@ -160,7 +161,8 @@ func TestMuxStreamID(t *testing.T) {
 
 	_ = sc2
 
-	m := NewMux(sc1)
+	// ✅ فیکس: آرگومان دوم اضافه شد
+	m := NewMux(sc1, true)
 
 	if m.nextID.Load() != 0 {
 		t.Error("initial ID should be 0")
