@@ -31,7 +31,8 @@ func TestManagerWithMockServer(t *testing.T) {
 		},
 	}
 
-	m := NewManagerWithClient(cfg, server.Client())
+	// ✅ فیکس: آرگومان سوم nil اضافه شد
+	m := NewManagerWithClient(cfg, server.Client(), nil)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
@@ -71,7 +72,8 @@ func TestManagerSendOne(t *testing.T) {
 		},
 	}
 
-	m := NewManagerWithClient(cfg, server.Client())
+	// ✅ فیکس: آرگومان سوم nil اضافه شد
+	m := NewManagerWithClient(cfg, server.Client(), nil)
 
 	m.SendOne()
 
@@ -91,7 +93,8 @@ func TestManagerPickDomain(t *testing.T) {
 		},
 	}
 
-	m := NewManager(cfg)
+	// ✅ فیکس: آرگومان دوم nil اضافه شد
+	m := NewManager(cfg, nil)
 
 	heavyCount := 0
 	for i := 0; i < 100; i++ {
@@ -109,7 +112,8 @@ func TestManagerPickDomain(t *testing.T) {
 }
 
 func TestManagerNotRunning(t *testing.T) {
-	m := NewManager(nil)
+	// ✅ فیکس: آرگومان دوم nil اضافه شد
+	m := NewManager(nil, nil)
 
 	if m.IsRunning() {
 		t.Error("should not be running before Start")
