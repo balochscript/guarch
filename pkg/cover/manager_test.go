@@ -25,21 +25,27 @@ func TestManagerWithMockServer(t *testing.T) {
 				Domain:      server.Listener.Addr().String(),
 				Paths:       []string{"/page1", "/page2"},
 				Weight:      100,
-				MinInterval: 100 * time.Millisecond,
-				MaxInterval: 200 * time.Millisecond,
+				MinInterval: 50 * time.Millisecond,
+				MaxInterval: 100 * time.Millisecond,
 			},
 		},
 	}
 
-	// ✅ فیکس: آرگومان سوم nil اضافه شد
 	m := NewManagerWithClient(cfg, server.Client(), nil)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	// ✅ فیکس: تایم‌اوت بیشتر چون initDelay تا ۵ ثانیه طول میکشه
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
 	m.Start(ctx)
 
-	time.Sleep(1 * time.Second)
+	// ✅ فیکس: poll بجای sleep ثابت — صبر تا ریکوئست ارسال بشه
+	for i := 0; i < 80; i++ {
+		if m.Stats().SampleCount() > 0 {
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
 
 	stats := m.Stats()
 	count := stats.SampleCount()
@@ -72,7 +78,6 @@ func TestManagerSendOne(t *testing.T) {
 		},
 	}
 
-	// ✅ فیکس: آرگومان سوم nil اضافه شد
 	m := NewManagerWithClient(cfg, server.Client(), nil)
 
 	m.SendOne()
@@ -93,7 +98,6 @@ func TestManagerPickDomain(t *testing.T) {
 		},
 	}
 
-	// ✅ فیکس: آرگومان دوم nil اضافه شد
 	m := NewManager(cfg, nil)
 
 	heavyCount := 0
@@ -112,7 +116,6 @@ func TestManagerPickDomain(t *testing.T) {
 }
 
 func TestManagerNotRunning(t *testing.T) {
-	// ✅ فیکس: آرگومان دوم nil اضافه شد
 	m := NewManager(nil, nil)
 
 	if m.IsRunning() {
