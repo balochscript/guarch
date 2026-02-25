@@ -176,7 +176,7 @@ func (e *Engine) connectAsync(ctx context.Context, cfg connectConfig) {
 	}
 
 	// 4. Mux
-	m := mux.NewMux(sc, false)
+	m := mux.NewMux(sc, true)
 	e.mu.Lock()
 	e.muxConn = m
 	e.mu.Unlock()
