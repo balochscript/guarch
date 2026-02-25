@@ -30,12 +30,15 @@ func New(sc *transport.SecureConn, coverMgr *cover.Manager) *Interleaver {
 		shaper = cover.NewShaper(coverMgr.Stats(), cover.PatternWebBrowsing)
 	}
 
-	return &Interleaver{
+	il := &Interleaver{
 		sc:       sc,
 		coverMgr: coverMgr,
 		shaper:   shaper,
 		sendCh:   make(chan []byte, 128),
 	}
+	// ✅ Start seq after handshake auth to avoid replay detection
+	il.seq.Store(sc.SendSeqNum())
+	return il
 }
 
 func (il *Interleaver) Run(ctx context.Context) {
