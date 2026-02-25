@@ -260,7 +260,9 @@ class AppProvider extends ChangeNotifier {
   void importConfig(String data) {
     try {
       ServerConfig server;
-      if (data.startsWith('guarch://')) {
+      if (data.startsWith('guarch://') ||
+        data.startsWith('grouk://') ||
+        data.startsWith('zhip://')) {
         server = ServerConfig.fromShareString(data);
       } else if (data.startsWith('{')) {
         final json = jsonDecode(data) as Map<String, dynamic>;
