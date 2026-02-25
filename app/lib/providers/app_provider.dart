@@ -74,6 +74,8 @@ class AppProvider extends ChangeNotifier {
 
     _statsSub = _engine.statsStream.listen((data) {
       _stats = _stats.copyWith(
+        uploadSpeed: data['upload_speed'] as int? ?? 0,    
+        downloadSpeed: data['download_speed'] as int? ?? 0,   
         totalUpload: data['total_upload'] as int? ?? 0,
         totalDownload: data['total_download'] as int? ?? 0,
         coverRequests: data['cover_requests'] as int? ?? 0,
