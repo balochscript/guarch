@@ -255,11 +255,12 @@ func (e *Engine) handleSOCKS(socksConn net.Conn, m *mux.Mux) {
 	}
 
 	reqData, err := req.Marshal()
-      if err != nil {
-              stream.Close()
-              socks5.SendReply(socksConn, 0x01)
-              return
-      }
+	if err != nil {
+		stream.Close()
+		socks5.SendReply(socksConn, 0x01)
+		return
+	}
+
 	lenBuf := []byte{byte(len(reqData) >> 8), byte(len(reqData))}
 
 	if _, err := stream.Write(lenBuf); err != nil {
@@ -287,7 +288,55 @@ func (e *Engine) handleSOCKS(socksConn net.Conn, m *mux.Mux) {
 	}
 
 	socks5.SendReply(socksConn, 0x00)
-	mux.RelayStream(stream, socksConn)
+
+	// ✅ فیکس: آمار ترافیک — بجای RelayStream مستقیم
+	e.relayWithStats(stream, socksConn)
+}
+
+// ✅ جدید: relay با شمارش بایت‌ها
+func (e *Engine) relayWithStats(stream *mux.Stream, conn net.Conn) {
+	done := make(chan struct{}, 2)
+
+	// conn → stream (upload)
+	go func() {
+		buf := make([]byte, 32768)
+		for {
+			n, err := conn.Read(buf)
+			if n > 0 {
+				stream.Write(buf[:n])
+				e.stats.mu.Lock()
+				e.stats.totalUpload += int64(n)
+				e.stats.mu.Unlock()
+			}
+			if err != nil {
+				break
+			}
+		}
+		done <- struct{}{}
+	}()
+
+	// stream → conn (download)
+	go func() {
+		buf := make([]byte, 32768)
+		for {
+			n, err := stream.Read(buf)
+			if n > 0 {
+				conn.Write(buf[:n])
+				e.stats.mu.Lock()
+				e.stats.totalDownload += int64(n)
+				e.stats.mu.Unlock()
+			}
+			if err != nil {
+				break
+			}
+		}
+		done <- struct{}{}
+	}()
+
+	<-done
+	stream.Close()
+	conn.Close()
+	<-done
 }
 
 func (e *Engine) statsReporter(ctx context.Context) {
