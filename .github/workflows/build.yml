@@ -105,20 +105,50 @@ jobs:
             -o app/android/app/libs/mobile.aar \
             ./mobile/
 
-      - name: Generate default icon
+      - name: Generate app icon from assets
         working-directory: app
         run: |
           sudo apt-get install -y imagemagick
+
+          ICON_SRC="assets/icon.png"
+
+          if [ ! -f "$ICON_SRC" ]; then
+            echo "ERROR: icon not found at $ICON_SRC"
+            exit 1
+          fi
+
+          echo "Using icon: $ICON_SRC"
+          identify "$ICON_SRC"
+
+          # ---- mipmap (launcher icon) ----
           mkdir -p android/app/src/main/res/mipmap-mdpi
           mkdir -p android/app/src/main/res/mipmap-hdpi
           mkdir -p android/app/src/main/res/mipmap-xhdpi
           mkdir -p android/app/src/main/res/mipmap-xxhdpi
           mkdir -p android/app/src/main/res/mipmap-xxxhdpi
-          convert -size 48x48 xc:"#1E3543" android/app/src/main/res/mipmap-mdpi/ic_launcher.png
-          convert -size 72x72 xc:"#1E3543" android/app/src/main/res/mipmap-hdpi/ic_launcher.png
-          convert -size 96x96 xc:"#1E3543" android/app/src/main/res/mipmap-xhdpi/ic_launcher.png
-          convert -size 144x144 xc:"#1E3543" android/app/src/main/res/mipmap-xxhdpi/ic_launcher.png
-          convert -size 192x192 xc:"#1E3543" android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png
+
+          convert "$ICON_SRC" -resize 48x48   android/app/src/main/res/mipmap-mdpi/ic_launcher.png
+          convert "$ICON_SRC" -resize 72x72   android/app/src/main/res/mipmap-hdpi/ic_launcher.png
+          convert "$ICON_SRC" -resize 96x96   android/app/src/main/res/mipmap-xhdpi/ic_launcher.png
+          convert "$ICON_SRC" -resize 144x144 android/app/src/main/res/mipmap-xxhdpi/ic_launcher.png
+          convert "$ICON_SRC" -resize 192x192 android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png
+
+          # ---- round icon (same source, cropped to circle) ----
+          for pair in "mdpi 48" "hdpi 72" "xhdpi 96" "xxhdpi 144" "xxxhdpi 192"; do
+            set -- $pair
+            DENSITY=$1
+            SIZE=$2
+            HALF=$((SIZE / 2))
+
+            convert "$ICON_SRC" -resize ${SIZE}x${SIZE} \
+              \( +clone -threshold -1 -negate \
+                 -fill white -draw "circle $HALF,$HALF $HALF,0" \) \
+              -alpha off -compose copy_opacity -composite \
+              "android/app/src/main/res/mipmap-${DENSITY}/ic_launcher_round.png"
+          done
+
+          echo "✅ All icons generated"
+          ls -lR android/app/src/main/res/mipmap-*/
 
       - name: Flutter dependencies
         working-directory: app
