@@ -33,13 +33,13 @@ func TestManagerWithMockServer(t *testing.T) {
 
 	m := NewManagerWithClient(cfg, server.Client(), nil)
 
-	// ✅ فیکس: تایم‌اوت بیشتر چون initDelay تا ۵ ثانیه طول میکشه
+	// ✅ فیکس: تایم‌اوت بیشتر — initDelay تا ۵ ثانیه طول میکشه
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
 	m.Start(ctx)
 
-	// ✅ فیکس: poll بجای sleep ثابت — صبر تا ریکوئست ارسال بشه
+	// ✅ فیکس: poll بجای sleep ثابت — صبر تا worker شروع کنه
 	for i := 0; i < 80; i++ {
 		if m.Stats().SampleCount() > 0 {
 			break
