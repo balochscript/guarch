@@ -182,13 +182,14 @@ class AppProvider extends ChangeNotifier {
     notifyListeners();
 
     final success = await _engine.connect(
-      serverAddr: activeServer!.address,
-      serverPort: activeServer!.port,
-      psk: activeServer!.psk,                   // ✅
-      certPin: activeServer!.certPin,            // ✅
-      listenPort: activeServer!.listenPort,      // ✅
-      coverEnabled: activeServer!.coverEnabled,
-    );
+  serverAddr: activeServer!.address,
+  serverPort: activeServer!.port,
+  psk: activeServer!.psk,
+  certPin: activeServer!.certPin,
+  listenPort: activeServer!.listenPort,
+  coverEnabled: activeServer!.coverEnabled,
+  protocol: activeServer!.protocol, // ✅ جدید
+);
 
     if (!success) {
       _status = VpnStatus.error;
