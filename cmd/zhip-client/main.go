@@ -15,7 +15,6 @@ import (
 
 	"github.com/quic-go/quic-go"
 
-	"guarch/cmd/internal/cmdutil"
 	"guarch/pkg/cover"
 	"guarch/pkg/protocol"
 	"guarch/pkg/socks5"
@@ -30,8 +29,8 @@ type ZhipClient struct {
 	adaptive   *cover.AdaptiveCover
 
 	mu             sync.Mutex
-	activeConn     quic.Connection
-	connectBackoff time.Duration // ✅ M26
+	activeConn     *quic.Conn
+	connectBackoff time.Duration
 }
 
 func main() {
@@ -111,8 +110,7 @@ func main() {
 	client.close()
 }
 
-// ✅ M26: backoff
-func (c *ZhipClient) getOrCreateConn(ctx context.Context) (quic.Connection, error) {
+func (c *ZhipClient) getOrCreateConn(ctx context.Context) (*quic.Conn, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
@@ -150,7 +148,7 @@ func (c *ZhipClient) getOrCreateConn(ctx context.Context) (quic.Connection, erro
 	return conn, nil
 }
 
-func (c *ZhipClient) connect(ctx context.Context) (quic.Connection, error) {
+func (c *ZhipClient) connect(ctx context.Context) (*quic.Conn, error) {
 	conn, err := transport.ZhipDial(ctx, c.serverAddr, c.certPin, nil)
 	if err != nil {
 		return nil, fmt.Errorf("zhip dial: %w", err)
@@ -208,13 +206,22 @@ func (c *ZhipClient) handleSOCKS(socksConn net.Conn, ctx context.Context) {
 		}
 	}
 
-	// ✅ M25 + M27
-	host, port, addrType, err := cmdutil.SplitTarget(target)
+	host, portStr, err := net.SplitHostPort(target)
 	if err != nil {
-		log.Printf("[zhip] %v", err)
+		log.Printf("[zhip] invalid target: %v", err)
 		stream.Close()
 		socks5.SendReply(socksConn, 0x01)
 		return
+	}
+	port := parsePort(portStr)
+
+	addrType := protocol.AddrTypeDomain
+	if ip := net.ParseIP(host); ip != nil {
+		if ip.To4() != nil {
+			addrType = protocol.AddrTypeIPv4
+		} else {
+			addrType = protocol.AddrTypeIPv6
+		}
 	}
 
 	req := &protocol.ConnectRequest{AddrType: addrType, Addr: host, Port: port}
@@ -259,7 +266,7 @@ func (c *ZhipClient) handleSOCKS(socksConn net.Conn, ctx context.Context) {
 	log.Printf("[zhip] ✖ %s", target)
 }
 
-func (c *ZhipClient) relay(stream quic.Stream, conn net.Conn) {
+func (c *ZhipClient) relay(stream *quic.Stream, conn net.Conn) {
 	ch := make(chan error, 2)
 
 	go func() {
@@ -306,5 +313,18 @@ func (c *ZhipClient) relay(stream quic.Stream, conn net.Conn) {
 	stream.CancelRead(0)
 	stream.CancelWrite(0)
 	conn.Close()
-	<-ch // ✅ M19
+	<-ch
+}
+
+func parsePort(s string) uint16 {
+	var port int
+	for _, c := range s {
+		if c >= '0' && c <= '9' {
+			port = port*10 + int(c-'0')
+			if port > 65535 {
+				return 0
+			}
+		}
+	}
+	return uint16(port)
 }
