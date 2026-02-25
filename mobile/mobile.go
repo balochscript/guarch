@@ -176,7 +176,7 @@ func (e *Engine) connectAsync(ctx context.Context, cfg connectConfig) {
 	}
 
 	// 4. Mux
-	m := mux.NewMux(sc)
+	m := mux.NewMux(sc, false)
 	e.mu.Lock()
 	e.muxConn = m
 	e.mu.Unlock()
@@ -254,7 +254,12 @@ func (e *Engine) handleSOCKS(socksConn net.Conn, m *mux.Mux) {
 		Port:     port,
 	}
 
-	reqData := req.Marshal()
+	reqData, err := req.Marshal()
+      if err != nil {
+              stream.Close()
+              socks5.SendReply(socksConn, 0x01)
+              return
+      }
 	lenBuf := []byte{byte(len(reqData) >> 8), byte(len(reqData))}
 
 	if _, err := stream.Write(lenBuf); err != nil {
