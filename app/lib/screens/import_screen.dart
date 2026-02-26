@@ -42,35 +42,35 @@ class _ImportScreenState extends State<ImportScreen> with SingleTickerProviderSt
         ]),
       ),
       body: TabBarView(controller: _tabController, children: [
-        _buildLinkTab(),
-        _buildJsonTab(),
-        _buildClipboardTab(),
+        _buildLinkTab(context),
+        _buildJsonTab(context),
+        _buildClipboardTab(context),
       ]),
     );
   }
 
-  Widget _buildLinkTab() {
+  Widget _buildLinkTab(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.all(24),
       child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-        const Row(children: [
-          Text('🔗', style: TextStyle(fontSize: 24)),
-          SizedBox(width: 8),
-          Text('Import from Link', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600, color: kGold)),
+        Row(children: [
+          const Text('🔗', style: TextStyle(fontSize: 24)),
+          const SizedBox(width: 8),
+          Text('Import from Link', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600, color: textPrimary(context))),
         ]),
         const SizedBox(height: 8),
-        Text('Paste a guarch://, grouk://, or zhip:// link', style: TextStyle(color: kGold.withOpacity(0.5))),
+        Text('Paste a guarch://, grouk://, or zhip:// link', style: TextStyle(color: textMuted(context))),
         const SizedBox(height: 16),
         Wrap(spacing: 8, runSpacing: 4, children: [
-          _protocolChip('🏹 guarch://'),
-          _protocolChip('🌩️ grouk://'),
-          _protocolChip('⚡ zhip://'),
+          _protocolChip(context, '🏹 guarch://'),
+          _protocolChip(context, '🌩️ grouk://'),
+          _protocolChip(context, '⚡ zhip://'),
         ]),
         const SizedBox(height: 16),
         TextField(
           controller: _linkController,
           maxLines: 3,
-          style: const TextStyle(color: kGoldLight, fontFamily: 'monospace', fontSize: 13),
+          style: TextStyle(color: textSecondary(context), fontFamily: 'monospace', fontSize: 13),
           decoration: const InputDecoration(hintText: 'guarch://eyJuYW1lIjoi...', prefixIcon: Icon(Icons.link)),
         ),
         const SizedBox(height: 16),
@@ -83,26 +83,25 @@ class _ImportScreenState extends State<ImportScreen> with SingleTickerProviderSt
     );
   }
 
-  Widget _protocolChip(String label) {
+  Widget _protocolChip(BuildContext context, String label) {
     return Chip(
-      label: Text(label, style: const TextStyle(fontSize: 11, fontFamily: 'monospace', color: kGoldLight)),
-      backgroundColor: kDarkCard,
-      side: BorderSide(color: kGold.withOpacity(0.2)),
+      label: Text(label, style: TextStyle(fontSize: 11, fontFamily: 'monospace', color: textSecondary(context))),
+      side: BorderSide(color: accentColor(context).withOpacity(0.2)),
       visualDensity: VisualDensity.compact,
     );
   }
 
-  Widget _buildJsonTab() {
+  Widget _buildJsonTab(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.all(24),
       child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-        const Row(children: [
-          Text('📋', style: TextStyle(fontSize: 24)),
-          SizedBox(width: 8),
-          Text('Import from JSON', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600, color: kGold)),
+        Row(children: [
+          const Text('📋', style: TextStyle(fontSize: 24)),
+          const SizedBox(width: 8),
+          Text('Import from JSON', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600, color: textPrimary(context))),
         ]),
         const SizedBox(height: 8),
-        Text('Paste JSON config. Use "protocol": "guarch"|"grouk"|"zhip"', style: TextStyle(color: kGold.withOpacity(0.5), fontSize: 12)),
+        Text('Paste JSON config. Use "protocol": "guarch"|"grouk"|"zhip"', style: TextStyle(color: textMuted(context), fontSize: 12)),
         const SizedBox(height: 24),
         Expanded(
           child: TextField(
@@ -110,7 +109,7 @@ class _ImportScreenState extends State<ImportScreen> with SingleTickerProviderSt
             maxLines: null,
             expands: true,
             textAlignVertical: TextAlignVertical.top,
-            style: const TextStyle(fontFamily: 'monospace', fontSize: 12, color: kGoldLight),
+            style: TextStyle(fontFamily: 'monospace', fontSize: 12, color: textSecondary(context)),
             decoration: const InputDecoration(
               hintText: '{\n  "name": "My Server",\n  "address": "1.2.3.4",\n  "port": 8443,\n  "protocol": "guarch",\n  "psk": "my-secret"\n}',
             ),
@@ -126,19 +125,19 @@ class _ImportScreenState extends State<ImportScreen> with SingleTickerProviderSt
     );
   }
 
-  Widget _buildClipboardTab() {
+  Widget _buildClipboardTab(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.all(24),
       child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
         Container(
           padding: const EdgeInsets.all(24),
-          decoration: BoxDecoration(color: kGold.withOpacity(0.1), shape: BoxShape.circle),
-          child: const Icon(Icons.content_paste, size: 48, color: kGold),
+          decoration: BoxDecoration(color: accentColor(context).withOpacity(0.1), shape: BoxShape.circle),
+          child: Icon(Icons.content_paste, size: 48, color: accentColor(context)),
         ),
         const SizedBox(height: 24),
-        const Text('Import from Clipboard', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600, color: kGold)),
+        Text('Import from Clipboard', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600, color: textPrimary(context))),
         const SizedBox(height: 8),
-        Text('Copy a guarch://, grouk://, zhip:// link\nor JSON config, then tap below', textAlign: TextAlign.center, style: TextStyle(color: kGold.withOpacity(0.5))),
+        Text('Copy a guarch://, grouk://, zhip:// link\nor JSON config, then tap below', textAlign: TextAlign.center, style: TextStyle(color: textMuted(context))),
         const SizedBox(height: 24),
         FilledButton.icon(
           onPressed: _importFromClipboard,
