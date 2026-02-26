@@ -10,8 +10,7 @@ import (
 	"guarch/pkg/transport"
 )
 
-// ✅ فیکس: PSK تستی
-var testPSK = []byte("test-psk-32-bytes-long-key-here!") // exactly 32 bytes
+var testPSK = []byte("test-psk-32-bytes-long-key-here!")
 
 func testHandshakeConfig() *transport.HandshakeConfig {
 	return &transport.HandshakeConfig{PSK: testPSK}
