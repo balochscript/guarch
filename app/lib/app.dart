@@ -4,12 +4,48 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:guarch/providers/app_provider.dart';
 import 'package:guarch/screens/home_screen.dart';
 
+// ═══ Brand Colors ═══
 const Color kGold = Color(0xFFF8BC6C);
 const Color kDarkBg = Color(0xFF1E3543);
 const Color kDarkCard = Color(0xFF263F4F);
 const Color kDarkSurface = Color(0xFF172B37);
 const Color kGoldDim = Color(0xFFBF8A3E);
 const Color kGoldLight = Color(0xFFFDD89B);
+
+// ═══ Light Mode Colors ═══
+const Color kLightBg = Color(0xFFF5E0B0);
+const Color kLightCard = Color(0xFFFFF0D4);
+const Color kLightSurface = Color(0xFFEDD5A0);
+
+// ═══ Theme-aware color helpers ═══
+
+Color textPrimary(BuildContext context) {
+  return Theme.of(context).brightness == Brightness.dark ? kGold : kDarkBg;
+}
+
+Color textSecondary(BuildContext context) {
+  return Theme.of(context).brightness == Brightness.dark
+      ? kGoldLight
+      : kDarkCard;
+}
+
+Color textMuted(BuildContext context) {
+  return Theme.of(context).brightness == Brightness.dark
+      ? kGold.withOpacity(0.5)
+      : kDarkBg.withOpacity(0.5);
+}
+
+Color accentColor(BuildContext context) {
+  return Theme.of(context).brightness == Brightness.dark ? kGold : kDarkBg;
+}
+
+Color buttonBg(BuildContext context) {
+  return Theme.of(context).brightness == Brightness.dark ? kGold : kDarkBg;
+}
+
+Color buttonFg(BuildContext context) {
+  return Theme.of(context).brightness == Brightness.dark ? kDarkBg : kGold;
+}
 
 class GuarchApp extends StatelessWidget {
   const GuarchApp({super.key});
@@ -168,13 +204,19 @@ class GuarchApp extends StatelessWidget {
       colorScheme: ColorScheme.fromSeed(
         seedColor: kGold,
         brightness: Brightness.light,
+        surface: kLightBg,
+        onSurface: kDarkBg,
         primary: kDarkBg,
+        onPrimary: kGold,
         secondary: kGoldDim,
       ),
+      scaffoldBackgroundColor: kLightBg,
       cardTheme: CardTheme(
+        color: kLightCard,
         elevation: 0,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(16),
+          side: BorderSide(color: kDarkBg.withOpacity(0.08)),
         ),
       ),
       appBarTheme: AppBarTheme(
@@ -187,12 +229,100 @@ class GuarchApp extends StatelessWidget {
           fontSize: 20,
           fontWeight: FontWeight.w600,
         ),
+        iconTheme: IconThemeData(color: kDarkBg),
+      ),
+      navigationBarTheme: NavigationBarThemeData(
+        backgroundColor: kLightCard,
+        indicatorColor: kDarkBg.withOpacity(0.15),
+        labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
+        iconTheme: WidgetStateProperty.resolveWith((states) {
+          if (states.contains(WidgetState.selected)) {
+            return IconThemeData(color: kDarkBg);
+          }
+          return IconThemeData(color: kDarkBg.withOpacity(0.35));
+        }),
+        labelTextStyle: WidgetStateProperty.resolveWith((states) {
+          if (states.contains(WidgetState.selected)) {
+            return TextStyle(color: kDarkBg, fontSize: 12, fontWeight: FontWeight.w600);
+          }
+          return TextStyle(color: kDarkBg.withOpacity(0.35), fontSize: 12);
+        }),
+      ),
+      iconTheme: IconThemeData(color: kDarkBg),
+      dividerColor: kDarkBg.withOpacity(0.08),
+      switchTheme: SwitchThemeData(
+        thumbColor: WidgetStateProperty.resolveWith((states) {
+          if (states.contains(WidgetState.selected)) return kDarkBg;
+          return kDarkBg.withOpacity(0.3);
+        }),
+        trackColor: WidgetStateProperty.resolveWith((states) {
+          if (states.contains(WidgetState.selected)) {
+            return kDarkBg.withOpacity(0.3);
+          }
+          return kDarkBg.withOpacity(0.1);
+        }),
+      ),
+      inputDecorationTheme: InputDecorationTheme(
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: BorderSide(color: kDarkBg.withOpacity(0.2)),
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: BorderSide(color: kDarkBg.withOpacity(0.2)),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: BorderSide(color: kDarkBg, width: 2),
+        ),
+        labelStyle: TextStyle(color: kDarkBg.withOpacity(0.6)),
+        hintStyle: TextStyle(color: kDarkBg.withOpacity(0.3)),
+        prefixIconColor: kDarkBg.withOpacity(0.5),
       ),
       filledButtonTheme: FilledButtonThemeData(
         style: FilledButton.styleFrom(
           backgroundColor: kDarkBg,
           foregroundColor: kGold,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
         ),
+      ),
+      outlinedButtonTheme: OutlinedButtonThemeData(
+        style: OutlinedButton.styleFrom(
+          foregroundColor: kDarkBg,
+          side: BorderSide(color: kDarkBg.withOpacity(0.3)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+        ),
+      ),
+      snackBarTheme: SnackBarThemeData(
+        backgroundColor: kDarkBg,
+        contentTextStyle: const TextStyle(color: kGold),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+        ),
+      ),
+      chipTheme: ChipThemeData(
+        backgroundColor: kLightCard,
+        labelStyle: TextStyle(color: kDarkBg, fontSize: 12),
+        side: BorderSide(color: kDarkBg.withOpacity(0.1)),
+      ),
+      dialogTheme: DialogTheme(
+        backgroundColor: kLightCard,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+        ),
+      ),
+      tabBarTheme: TabBarTheme(
+        labelColor: kDarkBg,
+        unselectedLabelColor: kDarkBg.withOpacity(0.35),
+        indicatorColor: kDarkBg,
+      ),
+      floatingActionButtonTheme: FloatingActionButtonThemeData(
+        backgroundColor: kDarkBg,
+        foregroundColor: kGold,
       ),
     );
   }
