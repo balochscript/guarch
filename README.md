@@ -1001,7 +1001,19 @@ Please open an issue or submit a pull request.
 
 ## License
 
-MIT License — See [LICENSE](LICENSE) file for details.
+This project is released under the **Guarch Protocol Suite License v1.0** — a permissive license with attribution and no-sale conditions.
+
+**In short:**
+
+| | |
+|---|---|
+| ✅ Use, modify, fork, compete | Freely allowed |
+| ✅ Sell configs, hosting, support | Freely allowed |
+| ✅ Clean-room reimplementation | Freely allowed |
+| ❌ Sell the software itself | Not allowed |
+| 📝 Attribution required | "Powered by Guarch" visible to end users |
+
+See [LICENSE](LICENSE) for full terms.
 
 ---
 
