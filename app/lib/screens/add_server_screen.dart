@@ -21,14 +21,13 @@ class _AddServerScreenState extends State<AddServerScreen> {
   late TextEditingController _pinController;
   late TextEditingController _listenPortController;
   final _domainController = TextEditingController();
-  late String _protocol; // ✅ جدید
+  late String _protocol; 
   bool _coverEnabled = true;
   bool _pskVisible = false;
   late List<CoverDomain> _coverDomains;
 
   bool get isEditing => widget.server != null;
 
-  // ✅ جدید: توضیح هر پروتکل
   String get _protocolDescription {
     switch (_protocol) {
       case 'grouk':
@@ -49,7 +48,7 @@ class _AddServerScreenState extends State<AddServerScreen> {
     _pskController = TextEditingController(text: widget.server?.psk ?? '');
     _pinController = TextEditingController(text: widget.server?.certPin ?? '');
     _listenPortController = TextEditingController(text: (widget.server?.listenPort ?? 1080).toString());
-    _protocol = widget.server?.protocol ?? 'guarch'; // ✅
+    _protocol = widget.server?.protocol ?? 'guarch';
     _coverEnabled = widget.server?.coverEnabled ?? true;
     _coverDomains = widget.server?.coverDomains ?? ServerConfig.defaultCoverDomains();
   }
@@ -107,7 +106,7 @@ class _AddServerScreenState extends State<AddServerScreen> {
               },
             ),
 
-            // ✅ ═══ Protocol Selection (جدید) ═══
+            // ✅ ═══ Protocol Selection ═══
             const SizedBox(height: 16),
             DropdownButtonFormField<String>(
               value: _protocol,
