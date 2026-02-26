@@ -41,7 +41,6 @@ class ExportScreen extends StatelessWidget {
             ),
           const SizedBox(height: 16),
 
-          // ✅ آپدیت: نمایش پروتکل
           Card(
             child: Padding(
               padding: const EdgeInsets.all(16),
@@ -58,7 +57,6 @@ class ExportScreen extends StatelessWidget {
           ),
           const SizedBox(height: 24),
 
-          // ✅ آپدیت: URI مخصوص پروتکل
           Row(children: [
             Text('🔗', style: const TextStyle(fontSize: 24)),
             const SizedBox(width: 8),
