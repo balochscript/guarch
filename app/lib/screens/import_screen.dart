@@ -53,7 +53,6 @@ class _ImportScreenState extends State<ImportScreen> with SingleTickerProviderSt
     return Padding(
       padding: const EdgeInsets.all(24),
       child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-        // ✅ آپدیت: همه پروتکل‌ها
         const Row(children: [
           Text('🔗', style: TextStyle(fontSize: 24)),
           SizedBox(width: 8),
@@ -62,7 +61,6 @@ class _ImportScreenState extends State<ImportScreen> with SingleTickerProviderSt
         const SizedBox(height: 8),
         Text('Paste a guarch://, grouk://, or zhip:// link', style: TextStyle(color: kGold.withOpacity(0.5))),
         const SizedBox(height: 16),
-        // ✅ نمایش فرمت پروتکل‌ها
         Wrap(spacing: 8, runSpacing: 4, children: [
           _protocolChip('🏹 guarch://'),
           _protocolChip('🌩️ grouk://'),
@@ -104,7 +102,6 @@ class _ImportScreenState extends State<ImportScreen> with SingleTickerProviderSt
           Text('Import from JSON', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600, color: kGold)),
         ]),
         const SizedBox(height: 8),
-        // ✅ آپدیت: اشاره به protocol field
         Text('Paste JSON config. Use "protocol": "guarch"|"grouk"|"zhip"', style: TextStyle(color: kGold.withOpacity(0.5), fontSize: 12)),
         const SizedBox(height: 24),
         Expanded(
@@ -141,7 +138,6 @@ class _ImportScreenState extends State<ImportScreen> with SingleTickerProviderSt
         const SizedBox(height: 24),
         const Text('Import from Clipboard', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600, color: kGold)),
         const SizedBox(height: 8),
-        // ✅ آپدیت
         Text('Copy a guarch://, grouk://, zhip:// link\nor JSON config, then tap below', textAlign: TextAlign.center, style: TextStyle(color: kGold.withOpacity(0.5))),
         const SizedBox(height: 24),
         FilledButton.icon(
