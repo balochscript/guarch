@@ -229,7 +229,6 @@ class SettingsScreen extends StatelessWidget {
     );
   }
 
-  // ✅ جدید: کارت پروتکل
   Widget _protocolTile(
       String emoji, String name, String subtitle, String details) {
     return ListTile(
@@ -251,7 +250,6 @@ class SettingsScreen extends StatelessWidget {
     );
   }
 
-  // ✅ جدید: آمار سرورها بر اساس پروتکل
   String _serverStats(AppProvider provider) {
     if (provider.servers.isEmpty) return 'No servers configured';
 
