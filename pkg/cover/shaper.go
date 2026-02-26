@@ -9,7 +9,7 @@ import (
 
 type Shaper struct {
 	stats    *Stats
-	pattern  atomic.Int32 // ✅ H13: atomic به جای plain field
+	pattern  atomic.Int32
 	adaptive *AdaptiveCover
 	padder   *SmartPadder
 }
@@ -40,7 +40,6 @@ func NewAdaptiveShaper(stats *Stats, pattern Pattern, adaptive *AdaptiveCover, m
 	return s
 }
 
-// ✅ H13: getPattern thread-safe
 func (s *Shaper) getPattern() Pattern {
 	return Pattern(s.pattern.Load())
 }
@@ -128,7 +127,6 @@ func (s *Shaper) FragmentSize() int {
 	return result
 }
 
-// ✅ H13: SetPattern thread-safe
 func (s *Shaper) SetPattern(p Pattern) {
 	s.pattern.Store(int32(p))
 }
