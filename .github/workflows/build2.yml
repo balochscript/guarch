@@ -18,21 +18,100 @@ jobs:
       - name: Tidy
         run: go mod tidy
 
-      - name: Build All - Linux ARM64 (Android/Termux)
+      # ===== Android / Termux (ARM64 PIE) =====
+      - name: Build ARM64 PIE (Android/Termux)
         env:
           GOOS: linux
           GOARCH: arm64
+          CGO_ENABLED: 0
         run: |
-          mkdir -p bin
-          go build -o bin/guarch-server ./cmd/guarch-server/
-          go build -o bin/guarch-client ./cmd/guarch-client/
-          go build -o bin/grouk-server  ./cmd/grouk-server/
-          go build -o bin/grouk-client  ./cmd/grouk-client/
-          go build -o bin/zhip-server   ./cmd/zhip-server/
-          go build -o bin/zhip-client   ./cmd/zhip-client/
+          mkdir -p bin/termux-arm64
+          go build -buildmode=pie -o bin/termux-arm64/guarch-server ./cmd/guarch-server/
+          go build -buildmode=pie -o bin/termux-arm64/guarch-client ./cmd/guarch-client/
+          go build -buildmode=pie -o bin/termux-arm64/grouk-server  ./cmd/grouk-server/
+          go build -buildmode=pie -o bin/termux-arm64/grouk-client  ./cmd/grouk-client/
+          go build -buildmode=pie -o bin/termux-arm64/zhip-server   ./cmd/zhip-server/
+          go build -buildmode=pie -o bin/termux-arm64/zhip-client   ./cmd/zhip-client/
 
-      - name: Upload Binaries
+      # ===== Linux AMD64 (VPS) =====
+      - name: Build Linux AMD64 (VPS)
+        env:
+          GOOS: linux
+          GOARCH: amd64
+          CGO_ENABLED: 0
+        run: |
+          mkdir -p bin/linux-amd64
+          go build -o bin/linux-amd64/guarch-server ./cmd/guarch-server/
+          go build -o bin/linux-amd64/guarch-client ./cmd/guarch-client/
+          go build -o bin/linux-amd64/grouk-server  ./cmd/grouk-server/
+          go build -o bin/linux-amd64/grouk-client  ./cmd/grouk-client/
+          go build -o bin/linux-amd64/zhip-server   ./cmd/zhip-server/
+          go build -o bin/linux-amd64/zhip-client   ./cmd/zhip-client/
+
+      # ===== Linux ARM64 (ARM VPS) =====
+      - name: Build Linux ARM64 (ARM VPS)
+        env:
+          GOOS: linux
+          GOARCH: arm64
+          CGO_ENABLED: 0
+        run: |
+          mkdir -p bin/linux-arm64
+          go build -o bin/linux-arm64/guarch-server ./cmd/guarch-server/
+          go build -o bin/linux-arm64/guarch-client ./cmd/guarch-client/
+          go build -o bin/linux-arm64/grouk-server  ./cmd/grouk-server/
+          go build -o bin/linux-arm64/grouk-client  ./cmd/grouk-client/
+          go build -o bin/linux-arm64/zhip-server   ./cmd/zhip-server/
+          go build -o bin/linux-arm64/zhip-client   ./cmd/zhip-client/
+
+      # ===== macOS =====
+      - name: Build macOS
+        env:
+          CGO_ENABLED: 0
+        run: |
+          mkdir -p bin/macos-amd64 bin/macos-arm64
+          GOOS=darwin GOARCH=amd64 go build -o bin/macos-amd64/guarch-client ./cmd/guarch-client/
+          GOOS=darwin GOARCH=arm64 go build -o bin/macos-arm64/guarch-client ./cmd/guarch-client/
+
+      # ===== Windows =====
+      - name: Build Windows
+        env:
+          GOOS: windows
+          GOARCH: amd64
+          CGO_ENABLED: 0
+        run: |
+          mkdir -p bin/windows-amd64
+          go build -o bin/windows-amd64/guarch-client.exe ./cmd/guarch-client/
+          go build -o bin/windows-amd64/guarch-server.exe ./cmd/guarch-server/
+
+      # ===== Upload =====
+      - name: Upload Termux ARM64
+        uses: actions/upload-artifact@v4
+        with:
+          name: guarch-termux-arm64
+          path: bin/termux-arm64/
+
+      - name: Upload Linux AMD64
+        uses: actions/upload-artifact@v4
+        with:
+          name: guarch-linux-amd64
+          path: bin/linux-amd64/
+
+      - name: Upload Linux ARM64
         uses: actions/upload-artifact@v4
         with:
           name: guarch-linux-arm64
-          path: bin/
+          path: bin/linux-arm64/
+
+      - name: Upload macOS
+        uses: actions/upload-artifact@v4
+        with:
+          name: guarch-macos
+          path: |
+            bin/macos-amd64/
+            bin/macos-arm64/
+
+      - name: Upload Windows
+        uses: actions/upload-artifact@v4
+        with:
+          name: guarch-windows-amd64
+          path: bin/windows-amd64/
