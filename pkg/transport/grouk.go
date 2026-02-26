@@ -41,16 +41,12 @@ const (
 	groukTypeSize      = 1
 	groukNonceSize     = 12
 	groukTagSize       = 16
-	groukHeaderSize    = groukSessionIDSize + groukTypeSize // 5
+	groukHeaderSize    = groukSessionIDSize + groukTypeSize
 
-	// ✅ M6/M11: cmd byte صریحاً در header
-	// streamID(2) + seq(4) + ack(4) + cmd(1) = 11
 	groukStreamHdrSize = 2 + 4 + 4 + 1
 
 	groukMaxPacketSize = 1400
 
-	// ✅ M6/M11: فرمول واضح
-	// 1400 - 5 - 12 - 16 - 11 = 1356 bytes user data per packet
 	groukMaxPayload = groukMaxPacketSize - groukHeaderSize - groukNonceSize - groukTagSize - groukStreamHdrSize
 
 	groukMaxSessions      = 256
@@ -69,7 +65,6 @@ const (
 	groukDefaultRateWindow       = time.Minute
 	groukDefaultMaxPending       = 64
 
-	// ✅ M4: congestion control
 	groukInitialCwnd = 16
 	groukMinCwnd     = 4
 )
@@ -200,17 +195,6 @@ func UnmarshalGroukPacket(data []byte) (*GroukPacket, error) {
 // ═══════════════════════════════════════
 // GroukSession
 // ═══════════════════════════════════════
-//
-// ✅ L3: sync.Map choice for streams field:
-//
-// sync.Map is used instead of map+sync.RWMutex because:
-// 1. Streams are added/removed from multiple goroutines (readLoop, OpenStream, Close)
-// 2. Data path (handleData) is read-heavy: loads stream by ID for every packet
-// 3. sync.Map optimizes for "keys written once, read many times" pattern
-// 4. No need to hold lock during stream.handleRecv() which may block
-//
-// Trade-off: sync.Map uses more memory per entry, but grouk
-// typically has <100 concurrent streams, so this is negligible.
 
 type GroukSession struct {
 	ID         uint32
@@ -305,7 +289,6 @@ func (s *GroukSession) handlePacket(pkt *GroukPacket) {
 		s.sendPacket(groukTypePong, []byte{0x01})
 
 	case groukTypePong:
-		// OK
 
 	case groukTypeClose:
 		s.Close()
@@ -319,7 +302,7 @@ func (s *GroukSession) handleData(data []byte) {
 
 	streamID := binary.BigEndian.Uint16(data[0:2])
 	seqNum := binary.BigEndian.Uint32(data[2:6])
-	_ = binary.BigEndian.Uint32(data[6:10]) // ackNum
+	_ = binary.BigEndian.Uint32(data[6:10])
 	cmd := data[10]
 	payload := data[groukStreamHdrSize:]
 
@@ -455,7 +438,7 @@ func (s *GroukSession) IsClosed() bool {
 }
 
 // ═══════════════════════════════════════
-// GroukStream — M1 + M4
+// GroukStream
 // ═══════════════════════════════════════
 
 type GroukStream struct {
@@ -466,11 +449,9 @@ type GroukStream struct {
 	sendBuf sync.Map
 	sendWin atomic.Int32
 
-	// ✅ M4: AIMD congestion window
 	cwnd     atomic.Int32
 	ssthresh int32
 
-	// ✅ M1: signal channel بجای busy-wait
 	winNotify chan struct{}
 
 	recvBuf  sync.Map
@@ -539,8 +520,6 @@ func (s *GroukStream) Read(p []byte) (int, error) {
 	}
 }
 
-// ✅ M1: channel wait بجای busy-loop
-// ✅ M4: cwnd بجای groukWindowSize ثابت
 func (s *GroukStream) Write(p []byte) (int, error) {
 	if s.closed.Load() {
 		return 0, io.ErrClosedPipe
@@ -616,7 +595,6 @@ func (s *GroukStream) deliverOrdered() {
 	}
 }
 
-// ✅ M1: notify writer + M4: additive increase
 func (s *GroukStream) handleAck(ackNum uint32) {
 	if _, loaded := s.sendBuf.LoadAndDelete(ackNum); loaded {
 		s.sendWin.Add(-1)
@@ -633,7 +611,6 @@ func (s *GroukStream) handleAck(ackNum uint32) {
 	}
 }
 
-// ✅ M4: congestion decrease on retransmit
 func (s *GroukStream) retransmitLoop() {
 	ticker := time.NewTicker(50 * time.Millisecond)
 	defer ticker.Stop()
