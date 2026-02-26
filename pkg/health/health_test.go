@@ -120,7 +120,6 @@ func TestFormatDuration(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		// This is a simple check
 		_ = tt
 	}
 
