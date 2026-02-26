@@ -17,7 +17,6 @@ type PaddedMux struct {
 	cancel context.CancelFunc
 }
 
-// ✅ C14: isServer اضافه شد
 func NewPaddedMux(sc *transport.SecureConn, shaper *cover.Shaper, isServer bool) *PaddedMux {
 	ctx, cancel := context.WithCancel(context.Background())
 
