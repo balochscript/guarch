@@ -19,10 +19,6 @@ import (
 // ═══════════════════════════════════════
 // Zhip QUIC Transport
 // ═══════════════════════════════════════
-//
-// quic-go v0.59 changes:
-//   quic.Connection → *quic.Conn
-//   quic.Stream → *quic.Stream (concrete)
 
 type ZhipQUICConfig struct {
 	MaxIdleTimeout  time.Duration
