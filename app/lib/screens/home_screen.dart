@@ -34,26 +34,10 @@ class _HomeScreenState extends State<HomeScreen> {
         selectedIndex: _currentIndex,
         onDestinationSelected: (i) => setState(() => _currentIndex = i),
         destinations: const [
-          NavigationDestination(
-            icon: Icon(Icons.home_outlined),
-            selectedIcon: Icon(Icons.home),
-            label: 'Home',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.dns_outlined),
-            selectedIcon: Icon(Icons.dns),
-            label: 'Servers',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.article_outlined),
-            selectedIcon: Icon(Icons.article),
-            label: 'Logs',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.settings_outlined),
-            selectedIcon: Icon(Icons.settings),
-            label: 'Settings',
-          ),
+          NavigationDestination(icon: Icon(Icons.home_outlined), selectedIcon: Icon(Icons.home), label: 'Home'),
+          NavigationDestination(icon: Icon(Icons.dns_outlined), selectedIcon: Icon(Icons.dns), label: 'Servers'),
+          NavigationDestination(icon: Icon(Icons.article_outlined), selectedIcon: Icon(Icons.article), label: 'Logs'),
+          NavigationDestination(icon: Icon(Icons.settings_outlined), selectedIcon: Icon(Icons.settings), label: 'Settings'),
         ],
       ),
     );
@@ -86,9 +70,7 @@ class _HomeTab extends StatelessWidget {
                   onTap: () {
                     if (server == null) {
                       ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text('Please add and select a server first'),
-                        ),
+                        const SnackBar(content: Text('Please add and select a server first')),
                       );
                       return;
                     }
@@ -96,12 +78,12 @@ class _HomeTab extends StatelessWidget {
                   },
                 ),
                 const SizedBox(height: 16),
-                _buildStatusText(status),
+                _buildStatusText(context, status),
                 const Spacer(),
                 if (status == VpnStatus.connected) ...[
                   StatsCard(stats: stats),
                   const SizedBox(height: 16),
-                  _buildCoverInfo(stats),
+                  _buildCoverInfo(context, stats),
                 ] else
                   const SizedBox(height: 120),
                 const SizedBox(height: 20),
@@ -119,7 +101,7 @@ class _HomeTab extends StatelessWidget {
         Container(
           padding: const EdgeInsets.all(10),
           decoration: BoxDecoration(
-            color: kGold.withOpacity(0.15),
+            color: accentColor(context).withOpacity(0.15),
             borderRadius: BorderRadius.circular(12),
           ),
           child: const Text('🎯', style: TextStyle(fontSize: 24)),
@@ -128,18 +110,16 @@ class _HomeTab extends StatelessWidget {
         Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              'Guarch',
+            Text('Guarch',
               style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                    fontWeight: FontWeight.bold,
-                    color: kGold,
-                  ),
+                fontWeight: FontWeight.bold,
+                color: textPrimary(context),
+              ),
             ),
-            Text(
-              'Hidden like a Balochi hunter',
+            Text('Hidden like a Balochi hunter',
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: kGold.withOpacity(0.5),
-                  ),
+                color: textMuted(context),
+              ),
             ),
           ],
         ),
@@ -151,11 +131,10 @@ class _HomeTab extends StatelessWidget {
     if (server == null) {
       return Card(
         child: ListTile(
-          leading: Icon(Icons.add_circle_outline, color: kGold),
-          title: const Text('No server selected', style: TextStyle(color: kGoldLight)),
-          subtitle: Text('Go to Servers tab to add one',
-              style: TextStyle(color: kGold.withOpacity(0.5))),
-          trailing: Icon(Icons.arrow_forward_ios, size: 16, color: kGold),
+          leading: Icon(Icons.add_circle_outline, color: accentColor(context)),
+          title: Text('No server selected', style: TextStyle(color: textSecondary(context))),
+          subtitle: Text('Go to Servers tab to add one', style: TextStyle(color: textMuted(context))),
+          trailing: Icon(Icons.arrow_forward_ios, size: 16, color: accentColor(context)),
         ),
       );
     }
@@ -163,16 +142,12 @@ class _HomeTab extends StatelessWidget {
     return Card(
       child: ListTile(
         leading: Text(server.pingEmoji, style: const TextStyle(fontSize: 24)),
-        title: Text(server.name,
-            style: const TextStyle(fontWeight: FontWeight.w600, color: kGoldLight)),
-        subtitle: Text(server.fullAddress,
-            style: TextStyle(color: kGold.withOpacity(0.5))),
+        title: Text(server.name, style: TextStyle(fontWeight: FontWeight.w600, color: textSecondary(context))),
+        subtitle: Text(server.fullAddress, style: TextStyle(color: textMuted(context))),
         trailing: Text(
           server.pingText,
           style: TextStyle(
-            color: server.ping != null && server.ping! > 0 && server.ping! < 100
-                ? Colors.green
-                : kGold.withOpacity(0.5),
+            color: server.ping != null && server.ping! > 0 && server.ping! < 100 ? Colors.green : textMuted(context),
             fontWeight: FontWeight.w600,
           ),
         ),
@@ -180,18 +155,18 @@ class _HomeTab extends StatelessWidget {
     );
   }
 
-  Widget _buildStatusText(VpnStatus status) {
+  Widget _buildStatusText(BuildContext context, VpnStatus status) {
     String text;
     Color color;
 
     switch (status) {
       case VpnStatus.disconnected:
         text = 'Tap to Guarch';
-        color = kGold.withOpacity(0.5);
+        color = textMuted(context);
         break;
       case VpnStatus.connecting:
         text = 'Guarching...';
-        color = kGold;
+        color = textPrimary(context);
         break;
       case VpnStatus.connected:
         text = '🎯 Guarch Activated';
@@ -199,7 +174,7 @@ class _HomeTab extends StatelessWidget {
         break;
       case VpnStatus.disconnecting:
         text = 'De-Guarching...';
-        color = kGold;
+        color = textPrimary(context);
         break;
       case VpnStatus.error:
         text = 'Guarch Failed';
@@ -207,13 +182,10 @@ class _HomeTab extends StatelessWidget {
         break;
     }
 
-    return Text(
-      text,
-      style: TextStyle(color: color, fontSize: 16, fontWeight: FontWeight.w600),
-    );
+    return Text(text, style: TextStyle(color: color, fontSize: 16, fontWeight: FontWeight.w600));
   }
 
-  Widget _buildCoverInfo(ConnectionStats stats) {
+  Widget _buildCoverInfo(BuildContext context, ConnectionStats stats) {
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -225,18 +197,12 @@ class _HomeTab extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text('Cover Traffic Active',
-                      style: TextStyle(fontWeight: FontWeight.w600, color: kGoldLight)),
-                  Text('${stats.coverRequests} cover requests sent',
-                      style: TextStyle(color: kGold.withOpacity(0.5), fontSize: 12)),
+                  Text('Cover Traffic Active', style: TextStyle(fontWeight: FontWeight.w600, color: textSecondary(context))),
+                  Text('${stats.coverRequests} cover requests sent', style: TextStyle(color: textMuted(context), fontSize: 12)),
                 ],
               ),
             ),
-            Container(
-              width: 8,
-              height: 8,
-              decoration: const BoxDecoration(color: Colors.green, shape: BoxShape.circle),
-            ),
+            Container(width: 8, height: 8, decoration: const BoxDecoration(color: Colors.green, shape: BoxShape.circle)),
           ],
         ),
       ),
