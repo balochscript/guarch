@@ -8,7 +8,6 @@ import (
 	"guarch/pkg/transport"
 )
 
-// ✅ فیکس: PSK تستی
 var testPSK = []byte("test-psk-32-bytes-long-key-here!") // exactly 32 bytes
 
 func testHandshakeConfig() *transport.HandshakeConfig {
@@ -37,7 +36,6 @@ func setupMux(t *testing.T) (*Mux, *Mux) {
 		t.Fatal("server handshake:", err2)
 	}
 
-	// ✅ فیکس: آرگومان دوم isClient
 	clientMux := NewMux(sc1, true)
 	serverMux := NewMux(sc2, false)
 
@@ -168,7 +166,6 @@ func TestMuxStreamID(t *testing.T) {
 
 	_ = sc2
 
-	// ✅ فیکس: آرگومان دوم isClient
 	m := NewMux(sc1, true)
 
 	if m.nextID.Load() != 1_000_000_000 {
