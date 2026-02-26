@@ -1,0 +1,18 @@
+name: Find Farsi Comments
+
+on:
+  workflow_dispatch:
+
+jobs:
+  find:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Find Farsi/Arabic characters in .go files
+        run: |
+          echo "=== Files with Farsi/Arabic comments ==="
+          grep -rn '[\u0600-\u06FF]' --include="*.go" . || echo "No Farsi comments found"
+          echo ""
+          echo "=== Files with Farsi/Arabic in .dart files ==="
+          grep -rn '[\u0600-\u06FF]' --include="*.dart" . || echo "No Farsi comments found"
