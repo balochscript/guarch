@@ -73,7 +73,6 @@ func TestPaddedPacket(t *testing.T) {
 		t.Error("expected padding")
 	}
 
-	// مارشال و آنمارشال
 	data, err := pkt.Marshal()
 	if err != nil {
 		t.Fatal(err)
@@ -118,7 +117,6 @@ func TestPaddingPacket(t *testing.T) {
 func TestReadPacketFromStream(t *testing.T) {
 	var buf bytes.Buffer
 
-	// ۵ بسته پشت سر هم بنویس
 	for i := uint32(1); i <= 5; i++ {
 		pkt, _ := NewDataPacket(
 			[]byte("packet data here"), i,
@@ -127,7 +125,6 @@ func TestReadPacketFromStream(t *testing.T) {
 		buf.Write(data)
 	}
 
-	// یکی یکی بخوان
 	for i := uint32(1); i <= 5; i++ {
 		pkt, err := ReadPacket(&buf)
 		if err != nil {
@@ -152,7 +149,6 @@ func TestPingPong(t *testing.T) {
 		t.Error("pong type wrong")
 	}
 
-	// مارشال و آنمارشال
 	data, _ := ping.Marshal()
 	restored, err := Unmarshal(data)
 	if err != nil {
@@ -184,16 +180,14 @@ func TestClosePacket(t *testing.T) {
 }
 
 func TestInvalidPacket(t *testing.T) {
-	// بسته خیلی کوتاه
 	_, err := Unmarshal([]byte{0x01, 0x02})
 	if err == nil {
 		t.Error("expected error for short packet")
 	}
 
-	// نسخه اشتباه
 	bad := make([]byte, HeaderSize)
-	bad[0] = 0xFF // نسخه اشتباه
-	bad[1] = 0x01 // نوع درست
+	bad[0] = 0xFF
+	bad[1] = 0x01
 	_, err = Unmarshal(bad)
 	if err == nil {
 		t.Error("expected error for wrong version")
