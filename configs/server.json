@@ -2,7 +2,6 @@
   "listen": ":8443",
   "psk": "YOUR_HEX_ENCODED_PSK_MIN_32_CHARS",
   "protocol": "guarch",
-  "mode": "balanced",
   "tls_cert": "cert.pem",
   "tls_key": "key.pem",
   "decoy_addr": ":8080",
