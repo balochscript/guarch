@@ -11,7 +11,6 @@ func TestGenerateKeyPair(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// نباید صفر باشد
 	allZero := true
 	for _, b := range kp.PublicKey {
 		if b != 0 {
@@ -38,7 +37,6 @@ func TestSharedSecret(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// هر کدام کلید مشترک را حساب میکنند
 	secretA, err := alice.SharedSecret(bob.PublicKey[:])
 	if err != nil {
 		t.Fatal(err)
@@ -49,7 +47,6 @@ func TestSharedSecret(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// باید یکی باشند
 	if !bytes.Equal(secretA, secretB) {
 		t.Fatal("shared secrets dont match")
 	}
@@ -58,15 +55,12 @@ func TestSharedSecret(t *testing.T) {
 }
 
 func TestFullKeyExchangeAndEncrypt(t *testing.T) {
-	// ۱ تولید کلید
 	client, _ := GenerateKeyPair()
 	server, _ := GenerateKeyPair()
 
-	// ۲ تبادل کلید
 	clientKey, _ := client.SharedSecret(server.PublicKey[:])
 	serverKey, _ := server.SharedSecret(client.PublicKey[:])
 
-	// ۳ ساخت رمزنگار
 	clientCipher, err := NewAEADCipher(clientKey)
 	if err != nil {
 		t.Fatal(err)
@@ -76,14 +70,12 @@ func TestFullKeyExchangeAndEncrypt(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// ۴ کلاینت رمز میکند
 	msg := []byte("Hello from client to server!")
 	encrypted, err := clientCipher.Seal(msg)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	// ۵ سرور باز میکند
 	decrypted, err := serverCipher.Open(encrypted)
 	if err != nil {
 		t.Fatal(err)
@@ -93,7 +85,6 @@ func TestFullKeyExchangeAndEncrypt(t *testing.T) {
 		t.Fatal("message mismatch")
 	}
 
-	// ۶ سرور جواب میدهد
 	reply := []byte("Hello from server to client!")
 	encReply, _ := serverCipher.Seal(reply)
 	decReply, err := clientCipher.Open(encReply)
@@ -111,7 +102,6 @@ func TestFullKeyExchangeAndEncrypt(t *testing.T) {
 func TestKeyPairFromPrivate(t *testing.T) {
 	original, _ := GenerateKeyPair()
 
-	// بازسازی از کلید خصوصی
 	restored, err := KeyPairFromPrivate(original.PrivateKey[:])
 	if err != nil {
 		t.Fatal(err)
