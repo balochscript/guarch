@@ -126,7 +126,7 @@ class MainActivity : FlutterActivity() {
 
             val fd = GuarchService.tunFd
             if (fd >= 0) {
-                engine?.startTun(fd.toLong(), pendingSocksPort.toLong())
+                engine?.startTun(fd, pendingSocksPort)
                 runOnUiThread { result.success(true) }
             } else {
                 runOnUiThread { result.success(false) }
