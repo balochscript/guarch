@@ -18,7 +18,6 @@ echo "Guarch Protocol - Server Installer"
 echo "===================================="
 echo ""
 
-# ✅ فیکس: PSK اجباری
 if [ -z "$1" ]; then
     echo -e "${RED}Usage: $0 <PSK>${NC}"
     echo ""
@@ -74,7 +73,6 @@ echo "Step 2: Building Guarch server..."
 TEMP_DIR=$(mktemp -d)
 cd $TEMP_DIR
 
-# ✅ فیکس: URL درست
 git clone https://github.com/balochscript/guarch.git
 cd guarch
 
@@ -96,7 +94,6 @@ cp configs/server.json $CONFIG_DIR/
 
 echo -e "${GREEN}Installed to $INSTALL_DIR${NC}"
 
-# ✅ فیکس: cert خودکار
 echo ""
 echo "Step 4: Generating TLS certificate..."
 
@@ -112,7 +109,6 @@ fi
 echo ""
 echo "Step 5: Creating systemd service..."
 
-# ✅ فیکس: PSK + cert + key
 cat > $SERVICE_FILE << EOF
 [Unit]
 Description=Guarch Protocol Server
@@ -165,7 +161,6 @@ rm -rf $TEMP_DIR
 
 SERVER_IP=$(curl -s ifconfig.me 2>/dev/null || echo "YOUR_SERVER_IP")
 
-# ✅ فیکس: cert pin نمایش بده
 CERT_PIN=$(openssl x509 -in $CERT_DIR/cert.pem -outform DER 2>/dev/null | sha256sum | cut -d' ' -f1)
 
 echo ""
