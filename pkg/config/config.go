@@ -9,39 +9,29 @@ import (
 	"time"
 )
 
-// ── Client ──────────────────────────────────────────────────────────
-
 type ClientConfig struct {
 	Listen   string      `json:"listen"`
 	Server   string      `json:"server"`
 	PSK      string      `json:"psk"`
 	CertPin  string      `json:"cert_pin,omitempty"`
 	Protocol string      `json:"protocol,omitempty"`
-	Mode     string      `json:"mode,omitempty"`
 	Cover    CoverConfig `json:"cover"`
 	Shaping  ShapeConfig `json:"shaping"`
 }
 
-// ── Server ──────────────────────────────────────────────────────────
-
 type ServerConfig struct {
-	Listen     string      `json:"listen"`
-	PSK        string      `json:"psk"`
-	Protocol   string      `json:"protocol,omitempty"`
-	Mode       string      `json:"mode,omitempty"`
-	TLSCert    string      `json:"tls_cert,omitempty"`
-	TLSKey     string      `json:"tls_key,omitempty"`
-	DecoyAddr  string      `json:"decoy_addr"`
-	HealthAddr string      `json:"health_addr,omitempty"`
-	Cover      CoverConfig `json:"cover"`
-	Probe      ProbeConfig `json:"probe"`
+	Listen    string      `json:"listen"`
+	DecoyAddr string      `json:"decoy_addr"`
+	PSK       string      `json:"psk"`
+	TLSCert   string      `json:"tls_cert,omitempty"`
+	TLSKey    string      `json:"tls_key,omitempty"`
+	Protocol  string      `json:"protocol,omitempty"`
+	Probe     ProbeConfig `json:"probe"`
 }
-
-// ── Sub-configs ─────────────────────────────────────────────────────
 
 type CoverConfig struct {
 	Enabled bool          `json:"enabled"`
-	Domains []DomainEntry `json:"domains,omitempty"`
+	Domains []DomainEntry `json:"domains"`
 }
 
 type DomainEntry struct {
@@ -62,24 +52,6 @@ type ProbeConfig struct {
 	Window  string `json:"window"`
 }
 
-// ── Valid values ────────────────────────────────────────────────────
-
-var validProtocols = map[string]bool{
-	"guarch": true,
-	"grouk":  true,
-	"zhip":   true,
-	"":       true,
-}
-
-var validModes = map[string]bool{
-	"stealth":  true,
-	"balanced": true,
-	"fast":     true,
-	"":         true,
-}
-
-// ── Load ────────────────────────────────────────────────────────────
-
 func LoadClient(path string) (*ClientConfig, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -91,15 +63,11 @@ func LoadClient(path string) (*ClientConfig, error) {
 		return nil, fmt.Errorf("config: parse: %w", err)
 	}
 
-	// Defaults
 	if cfg.Listen == "" {
 		cfg.Listen = "127.0.0.1:1080"
 	}
 	if cfg.Protocol == "" {
 		cfg.Protocol = "guarch"
-	}
-	if cfg.Mode == "" {
-		cfg.Mode = "balanced"
 	}
 
 	if err := cfg.Validate(); err != nil {
@@ -120,21 +88,14 @@ func LoadServer(path string) (*ServerConfig, error) {
 		return nil, fmt.Errorf("config: parse: %w", err)
 	}
 
-	// Defaults
 	if cfg.Listen == "" {
 		cfg.Listen = ":8443"
 	}
 	if cfg.DecoyAddr == "" {
 		cfg.DecoyAddr = ":8080"
 	}
-	if cfg.HealthAddr == "" {
-		cfg.HealthAddr = "127.0.0.1:9090"
-	}
 	if cfg.Protocol == "" {
 		cfg.Protocol = "guarch"
-	}
-	if cfg.Mode == "" {
-		cfg.Mode = "balanced"
 	}
 
 	if err := cfg.Validate(); err != nil {
@@ -143,8 +104,6 @@ func LoadServer(path string) (*ServerConfig, error) {
 
 	return cfg, nil
 }
-
-// ── Validate ────────────────────────────────────────────────────────
 
 func (c *ClientConfig) Validate() error {
 	if c.Server == "" {
@@ -168,11 +127,10 @@ func (c *ClientConfig) Validate() error {
 			return fmt.Errorf("config: cert_pin must be 32 bytes (SHA-256)")
 		}
 	}
-	if !validProtocols[c.Protocol] {
+	switch c.Protocol {
+	case "guarch", "grouk", "zhip", "":
+	default:
 		return fmt.Errorf("config: unknown protocol %q (must be guarch/grouk/zhip)", c.Protocol)
-	}
-	if !validModes[c.Mode] {
-		return fmt.Errorf("config: unknown mode %q (must be stealth/balanced/fast)", c.Mode)
 	}
 	return nil
 }
@@ -198,16 +156,13 @@ func (c *ServerConfig) Validate() error {
 			return fmt.Errorf("config: tls_key file not found: %w", err)
 		}
 	}
-	if !validProtocols[c.Protocol] {
+	switch c.Protocol {
+	case "guarch", "grouk", "zhip", "":
+	default:
 		return fmt.Errorf("config: unknown protocol %q (must be guarch/grouk/zhip)", c.Protocol)
-	}
-	if !validModes[c.Mode] {
-		return fmt.Errorf("config: unknown mode %q (must be stealth/balanced/fast)", c.Mode)
 	}
 	return nil
 }
-
-// ── Helpers ─────────────────────────────────────────────────────────
 
 func (c *ClientConfig) PSKBytes() ([]byte, error) {
 	return hex.DecodeString(c.PSK)
@@ -224,15 +179,12 @@ func (c *ServerConfig) PSKBytes() ([]byte, error) {
 	return hex.DecodeString(c.PSK)
 }
 
-// ── Defaults ────────────────────────────────────────────────────────
-
 func DefaultClientConfig() *ClientConfig {
 	return &ClientConfig{
 		Listen:   "127.0.0.1:1080",
 		Server:   "YOUR_SERVER_IP:8443",
 		PSK:      "0000000000000000000000000000000000000000000000000000000000000000",
 		Protocol: "guarch",
-		Mode:     "balanced",
 		Cover: CoverConfig{
 			Enabled: true,
 			Domains: []DomainEntry{
@@ -289,23 +241,16 @@ func DefaultClientConfig() *ClientConfig {
 
 func DefaultServerConfig() *ServerConfig {
 	return &ServerConfig{
-		Listen:     ":8443",
-		PSK:        "0000000000000000000000000000000000000000000000000000000000000000",
-		Protocol:   "guarch",
-		Mode:       "balanced",
-		DecoyAddr:  ":8080",
-		HealthAddr: "127.0.0.1:9090",
-		Cover: CoverConfig{
-			Enabled: true,
-		},
+		Listen:    ":8443",
+		DecoyAddr: ":8080",
+		PSK:       "0000000000000000000000000000000000000000000000000000000000000000",
+		Protocol:  "guarch",
 		Probe: ProbeConfig{
 			MaxRate: 10,
 			Window:  "1m",
 		},
 	}
 }
-
-// ── Save ────────────────────────────────────────────────────────────
 
 func (c *ClientConfig) Save(path string) error {
 	data, err := json.MarshalIndent(c, "", "  ")
@@ -322,8 +267,6 @@ func (c *ServerConfig) Save(path string) error {
 	}
 	return os.WriteFile(path, data, 0600)
 }
-
-// ── Utility ─────────────────────────────────────────────────────────
 
 func ParseDuration(s string) time.Duration {
 	if s == "" {
