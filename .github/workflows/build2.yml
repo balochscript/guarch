@@ -1,0 +1,38 @@
+name: Build Guarch
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+
+      - name: Tidy
+        run: go mod tidy
+
+      - name: Build All - Linux ARM64 (Android/Termux)
+        env:
+          GOOS: linux
+          GOARCH: arm64
+        run: |
+          mkdir -p bin
+          go build -o bin/guarch-server ./cmd/guarch-server/
+          go build -o bin/guarch-client ./cmd/guarch-client/
+          go build -o bin/grouk-server  ./cmd/grouk-server/
+          go build -o bin/grouk-client  ./cmd/grouk-client/
+          go build -o bin/zhip-server   ./cmd/zhip-server/
+          go build -o bin/zhip-client   ./cmd/zhip-client/
+
+      - name: Upload Binaries
+        uses: actions/upload-artifact@v4
+        with:
+          name: guarch-linux-arm64
+          path: bin/
