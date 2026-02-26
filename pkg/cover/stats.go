@@ -5,11 +5,10 @@ import (
 	"time"
 )
 
-// ✅ L9: named constants بجای magic numbers
 const (
-	defaultAvgPacketSize = 512       // bytes — تخمین اولیه قبل از داشتن نمونه
-	defaultMinPacketSize = 256       // bytes
-	defaultMaxPacketSize = 1024      // bytes
+	defaultAvgPacketSize = 512
+	defaultMinPacketSize = 256
+	defaultMaxPacketSize = 1024
 	defaultAvgInterval   = 2 * time.Second
 )
 
@@ -87,7 +86,6 @@ func (s *Stats) recordInterval(now time.Time) {
 	s.intervals = append(s.intervals, interval)
 }
 
-// ✅ L9: named constant
 func (s *Stats) AvgPacketSize() int {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -103,7 +101,6 @@ func (s *Stats) AvgPacketSize() int {
 	return total / len(s.packetSizes)
 }
 
-// ✅ L9: named constant
 func (s *Stats) AvgInterval() time.Duration {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -119,7 +116,6 @@ func (s *Stats) AvgInterval() time.Duration {
 	return total / time.Duration(len(s.intervals))
 }
 
-// ✅ L9: named constants
 func (s *Stats) MinMaxPacketSize() (int, int) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
