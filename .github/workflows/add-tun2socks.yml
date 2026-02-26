@@ -3,6 +3,9 @@ name: Add tun2socks dependency
 on:
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   add-dependency:
     runs-on: ubuntu-latest
@@ -10,6 +13,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
       
       - name: Setup Go
         uses: actions/setup-go@v5
@@ -26,22 +31,11 @@ jobs:
           CGO_ENABLED=0 go build ./...
           echo "✅ Build successful with tun2socks"
       
-      - name: Show changes
-        run: |
-          echo "=== go.mod changes ==="
-          git diff go.mod
-          echo ""
-          echo "=== New dependencies ==="
-          git diff go.sum | head -50
-      
       - name: Commit and push
         run: |
           git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add go.mod go.sum
-          git commit -m "feat: add tun2socks dependency for Android VPN mode
-
-          - Added github.com/xjasonlyu/tun2socks/v2
-          - Enables TUN device handling for system-wide VPN
-          - Required for routing all device traffic through tunnel"
+          git diff --cached --quiet && echo "No changes" && exit 0
+          git commit -m "feat: add tun2socks dependency for Android VPN mode"
           git push
