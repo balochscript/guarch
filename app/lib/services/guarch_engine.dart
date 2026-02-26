@@ -76,6 +76,17 @@ class GuarchEngine {
     }
   }
 
+  /// Request VPN permission from Android
+  Future<bool> requestVpnPermission() async {
+    try {
+      final result = await _channel.invokeMethod('requestVpnPermission');
+      return result == true;
+    } catch (e) {
+      _logController.add('VPN permission error: $e');
+      return false;
+    }
+  }
+
   Future<bool> connect({
     required String serverAddr,
     int serverPort = 8443,
@@ -84,7 +95,7 @@ class GuarchEngine {
     String listenAddr = '127.0.0.1',
     int listenPort = 1080,
     bool coverEnabled = true,
-    String protocol = 'guarch', 
+    String protocol = 'guarch',
   }) async {
     if (serverAddr.isEmpty) {
       _logController.add('Error: server address is empty');
@@ -104,7 +115,7 @@ class GuarchEngine {
         'listen_addr': listenAddr,
         'listen_port': listenPort,
         'cover_enabled': coverEnabled,
-        'protocol': protocol, 
+        'protocol': protocol,
       });
 
       _logController.add('Connecting via $protocol to $serverAddr:$serverPort...');
