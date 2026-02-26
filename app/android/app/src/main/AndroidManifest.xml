@@ -51,11 +51,16 @@
             </intent-filter>
         </activity>
 
-        <!-- Foreground Service -->
+        <!-- VPN Service -->
         <service
             android:name=".GuarchService"
             android:exported="false"
-            android:foregroundServiceType="specialUse" />
+            android:foregroundServiceType="specialUse"
+            android:permission="android.permission.BIND_VPN_SERVICE">
+            <intent-filter>
+                <action android:name="android.net.VpnService" />
+            </intent-filter>
+        </service>
 
         <meta-data
             android:name="flutterEmbedding"
