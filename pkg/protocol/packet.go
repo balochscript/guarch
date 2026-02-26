@@ -52,12 +52,6 @@ func (pt PacketType) IsValid() bool {
 	return pt >= PacketTypeData && pt <= PacketTypePong
 }
 
-// ✅ L7: Note on PaddingLen visibility
-//
-// PaddingLen is part of the Packet header which is INSIDE the AEAD ciphertext
-// (see conn.go sendRaw → pkt.Marshal() → cipher.SealWithAAD).
-// An attacker sees only the outer 4-byte encrypted length.
-// PaddingLen is NOT visible on the wire.
 type Packet struct {
 	Version    byte
 	Type       PacketType
@@ -106,7 +100,6 @@ func NewPaddedDataPacket(payload []byte, seqNum uint32, totalSize int) (*Packet,
 			padSize = MaxPaddingSize
 		}
 		pkt.Padding = make([]byte, padSize)
-		// ✅ L6: handle rand.Read error
 		if _, err := rand.Read(pkt.Padding); err != nil {
 			return nil, fmt.Errorf("guarch: generate padding: %w", err)
 		}
@@ -123,7 +116,6 @@ func NewPaddingPacket(size int, seqNum uint32) (*Packet, error) {
 		size = 1
 	}
 	padding := make([]byte, size)
-	// ✅ L6: handle rand.Read error
 	if _, err := rand.Read(padding); err != nil {
 		return nil, fmt.Errorf("guarch: generate padding: %w", err)
 	}
