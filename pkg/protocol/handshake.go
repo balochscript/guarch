@@ -14,7 +14,6 @@ const (
 	ConnectSuccess byte = 0x00
 	ConnectFailed  byte = 0x01
 
-	// ✅ C7: حداکثر طول domain
 	MaxDomainLength = 255
 )
 
@@ -28,15 +27,12 @@ func (cr *ConnectRequest) Address() string {
 	return fmt.Sprintf("%s:%d", cr.Addr, cr.Port)
 }
 
-// ✅ C6/C7: Marshal حالا error برمیگردونه
-// قبلاً: func (cr *ConnectRequest) Marshal() []byte
 func (cr *ConnectRequest) Marshal() ([]byte, error) {
 	var buf []byte
 	buf = append(buf, cr.AddrType)
 
 	switch cr.AddrType {
 	case AddrTypeIPv4:
-		// ✅ C6: بررسی IP قبل از استفاده
 		ip := net.ParseIP(cr.Addr)
 		if ip == nil {
 			return nil, fmt.Errorf("guarch: invalid IPv4 address: %q", cr.Addr)
@@ -48,7 +44,6 @@ func (cr *ConnectRequest) Marshal() ([]byte, error) {
 		buf = append(buf, ip4...)
 
 	case AddrTypeDomain:
-		// ✅ C7: بررسی طول domain
 		if len(cr.Addr) == 0 {
 			return nil, fmt.Errorf("guarch: empty domain")
 		}
@@ -59,7 +54,6 @@ func (cr *ConnectRequest) Marshal() ([]byte, error) {
 		buf = append(buf, []byte(cr.Addr)...)
 
 	case AddrTypeIPv6:
-		// ✅ C6: بررسی IP قبل از استفاده
 		ip := net.ParseIP(cr.Addr)
 		if ip == nil {
 			return nil, fmt.Errorf("guarch: invalid IPv6 address: %q", cr.Addr)
