@@ -76,7 +76,6 @@ class GuarchEngine {
     }
   }
 
-  /// اتصال به سرور Guarch
   Future<bool> connect({
     required String serverAddr,
     int serverPort = 8443,
@@ -85,7 +84,7 @@ class GuarchEngine {
     String listenAddr = '127.0.0.1',
     int listenPort = 1080,
     bool coverEnabled = true,
-    String protocol = 'guarch', // ✅ جدید
+    String protocol = 'guarch', 
   }) async {
     if (serverAddr.isEmpty) {
       _logController.add('Error: server address is empty');
@@ -105,7 +104,7 @@ class GuarchEngine {
         'listen_addr': listenAddr,
         'listen_port': listenPort,
         'cover_enabled': coverEnabled,
-        'protocol': protocol, // ✅ جدید
+        'protocol': protocol, 
       });
 
       _logController.add('Connecting via $protocol to $serverAddr:$serverPort...');
@@ -124,7 +123,6 @@ class GuarchEngine {
     }
   }
 
-  /// قطع اتصال
   Future<bool> disconnect() async {
     try {
       _logController.add('Disconnecting...');
@@ -139,7 +137,6 @@ class GuarchEngine {
     }
   }
 
-  /// وضعیت فعلی
   Future<String> getStatus() async {
     try {
       final result = await _channel.invokeMethod('getStatus');
@@ -149,7 +146,6 @@ class GuarchEngine {
     }
   }
 
-  /// آمار اتصال
   Future<Map<String, dynamic>> getStats() async {
     try {
       final result = await _channel.invokeMethod('getStats');
@@ -165,10 +161,8 @@ class GuarchEngine {
     }
   }
 
-  /// آیا native engine در دسترس هست؟
   bool get isNativeAvailable => _nativeAvailable;
 
-  /// پینگ واقعی با TCP Socket
   Future<int> ping(String address, int port) async {
     try {
       final List<InternetAddress> addresses;
