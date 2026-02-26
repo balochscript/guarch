@@ -89,7 +89,6 @@ class AppProvider extends ChangeNotifier {
       notifyListeners();
     });
 
-    // پینگ خودکار هنگام شروع
     if (_servers.isNotEmpty) {
       _addLog('Auto-pinging ${_servers.length} servers...');
       notifyListeners();
@@ -163,7 +162,6 @@ class AppProvider extends ChangeNotifier {
     if (activeServer == null) return;
     if (_status == VpnStatus.connecting || _status == VpnStatus.connected) return;
 
-    // ✅ بررسی PSK
     if (activeServer!.psk.isEmpty) {
       _addLog('Error: PSK is required. Edit server settings.');
       _status = VpnStatus.error;
@@ -188,13 +186,13 @@ class AppProvider extends ChangeNotifier {
   certPin: activeServer!.certPin,
   listenPort: activeServer!.listenPort,
   coverEnabled: activeServer!.coverEnabled,
-  protocol: activeServer!.protocol, // ✅ جدید
+  protocol: activeServer!.protocol, 
 );
 
     if (!success) {
       _status = VpnStatus.error;
       _addLog('Guarch failed!');
-      if (!_engine.isNativeAvailable) {          // ✅
+      if (!_engine.isNativeAvailable) {         
         _addLog('Native engine not built. See docs for gomobile setup.');
       }
       notifyListeners();
