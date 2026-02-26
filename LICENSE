@@ -1,22 +1,160 @@
-# Modified MIT License
+Guarch Protocol Suite License
+Version 1.0
 
-Copyright (c) 2026 Baloch Script
+Copyright (c) 2025 Baloch Script
+https://github.com/balochscript/guarch
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
 
-1. **Copyright Notice:** The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software source code.
+1. DEFINITIONS
 
-2. **Attribution Requirement:** If the Software is used to build, compile, or distribute an application under a different name, the derived work must explicitly acknowledge the use of the original project "**Guarch**". This acknowledgment must be visible to the end-user (e.g., in the application's "About," "Credits," or "Intro" section).
+   "Software" means the Guarch Protocol Suite source code,
+   documentation, binaries, and all associated files in this
+   repository.
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+   "Derivative Work" means any software that incorporates,
+   modifies, extends, or is substantially based on the
+   Software's source code, architecture, protocol
+   implementations, or cryptographic handshake sequences.
+
+   "Sell" means to distribute the Software or a Derivative
+   Work itself as a paid product, charging users for access
+   to the software, its binaries, or its source code.
+
+   "Ancillary Services" means services built around the
+   Software that do not involve selling the Software itself,
+   including but not limited to: selling server
+   configurations, hosting proxy servers, providing managed
+   VPN/proxy services, offering technical support, or
+   distributing configuration files.
+
+
+2. GRANTED RIGHTS
+
+   Permission is hereby granted, free of charge, to any
+   person obtaining a copy of the Software, to:
+
+   a) Use the Software for any purpose — personal,
+      educational, research, or commercial infrastructure.
+
+   b) Study, modify, and adapt the Software without
+      restriction.
+
+   c) Fork the Software and create independent or competing
+      projects based on it, subject to the conditions in
+      Section 3.
+
+   d) Distribute the Software or any Derivative Work,
+      subject to the conditions in Section 3.
+
+   e) Provide Ancillary Services using the Software,
+      including selling server configurations, hosting
+      services, managed proxies, and technical support.
+      These activities are explicitly permitted and are
+      not restricted by this license.
+
+
+3. CONDITIONS
+
+   The following conditions apply to all copies,
+   distributions, forks, and Derivative Works:
+
+   a) ATTRIBUTION — Any Derivative Work, fork, or project
+      that uses substantial portions of the Software's
+      source code or its novel implementations (including
+      but not limited to: the cover traffic system, adaptive
+      traffic shaping, smart padding, traffic interleaving,
+      decoy server architecture, and probe detection
+      mechanisms) MUST include the following acknowledgment:
+
+        "Powered by Guarch"
+
+      This acknowledgment must be:
+
+        - Clearly visible to the end user within the
+          application (for example: in the "About" screen,
+          footer, settings page, startup screen, or any
+          equivalent location where a typical user will
+          see it during normal use)
+        - Present in the project's README file or primary
+          documentation
+
+      No additional names, phrases, or links are required
+      beyond "Powered by Guarch". Including a link to the
+      original repository is appreciated but not mandatory.
+
+   b) COPYRIGHT NOTICE — This license and the above
+      copyright notice must be included in all copies or
+      substantial portions of the Software.
+
+   c) NO SELLING THE SOFTWARE — You may NOT Sell the
+      Software or any Derivative Work. This means you
+      cannot charge users money to obtain, download, or
+      access the software, its source code, or its
+      compiled binaries.
+
+      For clarity, the following are NOT considered selling
+      and ARE permitted:
+        - Selling server configurations and config files
+        - Charging for hosted proxy/VPN service that runs
+          the Software
+        - Charging for technical support or setup services
+        - Distributing the Software as part of a free
+          product while charging for unrelated services
+        - Accepting voluntary donations
+
+   d) CHANGES — Any Derivative Work must clearly indicate
+      what modifications were made compared to the
+      original Software.
+
+
+4. CLARIFICATIONS
+
+   a) COMPETING PROJECTS — You ARE permitted to fork this
+      Software and create an independent or competing
+      project, provided you comply with the attribution
+      requirements in Section 3(a). Innovation and
+      competition are encouraged.
+
+   b) INDEPENDENT IMPLEMENTATIONS — You ARE permitted to
+      independently reimplement the protocols, concepts,
+      or ideas described in this project's documentation
+      from scratch without using any of the Software's
+      source code. Such clean-room implementations are
+      NOT Derivative Works and are not bound by this
+      license. Crediting Guarch as inspiration is
+      appreciated but not required.
+
+   c) ANCILLARY SERVICES — Providing commercial services
+      around the Software (server hosting, config selling,
+      managed services, support) is explicitly permitted
+      and does not constitute selling the Software.
+
+
+5. TERMINATION
+
+   Violation of any condition in Section 3 automatically
+   and immediately terminates all rights granted under
+   this license. Rights may be restored only by explicit
+   written permission from the copyright holder.
+
+
+6. DISCLAIMER
+
+   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF
+   ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED
+   TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+   PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT
+   SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR
+   ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN
+   ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+   OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE
+   OR OTHER DEALINGS IN THE SOFTWARE.
+
+
+7. LEGAL COMPLIANCE
+
+   Users are solely responsible for ensuring their use of
+   this Software complies with all applicable laws and
+   regulations in their jurisdiction. The authors do not
+   endorse, encourage, or assume liability for any
+   illegal use of this Software.
