@@ -134,9 +134,6 @@ func (m *Mux) handleMuxFrame(data []byte) {
 	}
 }
 
-// ✅ L13: time.NewTimer بجای time.After — جلوگیری از timer leak
-// قبلاً: time.After → هر iteration یه timer ساخته میشد که تا expire نشه GC نمیشد
-// الان: NewTimer + Stop → اگه closeCh زودتر بسته بشه، timer آزاد میشه
 func (m *Mux) keepAlive() {
 	for {
 		jitter := time.Duration(randomMuxInt(25000, 35000)) * time.Millisecond
