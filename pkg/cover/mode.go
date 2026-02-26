@@ -26,9 +26,6 @@ func (m Mode) String() string {
 	}
 }
 
-// ✅ L10: ParseMode حالا warning لاگ میکنه
-// قبلاً: silent fallback بدون هشدار → typo نامشخص
-// الان: warning + fallback
 func ParseMode(s string) Mode {
 	switch s {
 	case "stealth":
