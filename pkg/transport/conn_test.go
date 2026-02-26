@@ -8,8 +8,7 @@ import (
 	"guarch/pkg/protocol"
 )
 
-// ✅ فیکس: PSK تستی ۳۲ بایتی — Handshake بدون PSK کار نمیکنه
-var testPSK = []byte("test-psk-32-bytes-long-key-here!") // exactly 32 bytes
+var testPSK = []byte("test-psk-32-bytes-long-key-here!")
 
 func testHandshakeConfig() *HandshakeConfig {
 	return &HandshakeConfig{PSK: testPSK}
