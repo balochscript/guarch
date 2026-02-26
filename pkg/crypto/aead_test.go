@@ -64,7 +64,6 @@ func TestTampering(t *testing.T) {
 
 	encrypted, _ := c.Seal([]byte("do not tamper"))
 
-	// دستکاری یک بایت
 	encrypted[len(encrypted)-1] ^= 0xFF
 
 	_, err := c.Open(encrypted)
