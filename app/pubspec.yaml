@@ -13,18 +13,18 @@ dependencies:
   shared_preferences: ^2.3.0
   flutter_animate: ^4.5.0
   google_fonts: ^6.2.1
-  share_plus: ^10.0.0          # ← قبلاً ^7.2.1 بود - مشکل اصلی!
+  share_plus: ^10.0.0          
   url_launcher: ^6.3.0
-  flutter_local_notifications: ^18.0.0   # ← قبلاً ^16.3.2 بود
+  flutter_local_notifications: ^18.0.0   
   path_provider: ^2.1.4
   permission_handler: ^11.3.1
-  connectivity_plus: ^6.0.5    # ← قبلاً ^5.0.2 بود
+  connectivity_plus: ^6.0.5    
   cupertino_icons: ^1.0.8
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
-  flutter_lints: ^4.0.0        # ← قبلاً ^3.0.1 بود
+  flutter_lints: ^4.0.0        
   flutter_launcher_icons: ^0.14.1
 
 flutter_launcher_icons:
