@@ -82,7 +82,6 @@ class ServersScreen extends StatelessWidget {
                         ],
                       ]),
                       const SizedBox(height: 4),
-                      // ✅ آپدیت: نمایش پروتکل + آدرس
                       Row(children: [
                         Text(server.protocolEmoji, style: const TextStyle(fontSize: 12)),
                         const SizedBox(width: 4),
