@@ -75,6 +75,36 @@ Guarch Protocol:
     │  └─────────────────────────────────┘                            │
     └──────────────────────────────────────────────────────────────────┘
 
+### Android VPN Architecture
+
+    ┌────────────────────── Android Device ──────────────────────────┐
+    │                                                                │
+    │  All Apps (Telegram, Instagram, Chrome, ...)                   │
+    │      │                                                         │
+    │      ▼                                                         │
+    │  ┌──────────────┐                                              │
+    │  │ VpnService   │ ← Android routes ALL traffic here            │
+    │  │ TUN Interface│                                              │
+    │  └──────┬───────┘                                              │
+    │         │ raw IP packets                                       │
+    │         ▼                                                      │
+    │  ┌──────────────┐                                              │
+    │  │  tun2socks   │ ← Converts IP packets to SOCKS5 connections  │
+    │  │  (Go lib)    │                                              │
+    │  └──────┬───────┘                                              │
+    │         │ SOCKS5                                               │
+    │         ▼                                                      │
+    │  ┌──────────────┐    ┌───────────┐    ┌────────┐              │
+    │  │ Guarch Engine│───►│ SecureConn│───►│TLS 1.3 │──────────────┼──►
+    │  │ SOCKS5 :1080 │    │ PSK+AEAD  │    │Cert Pin│              │
+    │  └──────────────┘    └───────────┘    └────────┘              │
+    │                                                                │
+    │  ┌─────────────────────────────────┐                          │
+    │  │  Cover Traffic Manager          │                          │
+    │  │  (same as desktop client)       │                          │
+    │  └─────────────────────────────────┘                          │
+    └────────────────────────────────────────────────────────────────┘
+
 ## Features
 
 ### Security
@@ -677,22 +707,43 @@ The health server supports optional Bearer token authentication when started wit
         "domains": [
           {
             "domain": "www.google.com",
-            "paths": ["/", "/search?q=weather", "/search?q=news"],
+            "paths": ["/", "/search?q=weather", "/search?q=news", "/search?q=translate", "/maps"],
             "weight": 30,
             "min_interval": "2s",
             "max_interval": "8s"
           },
           {
             "domain": "www.microsoft.com",
-            "paths": ["/", "/en-us", "/en-us/windows"],
+            "paths": ["/", "/en-us", "/en-us/windows", "/en-us/microsoft-365"],
             "weight": 20,
             "min_interval": "3s",
             "max_interval": "10s"
           },
           {
             "domain": "github.com",
-            "paths": ["/", "/explore", "/trending"],
+            "paths": ["/", "/explore", "/trending", "/topics"],
             "weight": 15,
+            "min_interval": "4s",
+            "max_interval": "12s"
+          },
+          {
+            "domain": "stackoverflow.com",
+            "paths": ["/", "/questions", "/questions/tagged/go", "/questions/tagged/javascript"],
+            "weight": 15,
+            "min_interval": "3s",
+            "max_interval": "10s"
+          },
+          {
+            "domain": "www.cloudflare.com",
+            "paths": ["/", "/learning", "/products/cdn"],
+            "weight": 10,
+            "min_interval": "5s",
+            "max_interval": "15s"
+          },
+          {
+            "domain": "learn.microsoft.com",
+            "paths": ["/", "/en-us/docs", "/en-us/training"],
+            "weight": 10,
             "min_interval": "4s",
             "max_interval": "12s"
           }
@@ -704,7 +755,7 @@ The health server supports optional Bearer token authentication when started wit
       }
     }
 
-> **Note:** PSK must be hex-encoded and at least 32 hex characters (16 bytes). Protocol can be `guarch`, `grouk`, or `zhip`.
+> **Note:** PSK must be hex-encoded and at least 32 hex characters (16 bytes). Protocol can be `guarch`, `grouk`, or `zhip`. The `-mode` flag (stealth/balanced/fast) controls cover traffic intensity for the Guarch protocol and is set via command line.
 
 ### Server Config (configs/server.json)
 
@@ -809,8 +860,10 @@ Configs can also be shared as JSON and imported via clipboard.
     │   └── fec/                    # Forward Error Correction
     │       └── fec.go              #   XOR-based FEC encoder/decoder (not yet integrated)
     ├── mobile/
-    │   └── mobile.go              # gomobile binding — Engine for Android/iOS
-    │                               #   Supports all 3 protocols from Flutter
+    │   ├── mobile.go              # gomobile binding — Engine for Android/iOS
+    │   │                           #   Supports all 3 protocols from Flutter
+    │   └── tun.go                 # TUN device handler via tun2socks
+    │                               #   Routes all device traffic through SOCKS5
     ├── app/                        # Flutter Android application
     │   ├── lib/
     │   │   ├── main.dart           #   App entry point
@@ -839,17 +892,17 @@ Configs can also be shared as JSON and imported via clipboard.
     │   ├── android/                # Android-specific config
     │   │   └── app/
     │   │       └── src/main/
-    │   │           ├── AndroidManifest.xml
+    │   │           ├── AndroidManifest.xml   # VPN permission + service declaration
     │   │           └── kotlin/.../
-    │   │               ├── MainActivity.kt
-    │   │               └── GuarchService.kt  # Foreground service
+    │   │               ├── MainActivity.kt   # VPN permission + Go engine bridge
+    │   │               └── GuarchService.kt  # Android VpnService (TUN interface)
     │   ├── assets/
     │   │   └── icon.png            # App icon
     │   └── pubspec.yaml
     ├── configs/
     │   ├── client.json             # Sample client configuration
     │   └── server.json             # Sample server configuration
-    ├── go.mod                      # Go module (x/crypto + quic-go)
+    ├── go.mod                      # Go module (x/crypto + quic-go + tun2socks)
     ├── go.sum
     ├── Makefile
     ├── Dockerfile
