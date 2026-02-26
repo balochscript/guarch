@@ -9,7 +9,6 @@ import 'package:guarch/screens/export_screen.dart';
 
 class ServerDetailScreen extends StatefulWidget {
   final ServerConfig server;
-
   const ServerDetailScreen({super.key, required this.server});
 
   @override
@@ -27,267 +26,134 @@ class _ServerDetailScreenState extends State<ServerDetailScreen> {
       appBar: AppBar(
         title: Text(server.name),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.edit),
-            onPressed: () => Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (_) => AddServerScreen(server: server),
-              ),
-            ),
-          ),
+          IconButton(icon: const Icon(Icons.edit), onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => AddServerScreen(server: server)))),
         ],
       ),
       body: ListView(
         padding: const EdgeInsets.all(24),
         children: [
-          Center(
-            child: Text(
-              server.pingEmoji,
-              style: const TextStyle(fontSize: 64),
-            ),
-          ),
+          Center(child: Text(server.pingEmoji, style: const TextStyle(fontSize: 64))),
           const SizedBox(height: 16),
-          Center(
-            child: Text(
-              server.name,
-              style: const TextStyle(
-                fontSize: 24,
-                fontWeight: FontWeight.bold,
-                color: kGoldLight,
-              ),
-            ),
-          ),
+          Center(child: Text(server.name, style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: textSecondary(context)))),
           const SizedBox(height: 32),
 
-          // Connection Info
-          _sectionTitle('🎯 Connection'),
-          _infoTile('Address', server.address, Icons.dns),
-          _infoTile('Port', server.port.toString(), Icons.numbers),
-          _infoTile('SOCKS5 Port', server.listenPort.toString(), Icons.settings_ethernet),
-          _infoTile('Ping', server.pingText, Icons.speed),
+          _sectionTitle(context, '🎯 Connection'),
+          _infoTile(context, 'Address', server.address, Icons.dns),
+          _infoTile(context, 'Port', server.port.toString(), Icons.numbers),
+          _infoTile(context, 'SOCKS5 Port', server.listenPort.toString(), Icons.settings_ethernet),
+          _infoTile(context, 'Ping', server.pingText, Icons.speed),
 
           const SizedBox(height: 24),
-
-          // Security Info
-          _sectionTitle('🔐 Security'),
+          _sectionTitle(context, '🔐 Security'),
           Card(
             child: ListTile(
-              leading: const Icon(Icons.key, size: 20, color: kGold),
-              title: const Text('PSK',
-                  style: TextStyle(fontSize: 13, color: Colors.grey)),
+              leading: Icon(Icons.key, size: 20, color: accentColor(context)),
+              title: Text('PSK', style: TextStyle(fontSize: 13, color: textMuted(context))),
               subtitle: Text(
-                _showPsk
-                    ? (server.psk.isEmpty ? 'Not set ⚠️' : server.psk)
-                    : (server.psk.isEmpty ? 'Not set ⚠️' : '••••••••••••'),
-                style: TextStyle(
-                  fontFamily: 'monospace',
-                  fontSize: 12,
-                  color: server.psk.isEmpty ? Colors.red : kGoldLight,
-                ),
+                _showPsk ? (server.psk.isEmpty ? 'Not set ⚠️' : server.psk) : (server.psk.isEmpty ? 'Not set ⚠️' : '••••••••••••'),
+                style: TextStyle(fontFamily: 'monospace', fontSize: 12, color: server.psk.isEmpty ? Colors.red : textSecondary(context)),
               ),
-              trailing: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  IconButton(
-                    icon: Icon(
-                      _showPsk ? Icons.visibility_off : Icons.visibility,
-                      size: 18,
-                      color: kGold.withOpacity(0.5),
-                    ),
-                    onPressed: () => setState(() => _showPsk = !_showPsk),
-                  ),
-                  if (server.psk.isNotEmpty)
-                    IconButton(
-                      icon: Icon(Icons.copy, size: 18,
-                          color: kGold.withOpacity(0.5)),
-                      onPressed: () {
-                        Clipboard.setData(ClipboardData(text: server.psk));
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('PSK copied')),
-                        );
-                      },
-                    ),
-                ],
-              ),
+              trailing: Row(mainAxisSize: MainAxisSize.min, children: [
+                IconButton(icon: Icon(_showPsk ? Icons.visibility_off : Icons.visibility, size: 18, color: textMuted(context)), onPressed: () => setState(() => _showPsk = !_showPsk)),
+                if (server.psk.isNotEmpty)
+                  IconButton(icon: Icon(Icons.copy, size: 18, color: textMuted(context)), onPressed: () {
+                    Clipboard.setData(ClipboardData(text: server.psk));
+                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('PSK copied')));
+                  }),
+              ]),
             ),
           ),
           Card(
             child: ListTile(
-              leading: const Icon(Icons.verified_user, size: 20, color: kGold),
-              title: const Text('Certificate PIN',
-                  style: TextStyle(fontSize: 13, color: Colors.grey)),
+              leading: Icon(Icons.verified_user, size: 20, color: accentColor(context)),
+              title: Text('Certificate PIN', style: TextStyle(fontSize: 13, color: textMuted(context))),
               subtitle: Text(
-                server.certPin != null && server.certPin!.isNotEmpty
-                    ? '${server.certPin!.substring(0, 16)}...'
-                    : 'Not set (less secure)',
-                style: TextStyle(
-                  fontFamily: 'monospace',
-                  fontSize: 12,
-                  color: server.certPin != null && server.certPin!.isNotEmpty
-                      ? kGoldLight
-                      : Colors.orange,
-                ),
+                server.certPin != null && server.certPin!.isNotEmpty ? '${server.certPin!.substring(0, 16)}...' : 'Not set (less secure)',
+                style: TextStyle(fontFamily: 'monospace', fontSize: 12, color: server.certPin != null && server.certPin!.isNotEmpty ? textSecondary(context) : Colors.orange),
               ),
             ),
           ),
 
           const SizedBox(height: 24),
-
-          // Cover Traffic
-          _sectionTitle('🎭 Cover Traffic'),
-          _infoTile(
-            'Status',
-            server.coverEnabled ? 'Enabled' : 'Disabled',
-            Icons.masks,
-          ),
-          _infoTile('Pattern', server.shapingPattern, Icons.pattern),
-          _infoTile(
-            'Created',
-            server.createdAt.toString().substring(0, 16),
-            Icons.calendar_today,
-          ),
+          _sectionTitle(context, '🎭 Cover Traffic'),
+          _infoTile(context, 'Status', server.coverEnabled ? 'Enabled' : 'Disabled', Icons.masks),
+          _infoTile(context, 'Pattern', server.shapingPattern, Icons.pattern),
+          _infoTile(context, 'Created', server.createdAt.toString().substring(0, 16), Icons.calendar_today),
 
           if (server.coverEnabled) ...[
             const SizedBox(height: 12),
-            ...server.coverDomains.map(
-              (d) => Card(
-                child: ListTile(
-                  leading: const Icon(Icons.public, size: 20, color: kGold),
-                  title: Text(d.domain, style: const TextStyle(color: kGoldLight)),
-                  trailing: Text(
-                    '${d.weight}%',
-                    style: TextStyle(color: kGold.withOpacity(0.5)),
-                  ),
-                ),
+            ...server.coverDomains.map((d) => Card(
+              child: ListTile(
+                leading: Icon(Icons.public, size: 20, color: accentColor(context)),
+                title: Text(d.domain, style: TextStyle(color: textSecondary(context))),
+                trailing: Text('${d.weight}%', style: TextStyle(color: textMuted(context))),
               ),
-            ),
+            )),
           ],
 
-          // Actions
           const SizedBox(height: 32),
-          Row(
-            children: [
-              Expanded(
-                child: OutlinedButton.icon(
-                  onPressed: () async {
-                    final provider = context.read<AppProvider>();
-                    final ping = await provider.pingServer(server);
-                    if (context.mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text(
-                            ping > 0 ? 'Ping: ${ping}ms' : 'Ping: timeout',
-                          ),
-                        ),
-                      );
-                    }
-                  },
-                  icon: const Icon(Icons.speed),
-                  label: const Text('Ping'),
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: FilledButton.icon(
-                  onPressed: () => Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => ExportScreen(server: server),
-                    ),
-                  ),
-                  icon: const Icon(Icons.share),
-                  label: const Text('Export'),
-                ),
-              ),
-            ],
-          ),
+          Row(children: [
+            Expanded(child: OutlinedButton.icon(
+              onPressed: () async {
+                final provider = context.read<AppProvider>();
+                final ping = await provider.pingServer(server);
+                if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(ping > 0 ? 'Ping: ${ping}ms' : 'Ping: timeout')));
+              },
+              icon: const Icon(Icons.speed), label: const Text('Ping'),
+            )),
+            const SizedBox(width: 12),
+            Expanded(child: FilledButton.icon(
+              onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => ExportScreen(server: server))),
+              icon: const Icon(Icons.share), label: const Text('Export'),
+            )),
+          ]),
           const SizedBox(height: 12),
           OutlinedButton.icon(
             onPressed: () {
               final provider = context.read<AppProvider>();
               provider.setActiveServer(server.id);
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text('${server.name} set as active')),
-              );
+              ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('${server.name} set as active')));
             },
-            icon: const Icon(Icons.check_circle_outline),
-            label: const Text('Set as Active Server'),
+            icon: const Icon(Icons.check_circle_outline), label: const Text('Set as Active Server'),
           ),
 
-          // Security Warning
           if (server.psk.isEmpty) ...[
             const SizedBox(height: 24),
             Card(
               color: Colors.red.withOpacity(0.1),
               child: Padding(
                 padding: const EdgeInsets.all(16),
-                child: Row(
-                  children: [
-                    const Icon(Icons.warning, color: Colors.red),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text(
-                            'Security Warning',
-                            style: TextStyle(
-                              fontWeight: FontWeight.w600,
-                              color: Colors.red,
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            'PSK is not set. Connection will not be secure. '
-                            'Edit this server and add a PSK.',
-                            style: TextStyle(
-                              color: Colors.red.withOpacity(0.7),
-                              fontSize: 12,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
+                child: Row(children: [
+                  const Icon(Icons.warning, color: Colors.red),
+                  const SizedBox(width: 12),
+                  Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    const Text('Security Warning', style: TextStyle(fontWeight: FontWeight.w600, color: Colors.red)),
+                    const SizedBox(height: 4),
+                    Text('PSK is not set. Edit this server and add a PSK.', style: TextStyle(color: Colors.red.withOpacity(0.7), fontSize: 12)),
+                  ])),
+                ]),
               ),
             ),
           ],
-
           const SizedBox(height: 32),
         ],
       ),
     );
   }
 
-  Widget _sectionTitle(String title) {
+  Widget _sectionTitle(BuildContext context, String title) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
-      child: Text(
-        title,
-        style: const TextStyle(
-          fontSize: 18,
-          fontWeight: FontWeight.w600,
-          color: kGold,
-        ),
-      ),
+      child: Text(title, style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600, color: textPrimary(context))),
     );
   }
 
-  Widget _infoTile(String label, String value, IconData icon) {
+  Widget _infoTile(BuildContext context, String label, String value, IconData icon) {
     return Card(
       child: ListTile(
-        leading: Icon(icon, size: 20, color: kGold),
-        title: Text(label,
-            style: const TextStyle(fontSize: 13, color: Colors.grey)),
-        trailing: Text(
-          value,
-          style: const TextStyle(
-            fontWeight: FontWeight.w600,
-            color: kGoldLight,
-          ),
-        ),
+        leading: Icon(icon, size: 20, color: accentColor(context)),
+        title: Text(label, style: TextStyle(fontSize: 13, color: textMuted(context))),
+        trailing: Text(value, style: TextStyle(fontWeight: FontWeight.w600, color: textSecondary(context))),
       ),
     );
   }
