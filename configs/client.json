@@ -4,7 +4,6 @@
   "psk": "YOUR_HEX_ENCODED_PSK_MIN_32_CHARS",
   "cert_pin": "YOUR_SERVER_CERTIFICATE_SHA256_PIN_64_HEX_CHARS",
   "protocol": "guarch",
-  "mode": "balanced",
   "cover": {
     "enabled": true,
     "domains": [
