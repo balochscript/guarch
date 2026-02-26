@@ -10,8 +10,6 @@ import android.os.Build
 import android.os.IBinder
 import android.os.ParcelFileDescriptor
 import androidx.core.app.NotificationCompat
-import io.flutter.embedding.engine.FlutterEngine
-import io.flutter.plugin.common.MethodChannel
 
 class GuarchService : VpnService() {
 
@@ -20,13 +18,16 @@ class GuarchService : VpnService() {
         const val NOTIFICATION_ID = 1
         const val ACTION_START = "START"
         const val ACTION_STOP = "STOP"
-        
+
         var isRunning = false
+            private set
+
+        // ← Go engine fd رو از اینجا پاس میده
+        var tunFd: Int = -1
             private set
     }
 
     private var vpnInterface: ParcelFileDescriptor? = null
-    private var tun2socksThread: Thread? = null
 
     override fun onCreate() {
         super.onCreate()
@@ -53,7 +54,7 @@ class GuarchService : VpnService() {
         val notification = createNotification()
         startForeground(NOTIFICATION_ID, notification)
 
-        // TUN interface بساز
+        // TUN interface
         vpnInterface = Builder()
             .setSession("Guarch")
             .addAddress("10.10.10.2", 32)
@@ -61,6 +62,7 @@ class GuarchService : VpnService() {
             .addDnsServer("8.8.8.8")
             .addDnsServer("1.1.1.1")
             .setMtu(1500)
+            .addDisallowedApplication(packageName)
             .setBlocking(false)
             .establish()
 
@@ -70,55 +72,29 @@ class GuarchService : VpnService() {
             return
         }
 
-        val fd = vpnInterface!!.fd
-
-        // tun2socks رو اجرا کن
-        tun2socksThread = Thread {
-            try {
-                val cmd = arrayOf(
-                    "${applicationInfo.nativeLibraryDir}/libtun2socks.so",
-                    "--netif-ipaddr", "10.10.10.2",
-                    "--netif-netmask", "255.255.255.0",
-                    "--socks-server-addr", "127.0.0.1:$socksPort",
-                    "--tunfd", fd.toString(),
-                    "--tunmtu", "1500",
-                    "--loglevel", "warning"
-                )
-                
-                val processBuilder = ProcessBuilder(*cmd)
-                processBuilder.redirectErrorStream(true)
-                val process = processBuilder.start()
-                
-                // لاگ بخون
-                val reader = process.inputStream.bufferedReader()
-                reader.forEachLine { line ->
-                    android.util.Log.d("tun2socks", line)
-                }
-                
-                process.waitFor()
-            } catch (e: Exception) {
-                android.util.Log.e("GuarchService", "tun2socks error: ${e.message}")
-            }
-        }
-        tun2socksThread?.start()
         
+        tunFd = vpnInterface!!.detachFd()
         isRunning = true
-        android.util.Log.i("GuarchService", "VPN started on fd=$fd, socks=127.0.0.1:$socksPort")
+
+        android.util.Log.i("GuarchService", "VPN started, TUN fd=$tunFd")
     }
 
     private fun stopVpn() {
         isRunning = false
-        
-        tun2socksThread?.interrupt()
-        tun2socksThread = null
-        
+        tunFd = -1
+
         vpnInterface?.close()
         vpnInterface = null
-        
+
         stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelf()
-        
+
         android.util.Log.i("GuarchService", "VPN stopped")
+    }
+
+    override fun onRevoke() {
+        stopVpn()
+        super.onRevoke()
     }
 
     override fun onDestroy() {
@@ -127,11 +103,6 @@ class GuarchService : VpnService() {
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
-
-    override fun onRevoke() {
-        stopVpn()
-        super.onRevoke()
-    }
 
     private fun createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
