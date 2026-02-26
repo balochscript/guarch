@@ -59,7 +59,6 @@ func (pd *ProbeDetector) Check(addr string) bool {
 	return false
 }
 
-// ✅ H31: cleanup حالا با doneCh متوقف میشه
 func (pd *ProbeDetector) cleanup() {
 	ticker := time.NewTicker(5 * time.Minute)
 	defer ticker.Stop()
@@ -89,7 +88,6 @@ func (pd *ProbeDetector) cleanup() {
 	}
 }
 
-// ✅ H31: متد Close
 func (pd *ProbeDetector) Close() {
 	pd.doneOnce.Do(func() {
 		close(pd.doneCh)
