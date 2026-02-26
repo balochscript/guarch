@@ -111,6 +111,8 @@ func (e *Engine) Disconnect() bool {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	e.setStatus("disconnecting")
+	e.StopTun()
+
 	if e.cancel != nil {
 		e.cancel()
 	}
