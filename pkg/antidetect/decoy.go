@@ -47,7 +47,6 @@ func (ds *DecoyServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("X-Frame-Options", "DENY")
 	w.Header().Set("Strict-Transport-Security", "max-age=31536000")
 	w.Header().Set("Cache-Control", "public, max-age=3600")
-	// ✅ فیکس: Date رو دستی ست کن چون httptest خودش اضافه نمیکنه
 	w.Header().Set("Date", time.Now().UTC().Format(http.TimeFormat))
 
 	page, ok := ds.pages[r.URL.Path]
