@@ -33,11 +33,11 @@ class ServersScreen extends StatelessWidget {
   Widget _buildEmpty(BuildContext context) {
     return Center(
       child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-        Icon(Icons.dns_outlined, size: 80, color: kGold.withOpacity(0.3)),
+        Icon(Icons.dns_outlined, size: 80, color: accentColor(context).withOpacity(0.3)),
         const SizedBox(height: 16),
-        Text('No servers yet', style: TextStyle(color: kGold.withOpacity(0.5), fontSize: 18)),
+        Text('No servers yet', style: TextStyle(color: textMuted(context), fontSize: 18)),
         const SizedBox(height: 8),
-        Text('Add a server or import a config', style: TextStyle(color: kGold.withOpacity(0.3))),
+        Text('Add a server or import a config', style: TextStyle(color: textMuted(context).withOpacity(0.6))),
         const SizedBox(height: 24),
         FilledButton.icon(onPressed: () => _openAddServer(context), icon: const Icon(Icons.add), label: const Text('Add Server')),
       ]),
@@ -56,7 +56,7 @@ class ServersScreen extends StatelessWidget {
           margin: const EdgeInsets.only(bottom: 12),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(16),
-            side: isActive ? const BorderSide(color: kGold, width: 2) : BorderSide.none,
+            side: isActive ? BorderSide(color: accentColor(context), width: 2) : BorderSide.none,
           ),
           child: InkWell(
             borderRadius: BorderRadius.circular(16),
@@ -71,13 +71,13 @@ class ServersScreen extends StatelessWidget {
                   Expanded(
                     child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                       Row(children: [
-                        Text(server.name, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 16, color: kGoldLight)),
+                        Text(server.name, style: TextStyle(fontWeight: FontWeight.w600, fontSize: 16, color: textSecondary(context))),
                         if (isActive) ...[
                           const SizedBox(width: 8),
                           Container(
                             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                            decoration: BoxDecoration(color: kGold.withOpacity(0.2), borderRadius: BorderRadius.circular(8)),
-                            child: const Text('Active', style: TextStyle(fontSize: 10, color: kGold, fontWeight: FontWeight.w600)),
+                            decoration: BoxDecoration(color: accentColor(context).withOpacity(0.2), borderRadius: BorderRadius.circular(8)),
+                            child: Text('Active', style: TextStyle(fontSize: 10, color: accentColor(context), fontWeight: FontWeight.w600)),
                           ),
                         ],
                       ]),
@@ -85,31 +85,31 @@ class ServersScreen extends StatelessWidget {
                       Row(children: [
                         Text(server.protocolEmoji, style: const TextStyle(fontSize: 12)),
                         const SizedBox(width: 4),
-                        Text(server.protocolLabel, style: TextStyle(color: kGold.withOpacity(0.5), fontSize: 11, fontWeight: FontWeight.w500)),
+                        Text(server.protocolLabel, style: TextStyle(color: textMuted(context), fontSize: 11, fontWeight: FontWeight.w500)),
                         const SizedBox(width: 8),
-                        Text(server.fullAddress, style: TextStyle(color: kGold.withOpacity(0.4), fontSize: 13)),
+                        Text(server.fullAddress, style: TextStyle(color: textMuted(context).withOpacity(0.7), fontSize: 13)),
                       ]),
                     ]),
                   ),
                   Column(children: [
-                    Text(server.pingText, style: TextStyle(fontWeight: FontWeight.w600, color: _pingColor(server.ping))),
+                    Text(server.pingText, style: TextStyle(fontWeight: FontWeight.w600, color: _pingColor(context, server.ping))),
                     if (server.coverEnabled)
-                      Text('🎭 ${server.coverDomains.length} sites', style: TextStyle(fontSize: 10, color: kGold.withOpacity(0.4))),
+                      Text('🎭 ${server.coverDomains.length} sites', style: TextStyle(fontSize: 10, color: textMuted(context))),
                   ]),
                 ]),
                 const SizedBox(height: 8),
                 Row(mainAxisAlignment: MainAxisAlignment.end, children: [
-                  _actionButton(Icons.speed, 'Ping', () async {
+                  _actionButton(context, Icons.speed, 'Ping', () async {
                     final ping = await provider.pingServer(server);
                     provider.updateServer(server.copyWith(ping: ping));
                   }),
-                  _actionButton(Icons.share, 'Share', () => Share.share(provider.exportConfig(server))),
-                  _actionButton(Icons.copy, 'Copy', () {
+                  _actionButton(context, Icons.share, 'Share', () => Share.share(provider.exportConfig(server))),
+                  _actionButton(context, Icons.copy, 'Copy', () {
                     Clipboard.setData(ClipboardData(text: provider.exportConfigJson(server)));
                     ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Config copied')));
                   }),
-                  _actionButton(Icons.edit, 'Edit', () => _openEditServer(context, server)),
-                  _actionButton(Icons.delete_outline, 'Delete', () => _confirmDelete(context, provider, server)),
+                  _actionButton(context, Icons.edit, 'Edit', () => _openEditServer(context, server)),
+                  _actionButton(context, Icons.delete_outline, 'Delete', () => _confirmDelete(context, provider, server)),
                 ]),
               ]),
             ),
@@ -119,15 +119,15 @@ class ServersScreen extends StatelessWidget {
     );
   }
 
-  Widget _actionButton(IconData icon, String tooltip, VoidCallback onTap) {
-    return IconButton(icon: Icon(icon, size: 18, color: kGold.withOpacity(0.6)), tooltip: tooltip, onPressed: onTap, visualDensity: VisualDensity.compact);
+  Widget _actionButton(BuildContext context, IconData icon, String tooltip, VoidCallback onTap) {
+    return IconButton(icon: Icon(icon, size: 18, color: textMuted(context)), tooltip: tooltip, onPressed: onTap, visualDensity: VisualDensity.compact);
   }
 
-  Color _pingColor(int? ping) {
-    if (ping == null) return kGold.withOpacity(0.4);
+  Color _pingColor(BuildContext context, int? ping) {
+    if (ping == null) return textMuted(context);
     if (ping < 0) return Colors.red;
     if (ping < 100) return Colors.green;
-    if (ping < 300) return kGold;
+    if (ping < 300) return accentColor(context);
     return Colors.red;
   }
 
@@ -146,10 +146,10 @@ class ServersScreen extends StatelessWidget {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: Text('Delete Server', style: TextStyle(color: kGold)),
-        content: Text('Delete "${server.name}"?', style: TextStyle(color: kGoldLight)),
+        title: Text('Delete Server', style: TextStyle(color: textPrimary(context))),
+        content: Text('Delete "${server.name}"?', style: TextStyle(color: textSecondary(context))),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: Text('Cancel', style: TextStyle(color: kGold.withOpacity(0.5)))),
+          TextButton(onPressed: () => Navigator.pop(ctx), child: Text('Cancel', style: TextStyle(color: textMuted(context)))),
           TextButton(onPressed: () { provider.removeServer(server.id); Navigator.pop(ctx); }, style: TextButton.styleFrom(foregroundColor: Colors.red), child: const Text('Delete')),
         ],
       ),
