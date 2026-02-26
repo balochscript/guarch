@@ -72,9 +72,6 @@ func (c *Checker) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(status)
 }
 
-// ✅ M21: StartServer حالا server برمیگردونه + خطای startup رو detect میکنه
-// قبلاً: fire-and-forget → خطای port conflict نادیده گرفته میشد
-// الان: listener اول ساخته میشه → خطا فوری برمیگرده + server برای shutdown
 func (c *Checker) StartServer(addr string, authToken ...string) (*http.Server, error) {
 	mux := http.NewServeMux()
 
@@ -111,7 +108,6 @@ func (c *Checker) StartServer(addr string, authToken ...string) (*http.Server, e
 		IdleTimeout:  60 * time.Second,
 	}
 
-	// ✅ M21: listener اول بساز تا port conflict فوری تشخیص داده بشه
 	ln, err := net.Listen("tcp", addr)
 	if err != nil {
 		return nil, fmt.Errorf("health: listen %s: %w", addr, err)
