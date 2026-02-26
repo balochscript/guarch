@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:guarch/app.dart';
 import 'package:guarch/models/server_config.dart';
 
 class ServerCard extends StatelessWidget {
@@ -25,7 +26,7 @@ class ServerCard extends StatelessWidget {
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16),
         side: isActive
-            ? const BorderSide(color: Color(0xFF6C5CE7), width: 2)
+            ? BorderSide(color: accentColor(context), width: 2)
             : BorderSide.none,
       ),
       child: InkWell(
@@ -43,10 +44,7 @@ class ServerCard extends StatelessWidget {
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: Center(
-                  child: Text(
-                    server.pingEmoji,
-                    style: const TextStyle(fontSize: 24),
-                  ),
+                  child: Text(server.pingEmoji, style: const TextStyle(fontSize: 24)),
                 ),
               ),
               const SizedBox(width: 16),
@@ -56,60 +54,40 @@ class ServerCard extends StatelessWidget {
                   children: [
                     Row(
                       children: [
-                        Text(
-                          server.name,
-                          style: const TextStyle(
-                            fontWeight: FontWeight.w600,
-                            fontSize: 15,
-                          ),
-                        ),
+                        Text(server.name,
+                            style: TextStyle(
+                                fontWeight: FontWeight.w600,
+                                fontSize: 15,
+                                color: textSecondary(context))),
                         if (isActive) ...[
                           const SizedBox(width: 8),
                           Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 6,
-                              vertical: 2,
-                            ),
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                             decoration: BoxDecoration(
-                              color: const Color(0xFF6C5CE7).withOpacity(0.2),
+                              color: accentColor(context).withOpacity(0.2),
                               borderRadius: BorderRadius.circular(6),
                             ),
-                            child: const Text(
-                              'ACTIVE',
-                              style: TextStyle(
-                                fontSize: 9,
-                                fontWeight: FontWeight.bold,
-                                color: Color(0xFF6C5CE7),
-                              ),
-                            ),
+                            child: Text('ACTIVE',
+                                style: TextStyle(
+                                    fontSize: 9,
+                                    fontWeight: FontWeight.bold,
+                                    color: accentColor(context))),
                           ),
                         ],
                       ],
                     ),
                     const SizedBox(height: 4),
-                    Text(
-                      server.fullAddress,
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: Colors.grey.shade500,
-                      ),
-                    ),
+                    Text(server.fullAddress,
+                        style: TextStyle(fontSize: 12, color: textMuted(context))),
                     if (server.coverEnabled)
-                      const Padding(
-                        padding: EdgeInsets.only(top: 4),
-                        child: Row(
-                          children: [
-                            Text('🎭', style: TextStyle(fontSize: 12)),
-                            SizedBox(width: 4),
-                            Text(
-                              'Cover traffic enabled',
-                              style: TextStyle(
-                                fontSize: 11,
-                                color: Colors.grey,
-                              ),
-                            ),
-                          ],
-                        ),
+                      Padding(
+                        padding: const EdgeInsets.only(top: 4),
+                        child: Row(children: [
+                          const Text('🎭', style: TextStyle(fontSize: 12)),
+                          const SizedBox(width: 4),
+                          Text('Cover traffic enabled',
+                              style: TextStyle(fontSize: 11, color: textMuted(context))),
+                        ]),
                       ),
                   ],
                 ),
@@ -117,14 +95,11 @@ class ServerCard extends StatelessWidget {
               Column(
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
-                  Text(
-                    server.pingText,
-                    style: TextStyle(
-                      fontWeight: FontWeight.bold,
-                      color: _statusColor,
-                      fontSize: 14,
-                    ),
-                  ),
+                  Text(server.pingText,
+                      style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          color: _statusColor,
+                          fontSize: 14)),
                 ],
               ),
             ],
