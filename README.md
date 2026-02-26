@@ -925,7 +925,7 @@ Configs can also be shared as JSON and imported via clipboard.
 | Multiplexing | Yes | No | No | No | Yes |
 | 0-RTT | No | No | No | Yes | Yes (Zhip/QUIC) |
 | Mobile App | Third-party | Third-party | Third-party | Official | Built-in (Flutter) |
-| Dependencies | Many | Few | Few | Kernel module | 2 (x/crypto, quic-go) |
+| Dependencies | Many | Few | Few | Kernel module | 3 (x/crypto, quic-go, tun2socks) |
 | Maturity | 5+ years | 8+ years | 3+ years | 5+ years | New |
 
 ## Deployment
