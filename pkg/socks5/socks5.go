@@ -10,7 +10,6 @@ import (
 
 const handshakeTimeout = 30 * time.Second
 
-// ✅ L12: max nmethods — جلوگیری از وسواسی بودن
 const maxNMethods = 255
 
 func Handshake(conn net.Conn) (string, error) {
@@ -27,7 +26,6 @@ func Handshake(conn net.Conn) (string, error) {
 	}
 
 	nMethods := buf[1]
-	// ✅ L12: nmethods=0 → error
 	if nMethods == 0 {
 		return "", fmt.Errorf("socks5: no authentication methods offered")
 	}
@@ -37,7 +35,6 @@ func Handshake(conn net.Conn) (string, error) {
 		return "", fmt.Errorf("socks5: read methods: %w", err)
 	}
 
-	// ✅ L12: verify "no auth" (0x00) is offered
 	hasNoAuth := false
 	for _, m := range methods {
 		if m == 0x00 {
@@ -46,7 +43,6 @@ func Handshake(conn net.Conn) (string, error) {
 		}
 	}
 	if !hasNoAuth {
-		// Send "no acceptable methods" and fail
 		conn.Write([]byte{0x05, 0xFF})
 		return "", fmt.Errorf("socks5: no acceptable auth method (need 0x00)")
 	}
