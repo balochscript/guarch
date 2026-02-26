@@ -32,13 +32,10 @@ func NewAEADCipher(key []byte) (*AEADCipher, error) {
 	return &AEADCipher{aead: aead}, nil
 }
 
-// Seal — رمزنگاری بدون AAD (سازگار با کد قبلی — grouk و غیره)
 func (c *AEADCipher) Seal(plaintext []byte) ([]byte, error) {
 	return c.SealWithAAD(plaintext, nil)
 }
 
-// ✅ M9: SealWithAAD — رمزنگاری با Additional Authenticated Data
-// AAD رمزنگاری نمیشه ولی integrity اش تضمین میشه
 func (c *AEADCipher) SealWithAAD(plaintext, aad []byte) ([]byte, error) {
 	nonce := make([]byte, NonceSize)
 	if _, err := rand.Read(nonce); err != nil {
@@ -54,13 +51,10 @@ func (c *AEADCipher) SealWithAAD(plaintext, aad []byte) ([]byte, error) {
 	return result, nil
 }
 
-// Open — رمزگشایی بدون AAD (سازگار با کد قبلی)
 func (c *AEADCipher) Open(encrypted []byte) ([]byte, error) {
 	return c.OpenWithAAD(encrypted, nil)
 }
 
-// ✅ M9: OpenWithAAD — رمزگشایی با بررسی AAD
-// اگه AAD روی sender و receiver یکی نباشه → decrypt failed
 func (c *AEADCipher) OpenWithAAD(encrypted, aad []byte) ([]byte, error) {
 	if len(encrypted) < NonceSize+TagSize {
 		return nil, fmt.Errorf("guarch/crypto: data too short: %d bytes", len(encrypted))
