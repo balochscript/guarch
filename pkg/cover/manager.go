@@ -102,8 +102,6 @@ func (m *Manager) Start(ctx context.Context) {
 	}
 }
 
-// ✅ M15: time.NewTimer بجای time.After — جلوگیری از timer leak
-// ✅ M16: random initial delay — desync workers
 func (m *Manager) domainWorker(ctx context.Context, dc DomainConfig, index int) {
 	defer m.wg.Done()
 	defer func() {
@@ -112,7 +110,6 @@ func (m *Manager) domainWorker(ctx context.Context, dc DomainConfig, index int) 
 		m.mu.Unlock()
 	}()
 
-	// ✅ M16: random initial delay — همه worker ها همزمان شروع نکنن
 	initDelay := cryptoRandDuration(0, 5*time.Second)
 	initTimer := time.NewTimer(initDelay)
 	select {
@@ -135,7 +132,6 @@ func (m *Manager) domainWorker(ctx context.Context, dc DomainConfig, index int) 
 		if m.adaptive != nil {
 			activeDomains := m.adaptive.GetActiveDomains()
 			if index >= activeDomains {
-				// ✅ M15: NewTimer + Stop
 				waitTimer := time.NewTimer(5 * time.Second)
 				select {
 				case <-ctx.Done():
@@ -147,7 +143,6 @@ func (m *Manager) domainWorker(ctx context.Context, dc DomainConfig, index int) 
 			}
 		}
 
-		// 5% skip — شبیه بستن تب مرورگر
 		if cryptoRandIntn(100) < 5 {
 			skipTimer := time.NewTimer(cryptoRandDuration(2*time.Second, 10*time.Second))
 			select {
@@ -163,7 +158,6 @@ func (m *Manager) domainWorker(ctx context.Context, dc DomainConfig, index int) 
 
 		interval := m.coverInterval(dc)
 
-		// ✅ M15: NewTimer بجای time.After
 		intervalTimer := time.NewTimer(interval)
 		select {
 		case <-ctx.Done():
@@ -174,7 +168,6 @@ func (m *Manager) domainWorker(ctx context.Context, dc DomainConfig, index int) 
 	}
 }
 
-// heavy-tailed distribution — شبیه رفتار واقعی مرورگر
 func (m *Manager) coverInterval(dc DomainConfig) time.Duration {
 	var min, max time.Duration
 	if m.adaptive != nil {
