@@ -73,7 +73,6 @@ func NewPool(serverAddr string, maxSize int, hsCfg *HandshakeConfig, certPin []b
 	return p
 }
 
-// ✅ M2: Get با context — قابل cancel
 func (p *Pool) Get(ctx context.Context) (*SecureConn, error) {
 	p.mu.Lock()
 
@@ -109,12 +108,10 @@ func (p *Pool) Put(sc *SecureConn) {
 	})
 }
 
-// ✅ M2: createConn با context — cancel در هر مرحله
 func (p *Pool) createConn(ctx context.Context) (*SecureConn, error) {
 	var lastErr error
 
 	for i := 0; i < p.maxRetry; i++ {
-		// ✅ M2: context cancellation check
 		select {
 		case <-ctx.Done():
 			return nil, ctx.Err()
@@ -134,7 +131,6 @@ func (p *Pool) createConn(ctx context.Context) (*SecureConn, error) {
 			}
 		}
 
-		// ✅ M2: dial with context
 		dialer := &net.Dialer{Timeout: 10 * time.Second}
 		rawConn, err := dialer.DialContext(ctx, "tcp", p.serverAddr)
 		if err != nil {
