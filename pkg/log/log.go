@@ -41,22 +41,22 @@ func init() {
 	level.Store(int32(LevelInfo))
 }
 
-// SetOutput — تنظیم خروجی لاگ
+// SetOutput
 func SetOutput(w io.Writer) {
 	logger.SetOutput(w)
 }
 
-// SetLevel — حداقل سطح لاگ
+// SetLevel
 func SetLevel(l Level) {
 	level.Store(int32(l))
 }
 
-// GetLevel — سطح فعلی
+// GetLevel
 func GetLevel() Level {
 	return Level(level.Load())
 }
 
-// Silence — خاموش کردن همه لاگ‌ها
+// Silence
 func Silence() {
 	level.Store(int32(LevelNone))
 }
@@ -70,17 +70,17 @@ func logf(l Level, format string, v ...any) {
 	logger.Output(3, tag+" "+msg)
 }
 
-// Debugf — لاگ debug (مخفی در حالت عادی)
+// Debugf
 func Debugf(format string, v ...any) { logf(LevelDebug, format, v...) }
 
-// Infof — لاگ اطلاعاتی
+// Infof
 func Infof(format string, v ...any) { logf(LevelInfo, format, v...) }
 
-// Warnf — هشدار
+// Warnf
 func Warnf(format string, v ...any) { logf(LevelWarn, format, v...) }
 
-// Errorf — خطا
+// Errorf
 func Errorf(format string, v ...any) { logf(LevelError, format, v...) }
 
-// Printf — سازگار با log.Printf (سطح Info)
+// Printf
 func Printf(format string, v ...any) { logf(LevelInfo, format, v...) }
