@@ -8,7 +8,7 @@ class ServerConfig {
   String psk;
   String? certPin;
   int listenPort;
-  String protocol; // ✅ جدید
+  String protocol;
   bool coverEnabled;
   List<CoverDomain> coverDomains;
   String shapingPattern;
@@ -25,7 +25,7 @@ class ServerConfig {
     this.psk = '',
     this.certPin,
     this.listenPort = 1080,
-    this.protocol = 'guarch', // ✅
+    this.protocol = 'guarch', 
     this.coverEnabled = true,
     List<CoverDomain>? coverDomains,
     this.shapingPattern = 'web_browsing',
@@ -52,7 +52,6 @@ class ServerConfig {
     return '🟠';
   }
 
-  // ✅ جدید
   String get protocolEmoji {
     switch (protocol) {
       case 'grouk': return '🌩️';
@@ -61,7 +60,6 @@ class ServerConfig {
     }
   }
 
-  // ✅ جدید
   String get protocolLabel {
     switch (protocol) {
       case 'grouk': return 'Grouk (UDP)';
@@ -74,7 +72,7 @@ class ServerConfig {
       address.isNotEmpty &&
       port > 0 &&
       psk.isNotEmpty &&
-      ['guarch', 'grouk', 'zhip'].contains(protocol); // ✅
+      ['guarch', 'grouk', 'zhip'].contains(protocol); 
 
   Map<String, dynamic> toJson() {
     return {
@@ -85,7 +83,7 @@ class ServerConfig {
       'psk': psk,
       'cert_pin': certPin,
       'listen_port': listenPort,
-      'protocol': protocol, // ✅
+      'protocol': protocol, 
       'cover_enabled': coverEnabled,
       'cover_domains': coverDomains.map((d) => d.toJson()).toList(),
       'shaping_pattern': shapingPattern,
@@ -104,7 +102,7 @@ class ServerConfig {
       psk: json['psk'] ?? '',
       certPin: json['cert_pin'] ?? json['pin'],
       listenPort: json['listen_port'] ?? 1080,
-      protocol: json['protocol'] ?? 'guarch', // ✅
+      protocol: json['protocol'] ?? 'guarch', 
       coverEnabled: json['cover_enabled'] ?? json['cover']?['enabled'] ?? true,
       coverDomains: json['cover_domains'] != null
           ? (json['cover_domains'] as List)
@@ -120,7 +118,6 @@ class ServerConfig {
     );
   }
 
-  // ✅ آپدیت: URI مخصوص هر پروتکل
   String toShareString() {
     final data = {
       'name': name,
@@ -137,7 +134,6 @@ class ServerConfig {
     return '$protocol://$encoded';
   }
 
-  // ✅ آپدیت: تشخیص پروتکل از URI
   factory ServerConfig.fromShareString(String shareStr) {
     String data = shareStr;
     String detectedProtocol = 'guarch';
@@ -164,7 +160,7 @@ class ServerConfig {
     String? psk,
     String? certPin,
     int? listenPort,
-    String? protocol, // ✅
+    String? protocol, 
     bool? coverEnabled,
     List<CoverDomain>? coverDomains,
     bool? isActive,
@@ -178,7 +174,7 @@ class ServerConfig {
       psk: psk ?? this.psk,
       certPin: certPin ?? this.certPin,
       listenPort: listenPort ?? this.listenPort,
-      protocol: protocol ?? this.protocol, // ✅
+      protocol: protocol ?? this.protocol, 
       coverEnabled: coverEnabled ?? this.coverEnabled,
       coverDomains: coverDomains ?? this.coverDomains,
       shapingPattern: shapingPattern,
