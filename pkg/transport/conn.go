@@ -23,7 +23,6 @@ const (
 	keyRotationByteThreshold uint64 = 64 << 30
 )
 
-// ✅ L1: sync.Pool — جلوگیری از allocation هر send/recv
 var (
 	lenBufPool = &sync.Pool{
 		New: func() any {
@@ -219,7 +218,6 @@ func (sc *SecureConn) checkRecvKeyUsage(dataLen int) error {
 	return nil
 }
 
-// ✅ L1: sendRaw با sync.Pool — حذف allocation 4-byte buffer هر بار
 func (sc *SecureConn) sendRaw(pkt *protocol.Packet) error {
 	data, err := pkt.Marshal()
 	if err != nil {
@@ -236,7 +234,6 @@ func (sc *SecureConn) sendRaw(pkt *protocol.Packet) error {
 
 	expectedLen := uint32(crypto.EncryptOverhead + len(data))
 
-	// ✅ L1: pool بجای make
 	lenBuf := getLenBuf()
 	binary.BigEndian.PutUint32(lenBuf, expectedLen)
 
@@ -250,7 +247,7 @@ func (sc *SecureConn) sendRaw(pkt *protocol.Packet) error {
 		putLenBuf(lenBuf)
 		return err
 	}
-	putLenBuf(lenBuf) // ✅ L1: برگردون به pool
+	putLenBuf(lenBuf)
 
 	_, err = sc.raw.Write(encrypted)
 	return err
@@ -274,12 +271,10 @@ func (sc *SecureConn) Send(data []byte) error {
 	return sc.sendRaw(pkt)
 }
 
-// ✅ L1: RecvPacket با sync.Pool
 func (sc *SecureConn) RecvPacket() (*protocol.Packet, error) {
 	sc.recvMu.Lock()
 	defer sc.recvMu.Unlock()
 
-	// ✅ L1: pool بجای make
 	lenBuf := getLenBuf()
 	if _, err := io.ReadFull(sc.raw, lenBuf); err != nil {
 		putLenBuf(lenBuf)
@@ -303,9 +298,8 @@ func (sc *SecureConn) RecvPacket() (*protocol.Packet, error) {
 		return nil, err
 	}
 
-	// lenBuf همون AAD هست
 	data, err := sc.recvCipher.OpenWithAAD(encrypted, lenBuf)
-	putLenBuf(lenBuf) // ✅ L1: برگردون بعد از استفاده
+	putLenBuf(lenBuf)
 	if err != nil {
 		return nil, err
 	}
@@ -356,7 +350,5 @@ func (sc *SecureConn) KeyUsageStats() (sendMsgs, recvMsgs, sendBytes, recvBytes 
 }
 
 func init() {
-	// ✅ L4: library log level
-	// cmd/ files can call glog.SetLevel(glog.LevelDebug) for verbose
 	_ = glog.LevelInfo
 }
