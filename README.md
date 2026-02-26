@@ -109,15 +109,17 @@ Guarch Protocol:
 - 🌩️ **AIMD Congestion Control** — Additive Increase Multiplicative Decrease window management (Grouk protocol)
 - 📡 **FEC Ready** — XOR-based Forward Error Correction module (not yet integrated in pipeline)
 
-### Android App
+### Mobile App (Android & iOS)
 - 📱 **Flutter UI** — Modern Material 3 design with dark/light themes
+- 🍎 **Cross-Platform** — Android released, iOS coming soon
 - 🔌 **Multi-Protocol** — Switch between Guarch, Grouk, and Zhip from the app
+- 🌐 **System-wide VPN** — Routes ALL device traffic through tunnel via VpnService (Android) / NEPacketTunnelProvider (iOS)
 - 🎯 **Real Ping** — TCP socket-based server latency testing
 - 📋 **Import/Export** — Share configs via `guarch://`, `grouk://`, `zhip://` URI scheme or JSON
 - 🎭 **Cover Config** — Per-server customizable cover traffic domains
 - 📊 **Live Stats** — Real-time upload/download speed and traffic counters
 - 📝 **Connection Logs** — Timestamped log viewer with auto-scroll
-- 🔔 **Background Service** — Android foreground service for persistent connections
+- 🔔 **Background Service** — Persistent VPN connections
 
 ## Quick Start
 
@@ -989,13 +991,14 @@ Contributions are welcome! Areas that need work:
 - [ ] UDP ASSOCIATE support (SOCKS5 UDP)
 - [ ] SOCKS5 username/password authentication
 - [ ] Additional traffic patterns (video streaming, file download)
-- [ ] iOS support (Flutter + gomobile)
+- [ ] iOS release (Flutter + gomobile — planned)
 - [ ] Performance benchmarks
 - [ ] Integration tests
 - [ ] Web-based admin panel
 - [ ] In-app key rotation
-- [ ] WireGuard-compatible TUN mode
 - [ ] Plugin system for custom cover traffic generators
+- [ ] Split tunneling (per-app VPN routing)
+- [ ] IPv6 TUN routing support
 
 Please open an issue or submit a pull request.
 
