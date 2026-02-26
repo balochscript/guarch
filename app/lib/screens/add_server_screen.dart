@@ -21,7 +21,7 @@ class _AddServerScreenState extends State<AddServerScreen> {
   late TextEditingController _pinController;
   late TextEditingController _listenPortController;
   final _domainController = TextEditingController();
-  late String _protocol; 
+  late String _protocol;
   bool _coverEnabled = true;
   bool _pskVisible = false;
   late List<CoverDomain> _coverDomains;
@@ -30,12 +30,9 @@ class _AddServerScreenState extends State<AddServerScreen> {
 
   String get _protocolDescription {
     switch (_protocol) {
-      case 'grouk':
-        return '🌩️ Fast raw UDP tunnel. Best for speed, less stealth.';
-      case 'zhip':
-        return '⚡ QUIC-based tunnel. Good balance of speed and stealth.';
-      default:
-        return '🏹 TLS 1.3 encrypted with cover traffic. Maximum stealth.';
+      case 'grouk': return '🌩️ Fast raw UDP tunnel. Best for speed, less stealth.';
+      case 'zhip': return '⚡ QUIC-based tunnel. Good balance of speed and stealth.';
+      default: return '🏹 TLS 1.3 encrypted with cover traffic. Maximum stealth.';
     }
   }
 
@@ -74,11 +71,10 @@ class _AddServerScreenState extends State<AddServerScreen> {
         child: ListView(
           padding: const EdgeInsets.all(24),
           children: [
-            // ═══ Server Information ═══
-            const Row(children: [
-              Text('🎯', style: TextStyle(fontSize: 24)),
-              SizedBox(width: 8),
-              Text('Server Information', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600, color: kGold)),
+            Row(children: [
+              const Text('🎯', style: TextStyle(fontSize: 24)),
+              const SizedBox(width: 8),
+              Text('Server Information', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600, color: textPrimary(context))),
             ]),
             const SizedBox(height: 20),
             TextFormField(
@@ -89,7 +85,7 @@ class _AddServerScreenState extends State<AddServerScreen> {
             const SizedBox(height: 16),
             TextFormField(
               controller: _addressController,
-              decoration: const InputDecoration(labelText: 'Server Address', hintText: 'IP or domain (e.g. 1.2.3.4)', prefixIcon: Icon(Icons.dns_outlined)),
+              decoration: const InputDecoration(labelText: 'Server Address', hintText: 'IP or domain', prefixIcon: Icon(Icons.dns_outlined)),
               keyboardType: TextInputType.url,
               validator: (v) => v == null || v.isEmpty ? 'Address required' : null,
             ),
@@ -101,12 +97,10 @@ class _AddServerScreenState extends State<AddServerScreen> {
               validator: (v) {
                 if (v == null || v.isEmpty) return 'Port required';
                 final port = int.tryParse(v);
-                if (port == null || port < 1 || port > 65535) return 'Invalid port (1-65535)';
+                if (port == null || port < 1 || port > 65535) return 'Invalid port';
                 return null;
               },
             ),
-
-            // ✅ ═══ Protocol Selection ═══
             const SizedBox(height: 16),
             DropdownButtonFormField<String>(
               value: _protocol,
@@ -121,18 +115,17 @@ class _AddServerScreenState extends State<AddServerScreen> {
             const SizedBox(height: 4),
             Padding(
               padding: const EdgeInsets.only(left: 12),
-              child: Text(_protocolDescription, style: TextStyle(color: kGold.withOpacity(0.5), fontSize: 12)),
+              child: Text(_protocolDescription, style: TextStyle(color: textMuted(context), fontSize: 12)),
             ),
 
-            // ═══ Security ═══
             const SizedBox(height: 32),
-            const Row(children: [
-              Text('🔐', style: TextStyle(fontSize: 24)),
-              SizedBox(width: 8),
-              Text('Security', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600, color: kGold)),
+            Row(children: [
+              const Text('🔐', style: TextStyle(fontSize: 24)),
+              const SizedBox(width: 8),
+              Text('Security', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600, color: textPrimary(context))),
             ]),
             const SizedBox(height: 4),
-            Text('PSK is required for secure connection', style: TextStyle(color: kGold.withOpacity(0.5), fontSize: 13)),
+            Text('PSK is required for secure connection', style: TextStyle(color: textMuted(context), fontSize: 13)),
             const SizedBox(height: 16),
             TextFormField(
               controller: _pskController,
@@ -142,7 +135,7 @@ class _AddServerScreenState extends State<AddServerScreen> {
                 hintText: 'Must match server PSK',
                 prefixIcon: const Icon(Icons.key),
                 suffixIcon: IconButton(
-                  icon: Icon(_pskVisible ? Icons.visibility_off : Icons.visibility, color: kGold.withOpacity(0.5)),
+                  icon: Icon(_pskVisible ? Icons.visibility_off : Icons.visibility, color: textMuted(context)),
                   onPressed: () => setState(() => _pskVisible = !_pskVisible),
                 ),
               ),
@@ -160,16 +153,15 @@ class _AddServerScreenState extends State<AddServerScreen> {
                 hintText: 'SHA-256 hash from server output',
                 prefixIcon: const Icon(Icons.verified_user_outlined),
                 helperText: 'Protects against man-in-the-middle attacks',
-                helperStyle: TextStyle(color: kGold.withOpacity(0.4), fontSize: 11),
+                helperStyle: TextStyle(color: textMuted(context), fontSize: 11),
               ),
               style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
             ),
 
-            // ═══ Advanced ═══
             const SizedBox(height: 32),
             ExpansionTile(
-              leading: Icon(Icons.tune, color: kGold.withOpacity(0.7)),
-              title: Text('Advanced Settings', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: kGold.withOpacity(0.7))),
+              leading: Icon(Icons.tune, color: textMuted(context)),
+              title: Text('Advanced Settings', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: textMuted(context))),
               children: [
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -177,28 +169,21 @@ class _AddServerScreenState extends State<AddServerScreen> {
                     controller: _listenPortController,
                     decoration: const InputDecoration(labelText: 'Local SOCKS5 Port', hintText: '1080', prefixIcon: Icon(Icons.settings_ethernet)),
                     keyboardType: TextInputType.number,
-                    validator: (v) {
-                      if (v == null || v.isEmpty) return null;
-                      final port = int.tryParse(v);
-                      if (port == null || port < 1 || port > 65535) return 'Invalid port';
-                      return null;
-                    },
                   ),
                 ),
                 const SizedBox(height: 16),
               ],
             ),
 
-            // ═══ Cover Traffic ═══
             const SizedBox(height: 24),
             Row(children: [
               const Text('🎭', style: TextStyle(fontSize: 24)),
               const SizedBox(width: 8),
-              const Expanded(child: Text('Cover Traffic', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600, color: kGold))),
+              Expanded(child: Text('Cover Traffic', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600, color: textPrimary(context)))),
               Switch(value: _coverEnabled, onChanged: (v) => setState(() => _coverEnabled = v)),
             ]),
             const SizedBox(height: 4),
-            Text('Send real requests to popular sites to hide your traffic', style: TextStyle(color: kGold.withOpacity(0.5), fontSize: 13)),
+            Text('Send real requests to popular sites to hide your traffic', style: TextStyle(color: textMuted(context), fontSize: 13)),
 
             if (_coverEnabled) ...[
               const SizedBox(height: 16),
@@ -206,9 +191,9 @@ class _AddServerScreenState extends State<AddServerScreen> {
                 child: Padding(
                   padding: const EdgeInsets.all(16),
                   child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    const Text('Cover Domains', style: TextStyle(fontWeight: FontWeight.w600, color: kGoldLight)),
+                    Text('Cover Domains', style: TextStyle(fontWeight: FontWeight.w600, color: textSecondary(context))),
                     const SizedBox(height: 4),
-                    Text('Add websites you normally visit', style: TextStyle(color: kGold.withOpacity(0.4), fontSize: 12)),
+                    Text('Add websites you normally visit', style: TextStyle(color: textMuted(context), fontSize: 12)),
                     const SizedBox(height: 16),
                     Row(children: [
                       Expanded(
@@ -231,9 +216,9 @@ class _AddServerScreenState extends State<AddServerScreen> {
                       _quickAddChip('apple.com'), _quickAddChip('netflix.com'),
                     ]),
                     const SizedBox(height: 16),
-                    Divider(color: kGold.withOpacity(0.1)),
+                    Divider(color: accentColor(context).withOpacity(0.1)),
                     const SizedBox(height: 8),
-                    Text('Active Cover Domains:', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13, color: kGoldLight)),
+                    Text('Active Cover Domains:', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13, color: textSecondary(context))),
                     const SizedBox(height: 8),
                     ..._coverDomains.asMap().entries.map((entry) {
                       final index = entry.key;
@@ -243,8 +228,8 @@ class _AddServerScreenState extends State<AddServerScreen> {
                         child: Row(children: [
                           const Icon(Icons.check_circle, size: 16, color: Colors.green),
                           const SizedBox(width: 8),
-                          Expanded(child: Text(domain.domain, style: const TextStyle(fontSize: 14, color: kGoldLight))),
-                          Text('${domain.weight}%', style: TextStyle(color: kGold.withOpacity(0.4), fontSize: 12)),
+                          Expanded(child: Text(domain.domain, style: TextStyle(fontSize: 14, color: textSecondary(context)))),
+                          Text('${domain.weight}%', style: TextStyle(color: textMuted(context), fontSize: 12)),
                           const SizedBox(width: 4),
                           InkWell(
                             onTap: () => setState(() { _coverDomains.removeAt(index); _recalculateWeights(); }),
@@ -260,7 +245,6 @@ class _AddServerScreenState extends State<AddServerScreen> {
               ),
             ],
 
-            // ═══ Save ═══
             const SizedBox(height: 32),
             FilledButton(
               onPressed: _save,
@@ -277,7 +261,7 @@ class _AddServerScreenState extends State<AddServerScreen> {
   Widget _quickAddChip(String domain) {
     final exists = _coverDomains.any((d) => d.domain == domain || d.domain == 'www.$domain');
     return ActionChip(
-      avatar: Icon(exists ? Icons.check : Icons.add, size: 16, color: exists ? Colors.green : kGold),
+      avatar: Icon(exists ? Icons.check : Icons.add, size: 16, color: exists ? Colors.green : accentColor(context)),
       label: Text(domain, style: const TextStyle(fontSize: 12)),
       onPressed: exists ? null : () => setState(() { _coverDomains.add(CoverDomain(domain: domain)); _recalculateWeights(); }),
     );
@@ -318,28 +302,18 @@ class _AddServerScreenState extends State<AddServerScreen> {
 
     if (isEditing) {
       provider.updateServer(widget.server!.copyWith(
-        name: _nameController.text.trim(),
-        address: _addressController.text.trim(),
-        port: int.parse(_portController.text.trim()),
-        psk: psk,
-        certPin: pin.isEmpty ? null : pin,
-        listenPort: listenPort,
-        protocol: _protocol, // ✅
-        coverEnabled: _coverEnabled,
-        coverDomains: List.from(_coverDomains),
+        name: _nameController.text.trim(), address: _addressController.text.trim(),
+        port: int.parse(_portController.text.trim()), psk: psk,
+        certPin: pin.isEmpty ? null : pin, listenPort: listenPort,
+        protocol: _protocol, coverEnabled: _coverEnabled, coverDomains: List.from(_coverDomains),
       ));
     } else {
       final server = ServerConfig(
         id: DateTime.now().millisecondsSinceEpoch.toString(),
-        name: _nameController.text.trim(),
-        address: _addressController.text.trim(),
-        port: int.parse(_portController.text.trim()),
-        psk: psk,
-        certPin: pin.isEmpty ? null : pin,
-        listenPort: listenPort,
-        protocol: _protocol, // ✅
-        coverEnabled: _coverEnabled,
-        coverDomains: List.from(_coverDomains),
+        name: _nameController.text.trim(), address: _addressController.text.trim(),
+        port: int.parse(_portController.text.trim()), psk: psk,
+        certPin: pin.isEmpty ? null : pin, listenPort: listenPort,
+        protocol: _protocol, coverEnabled: _coverEnabled, coverDomains: List.from(_coverDomains),
       );
       provider.addServer(server);
       provider.setActiveServer(server.id);
