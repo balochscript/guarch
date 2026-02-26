@@ -5,7 +5,6 @@ import (
 )
 
 func TestPoolCreate(t *testing.T) {
-	// ✅ فیکس: آرگومان چهارم nil (PSK) اضافه شد
 	pool := NewPool("127.0.0.1:9999", 5, nil, nil)
 
 	if pool.Size() != 0 {
@@ -18,7 +17,6 @@ func TestPoolCreate(t *testing.T) {
 }
 
 func TestPoolSize(t *testing.T) {
-	// ✅ فیکس: آرگومان چهارم nil (PSK) اضافه شد
 	pool := NewPool("127.0.0.1:9999", 3, nil, nil)
 
 	if pool.maxSize != 3 {
