@@ -1,47 +1,51 @@
 {
   "listen": "127.0.0.1:1080",
   "server": "YOUR_SERVER_IP:8443",
+  "psk": "YOUR_HEX_ENCODED_PSK_MIN_32_CHARS",
+  "cert_pin": "YOUR_SERVER_CERTIFICATE_SHA256_PIN_64_HEX_CHARS",
+  "protocol": "guarch",
+  "mode": "balanced",
   "cover": {
     "enabled": true,
     "domains": [
       {
         "domain": "www.google.com",
-        "paths": ["/", "/search?q=weather", "/search?q=news"],
+        "paths": ["/", "/search?q=weather", "/search?q=news", "/search?q=translate", "/maps"],
         "weight": 30,
         "min_interval": "2s",
         "max_interval": "8s"
       },
       {
         "domain": "www.microsoft.com",
-        "paths": ["/", "/en-us"],
+        "paths": ["/", "/en-us", "/en-us/windows", "/en-us/microsoft-365"],
         "weight": 20,
         "min_interval": "3s",
         "max_interval": "10s"
       },
       {
         "domain": "github.com",
-        "paths": ["/", "/explore", "/trending"],
+        "paths": ["/", "/explore", "/trending", "/topics"],
         "weight": 15,
         "min_interval": "4s",
         "max_interval": "12s"
       },
       {
         "domain": "stackoverflow.com",
-        "paths": ["/", "/questions"],
+        "paths": ["/", "/questions", "/questions/tagged/go", "/questions/tagged/javascript"],
         "weight": 15,
         "min_interval": "3s",
         "max_interval": "10s"
       },
       {
-        "domain": "www.wikipedia.org",
-        "paths": ["/"],
+        "domain": "www.cloudflare.com",
+        "paths": ["/", "/learning", "/products/cdn"],
         "weight": 10,
         "min_interval": "5s",
         "max_interval": "15s"
       },
       {
-        "domain": "www.amazon.com",
-        "paths": ["/", "/s?k=books"],
+        "domain": "learn.microsoft.com",
+        "paths": ["/", "/en-us/docs", "/en-us/training"],
         "weight": 10,
         "min_interval": "4s",
         "max_interval": "12s"
