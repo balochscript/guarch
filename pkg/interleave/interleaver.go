@@ -12,7 +12,6 @@ import (
 )
 
 const (
-	// ✅ M20: حداقل delay برای idleLoop — جلوگیری از busy-loop
 	minIdleDelay = 100 * time.Millisecond
 )
 
@@ -36,7 +35,6 @@ func New(sc *transport.SecureConn, coverMgr *cover.Manager) *Interleaver {
 		shaper:   shaper,
 		sendCh:   make(chan []byte, 128),
 	}
-	// ✅ Start seq after handshake auth to avoid replay detection
 	il.seq.Store(sc.SendSeqNum())
 	return il
 }
@@ -88,9 +86,6 @@ func (il *Interleaver) sendShaped(data []byte) {
 	}
 }
 
-// ✅ M20: idleLoop با حداقل delay تضمین‌شده
-// قبلاً: اگه IdleDelay()=0 برمیگردوند → busy-loop + CPU 100%
-// الان: حداقل 100ms delay
 func (il *Interleaver) idleLoop(ctx context.Context) {
 	for {
 		select {
@@ -101,7 +96,6 @@ func (il *Interleaver) idleLoop(ctx context.Context) {
 
 		if il.shaper != nil {
 			delay := il.shaper.IdleDelay()
-			// ✅ M20: حداقل delay
 			if delay < minIdleDelay {
 				delay = minIdleDelay
 			}
@@ -147,9 +141,6 @@ func (il *Interleaver) Send(data []byte) {
 	select {
 	case il.sendCh <- cp:
 	default:
-		// ✅ M18: fallback هم shaped بفرسته (نه direct)
-		// قبلاً: SendDirect → بدون padding/timing → fingerprint-able
-		// الان: sendShaped → padding + timing حفظ میشه
 		log.Printf("[interleave] send channel full, sending shaped directly")
 		il.sendShaped(cp)
 	}
@@ -178,14 +169,10 @@ func (il *Interleaver) Recv() ([]byte, error) {
 		case protocol.PacketTypePadding:
 			continue
 		case protocol.PacketTypePing:
-			// ✅ M24: Pong با SeqNum پینگ — نه seq جدید
-			// قبلاً: seq جدید → receiver نمیتونه match کنه
-			// الان: echo back → sender میتونه RTT حساب کنه
 			pong := protocol.NewPongPacket(pkt.SeqNum)
 			il.sc.SendPacket(pong)
 			continue
 		case protocol.PacketTypePong:
-			// ✅ M24: فعلاً log — بعداً میشه RTT tracking اضافه کرد
 			continue
 		case protocol.PacketTypeClose:
 			return nil, protocol.ErrConnectionClosed
