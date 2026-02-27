@@ -129,7 +129,7 @@ func (e *Engine) Disconnect() (result bool) {
 	defer e.mu.Unlock()
 	e.setStatus("disconnecting")
 
-	// ← StopTun حذف شد! tun2socks نباید Stop بشه
+	e.StopTun() // ← با gVisor این safe هست — stack.Close() درست کار میکنه
 
 	if e.cancel != nil {
 		e.cancel()
