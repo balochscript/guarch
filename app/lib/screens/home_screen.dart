@@ -6,9 +6,9 @@ import 'package:guarch/models/connection_state.dart';
 import 'package:guarch/screens/servers_screen.dart';
 import 'package:guarch/screens/settings_screen.dart';
 import 'package:guarch/screens/logs_screen.dart';
+import 'package:guarch/screens/log_viewer_screen.dart';
 import 'package:guarch/widgets/connection_button.dart';
 import 'package:guarch/widgets/stats_card.dart';
-import 'package:guarch/screens/log_viewer_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -96,49 +96,48 @@ class _HomeTab extends StatelessWidget {
     );
   }
 
-  // bbb
-Widget _buildHeader(BuildContext context) {
-  return Row(
-    children: [
-      Container(
-        padding: const EdgeInsets.all(10),
-        decoration: BoxDecoration(
-          color: accentColor(context).withOpacity(0.15),
-          borderRadius: BorderRadius.circular(12),
+  Widget _buildHeader(BuildContext context) {
+    return Row(
+      children: [
+        Container(
+          padding: const EdgeInsets.all(10),
+          decoration: BoxDecoration(
+            color: accentColor(context).withOpacity(0.15),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: const Text('🎯', style: TextStyle(fontSize: 24)),
         ),
-        child: const Text('🎯', style: TextStyle(fontSize: 24)),
-      ),
-      const SizedBox(width: 12),
-      Expanded(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('Guarch',
-              style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                fontWeight: FontWeight.bold,
-                color: textPrimary(context),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Guarch',
+                style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                  fontWeight: FontWeight.bold,
+                  color: textPrimary(context),
+                ),
               ),
-            ),
-            Text('Hidden like a Balochi hunter',
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                color: textMuted(context),
+              Text('Hidden like a Balochi hunter',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: textMuted(context),
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
-      ),
-      // ← دکمه لاگ اضافه شد
-      IconButton(
-        icon: const Icon(Icons.bug_report, color: Colors.orange),
-        onPressed: () => Navigator.push(
-          context,
-          MaterialPageRoute(builder: (_) => const LogViewerScreen()),
+        // ← دکمه Debug Log
+        IconButton(
+          icon: const Icon(Icons.bug_report, color: Colors.orange, size: 28),
+          onPressed: () => Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => const LogViewerScreen()),
+          ),
+          tooltip: 'Debug Logs',
         ),
-        tooltip: 'Debug Logs',
-      ),
-    ],
-  );
-}
+      ],
+    );
+  }
 
   Widget _buildServerInfo(BuildContext context, dynamic server) {
     if (server == null) {
@@ -171,7 +170,6 @@ Widget _buildHeader(BuildContext context) {
   Widget _buildStatusText(BuildContext context, VpnStatus status) {
     String text;
     Color color;
-
     switch (status) {
       case VpnStatus.disconnected:
         text = 'Tap to Guarch';
@@ -194,7 +192,6 @@ Widget _buildHeader(BuildContext context) {
         color = Colors.red;
         break;
     }
-
     return Text(text, style: TextStyle(color: color, fontSize: 16, fontWeight: FontWeight.w600));
   }
 
