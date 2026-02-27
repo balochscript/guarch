@@ -40,74 +40,102 @@ class AppProvider extends ChangeNotifier {
   }
 
   Future<void> init() async {
-    _prefs = await SharedPreferences.getInstance();
-    _isDarkMode = _prefs.getBool('dark_mode') ?? true;
-    _activeServerId = _prefs.getString('active_server');
-    _loadServers();
+    FlutterLog.d('Provider', '=== init START ===');
+    try {
+      _prefs = await SharedPreferences.getInstance();
+      _isDarkMode = _prefs.getBool('dark_mode') ?? true;
+      _activeServerId = _prefs.getString('active_server');
+      _loadServers();
+      FlutterLog.d('Provider', 'Prefs loaded. servers=${_servers.length} active=$_activeServerId');
+    } catch (e) {
+      FlutterLog.e('Provider', 'Prefs load FAILED', e);
+    }
 
-    await _engine.init();
+    try {
+      await _engine.init();
+      FlutterLog.d('Provider', 'Engine init done');
+    } catch (e) {
+      FlutterLog.e('Provider', 'Engine init FAILED', e);
+    }
 
-    _statusSub = _engine.statusStream.listen((status) {
-      switch (status) {
-        case 'connected':
-          _status = VpnStatus.connected;
-          _connectTime = DateTime.now();
-          _startStatsTimer();
-          break;
-        case 'connecting':
-          _status = VpnStatus.connecting;
-          break;
-        case 'disconnecting':
-          _status = VpnStatus.disconnecting;
-          break;
-        case 'disconnected':
-          _status = VpnStatus.disconnected;
-          _stopStatsTimer();
-          _connectTime = null;
-          _stats = const ConnectionStats();
-          break;
-        default:
-          _status = VpnStatus.disconnected;
-      }
-      notifyListeners();
-    });
+    try {
+      _statusSub = _engine.statusStream.listen((status) {
+        FlutterLog.d('Provider', 'Status event: $status');
+        switch (status) {
+          case 'connected':
+            _status = VpnStatus.connected;
+            _connectTime = DateTime.now();
+            _startStatsTimer();
+            break;
+          case 'connecting':
+            _status = VpnStatus.connecting;
+            break;
+          case 'disconnecting':
+            _status = VpnStatus.disconnecting;
+            break;
+          case 'disconnected':
+            _status = VpnStatus.disconnected;
+            _stopStatsTimer();
+            _connectTime = null;
+            _stats = const ConnectionStats();
+            break;
+          default:
+            _status = VpnStatus.disconnected;
+        }
+        notifyListeners();
+      });
 
-    _statsSub = _engine.statsStream.listen((data) {
-      _stats = _stats.copyWith(
-        uploadSpeed: data['upload_speed'] as int? ?? 0,    
-        downloadSpeed: data['download_speed'] as int? ?? 0,   
-        totalUpload: data['total_upload'] as int? ?? 0,
-        totalDownload: data['total_download'] as int? ?? 0,
-        coverRequests: data['cover_requests'] as int? ?? 0,
-        duration: Duration(seconds: data['duration_seconds'] as int? ?? 0),
-      );
-      notifyListeners();
-    });
+      _statsSub = _engine.statsStream.listen((data) {
+        _stats = _stats.copyWith(
+          uploadSpeed: data['upload_speed'] as int? ?? 0,
+          downloadSpeed: data['download_speed'] as int? ?? 0,
+          totalUpload: data['total_upload'] as int? ?? 0,
+          totalDownload: data['total_download'] as int? ?? 0,
+          coverRequests: data['cover_requests'] as int? ?? 0,
+          duration: Duration(seconds: data['duration_seconds'] as int? ?? 0),
+        );
+        notifyListeners();
+      });
 
-    _logSub = _engine.logStream.listen((msg) {
-      _addLog(msg);
-      notifyListeners();
-    });
+      _logSub = _engine.logStream.listen((msg) {
+        FlutterLog.d('EngineLog', msg);
+        _addLog(msg);
+        notifyListeners();
+      });
+      FlutterLog.d('Provider', 'Streams set up');
+    } catch (e) {
+      FlutterLog.e('Provider', 'Stream setup FAILED', e);
+    }
 
     if (_servers.isNotEmpty) {
       _addLog('Auto-pinging ${_servers.length} servers...');
       notifyListeners();
       pingAllServers();
     }
+
+    FlutterLog.d('Provider', '=== init DONE ===');
   }
 
   void _loadServers() {
-    final data = _prefs.getString('servers');
-    if (data != null) {
-      final list = jsonDecode(data) as List;
-      _servers = list.map((j) => ServerConfig.fromJson(j)).toList();
+    try {
+      final data = _prefs.getString('servers');
+      if (data != null) {
+        final list = jsonDecode(data) as List;
+        _servers = list.map((j) => ServerConfig.fromJson(j)).toList();
+      }
+    } catch (e) {
+      FlutterLog.e('Provider', 'loadServers FAILED', e);
     }
     notifyListeners();
   }
 
   Future<void> _saveServers() async {
-    final data = jsonEncode(_servers.map((s) => s.toJson()).toList());
-    await _prefs.setString('servers', data);
+    try {
+      final data = jsonEncode(_servers.map((s) => s.toJson()).toList());
+      await _prefs.setString('servers', data);
+    } catch (e) {
+      FlutterLog.e('Provider', 'saveServers FAILED', e);
+    }
   }
 
   void addServer(ServerConfig server) {
@@ -119,7 +147,6 @@ class AppProvider extends ChangeNotifier {
     }
     notifyListeners();
 
-    // پینگ خودکار
     pingServer(server).then((ping) {
       final index = _servers.indexWhere((s) => s.id == server.id);
       if (index >= 0) {
@@ -140,14 +167,18 @@ class AppProvider extends ChangeNotifier {
   }
 
   void removeServer(String id) {
-    final name = _servers.firstWhere((s) => s.id == id).name;
-    _servers.removeWhere((s) => s.id == id);
-    if (_activeServerId == id) {
-      _activeServerId = null;
-      _prefs.remove('active_server');
+    try {
+      final name = _servers.firstWhere((s) => s.id == id).name;
+      _servers.removeWhere((s) => s.id == id);
+      if (_activeServerId == id) {
+        _activeServerId = null;
+        _prefs.remove('active_server');
+      }
+      _saveServers();
+      _addLog('Server removed: $name');
+    } catch (e) {
+      FlutterLog.e('Provider', 'removeServer FAILED', e);
     }
-    _saveServers();
-    _addLog('Server removed: $name');
     notifyListeners();
   }
 
@@ -158,11 +189,27 @@ class AppProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-    Future<void> connect() async {
-    if (activeServer == null) return;
-    if (_status == VpnStatus.connecting || _status == VpnStatus.connected) return;
+  Future<void> connect() async {
+    FlutterLog.d('Provider', '=== connect() START ===');
+    FlutterLog.d('Provider', '  activeServer: ${activeServer?.name ?? "NULL"}');
+    FlutterLog.d('Provider', '  status: $_status');
 
-    if (activeServer!.psk.isEmpty) {
+    if (activeServer == null) {
+      FlutterLog.w('Provider', '  No active server!');
+      return;
+    }
+    if (_status == VpnStatus.connecting || _status == VpnStatus.connected) {
+      FlutterLog.w('Provider', '  Already ${_status.name}');
+      return;
+    }
+
+    final server = activeServer!;
+    FlutterLog.d('Provider', '  server: ${server.name} @ ${server.fullAddress}');
+    FlutterLog.d('Provider', '  protocol: ${server.protocol}');
+    FlutterLog.d('Provider', '  psk: ${server.psk.isNotEmpty ? "${server.psk.length} chars" : "EMPTY!"}');
+
+    if (server.psk.isEmpty) {
+      FlutterLog.e('Provider', '  PSK is empty!');
       _addLog('Error: PSK is required. Edit server settings.');
       _status = VpnStatus.error;
       notifyListeners();
@@ -173,43 +220,67 @@ class AppProvider extends ChangeNotifier {
     }
 
     _status = VpnStatus.connecting;
-    _addLog('Guarching to ${activeServer!.name}...');
-    if (activeServer!.coverEnabled) {
-      _addLog('Cover: ${activeServer!.coverDomains.map((d) => d.domain).join(", ")}');
+    _addLog('Guarching to ${server.name}...');
+    if (server.coverEnabled) {
+      _addLog('Cover: ${server.coverDomains.map((d) => d.domain).join(", ")}');
     }
     notifyListeners();
 
-    final success = await _engine.connect(
-  serverAddr: activeServer!.address,
-  serverPort: activeServer!.port,
-  psk: activeServer!.psk,
-  certPin: activeServer!.certPin,
-  listenPort: activeServer!.listenPort,
-  coverEnabled: activeServer!.coverEnabled,
-  protocol: activeServer!.protocol, 
-);
+    FlutterLog.d('Provider', '  Calling _engine.connect()...');
 
-    if (!success) {
-      _status = VpnStatus.error;
-      _addLog('Guarch failed!');
-      if (!_engine.isNativeAvailable) {         
-        _addLog('Native engine not built. See docs for gomobile setup.');
+    try {
+      final success = await _engine.connect(
+        serverAddr: server.address,
+        serverPort: server.port,
+        psk: server.psk,
+        certPin: server.certPin,
+        listenPort: server.listenPort,
+        coverEnabled: server.coverEnabled,
+        protocol: server.protocol,
+      );
+
+      FlutterLog.d('Provider', '  _engine.connect returned: $success');
+
+      if (!success) {
+        _status = VpnStatus.error;
+        _addLog('Guarch failed!');
+        if (!_engine.isNativeAvailable) {
+          _addLog('Native engine not built. See docs for gomobile setup.');
+        }
+        notifyListeners();
+        await Future.delayed(const Duration(seconds: 2));
+        _status = VpnStatus.disconnected;
+        notifyListeners();
       }
+    } catch (e) {
+      FlutterLog.e('Provider', '  connect() CRASHED', e);
+      _addLog('CRASH: $e');
+      _status = VpnStatus.error;
       notifyListeners();
       await Future.delayed(const Duration(seconds: 2));
       _status = VpnStatus.disconnected;
       notifyListeners();
     }
+
+    FlutterLog.d('Provider', '=== connect() END === status=$_status');
   }
 
   Future<void> disconnect() async {
-    if (_status != VpnStatus.connected) return;
+    FlutterLog.d('Provider', '=== disconnect() ===');
+    if (_status != VpnStatus.connected) {
+      FlutterLog.w('Provider', '  Not connected, skip');
+      return;
+    }
 
     _status = VpnStatus.disconnecting;
     _addLog('De-Guarching...');
     notifyListeners();
 
-    await _engine.disconnect();
+    try {
+      await _engine.disconnect();
+    } catch (e) {
+      FlutterLog.e('Provider', '  disconnect FAILED', e);
+    }
 
     _status = VpnStatus.disconnected;
     _stats = const ConnectionStats();
@@ -219,6 +290,7 @@ class AppProvider extends ChangeNotifier {
   }
 
   void toggleConnection() {
+    FlutterLog.d('Provider', '>>> toggleConnection (isConnected=$isConnected)');
     if (isConnected) {
       disconnect();
     } else {
@@ -229,9 +301,7 @@ class AppProvider extends ChangeNotifier {
   Future<int> pingServer(ServerConfig server) async {
     _addLog('Pinging ${server.name} (${server.fullAddress})...');
     notifyListeners();
-
     final ping = await _engine.ping(server.address, server.port);
-
     if (ping > 0) {
       _addLog('${server.name}: ${ping}ms ✅');
     } else {
@@ -244,7 +314,6 @@ class AppProvider extends ChangeNotifier {
   Future<void> pingAllServers() async {
     _addLog('Pinging ${_servers.length} servers...');
     notifyListeners();
-
     for (var i = 0; i < _servers.length; i++) {
       final ping = await pingServer(_servers[i]);
       _servers[i] = _servers[i].copyWith(ping: ping);
@@ -259,8 +328,8 @@ class AppProvider extends ChangeNotifier {
     try {
       ServerConfig server;
       if (data.startsWith('guarch://') ||
-        data.startsWith('grouk://') ||
-        data.startsWith('zhip://')) {
+          data.startsWith('grouk://') ||
+          data.startsWith('zhip://')) {
         server = ServerConfig.fromShareString(data);
       } else if (data.startsWith('{')) {
         final json = jsonDecode(data) as Map<String, dynamic>;
@@ -314,9 +383,7 @@ class AppProvider extends ChangeNotifier {
   void _addLog(String message) {
     final time = DateTime.now().toString().substring(11, 19);
     _logs.insert(0, '[$time] $message');
-    if (_logs.length > 200) {
-      _logs = _logs.sublist(0, 200);
-    }
+    if (_logs.length > 200) _logs = _logs.sublist(0, 200);
   }
 
   void clearLogs() {
