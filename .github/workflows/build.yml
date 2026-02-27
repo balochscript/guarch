@@ -1,9 +1,9 @@
-name: Build Guarch
+name: Build Guarch Debug
 
 on:
   push:
-    branches: [ debug ]       # ← فقط وقتی به debug پوش میکنی
-  workflow_dispatch:          # ← یا دستی از GitHub بزنی
+    branches: [ debug ]
+  workflow_dispatch:
 
 jobs:
   build-android:
@@ -42,19 +42,39 @@ jobs:
 
       - name: Install gomobile
         run: |
+          # ۱. اضافه کردن x/mobile به go.mod
+          go get golang.org/x/mobile@latest
+          go get golang.org/x/mobile/bind@latest
+          
+          # ۲. نصب ابزارها
           go install golang.org/x/mobile/cmd/gomobile@latest
           go install golang.org/x/mobile/cmd/gobind@latest
+          
           export PATH=$PATH:$(go env GOPATH)/bin
           echo "PATH=$PATH:$(go env GOPATH)/bin" >> $GITHUB_ENV
+          
+          # ۳. init
           gomobile init
+          
+          # ۴. sync مجدد
+          go mod tidy
+          
+          # ۵. تأیید
+          echo "gomobile: $(which gomobile)"
+          echo "gobind: $(which gobind)"
 
-      - name: Build Go mobile library
+      - name: Build mobile.aar
         run: |
           export PATH=$PATH:$(go env GOPATH)/bin
           mkdir -p app/android/app/libs
-          gomobile bind -target=android -androidapi 21 \
+          
+          echo "=== Building mobile.aar ==="
+          gomobile bind -v -target=android -androidapi 21 \
             -o app/android/app/libs/mobile.aar \
             ./mobile/ 2>&1 | tee /tmp/gomobile.log
+          
+          echo ""
+          echo "=== Result ==="
           ls -la app/android/app/libs/
 
       - name: Verify mobile.aar
@@ -63,6 +83,8 @@ jobs:
             echo "✅ mobile.aar found ($(du -h app/android/app/libs/mobile.aar | cut -f1))"
           else
             echo "❌ mobile.aar NOT FOUND"
+            echo ""
+            echo "=== gomobile log ==="
             cat /tmp/gomobile.log
             exit 1
           fi
@@ -92,10 +114,9 @@ jobs:
           done
           echo "✅ Icons done"
 
-      - name: Check required files
+      - name: Check files
         working-directory: app
         run: |
-          echo "=== Checking files ==="
           for f in \
             "lib/main.dart" \
             "lib/app.dart" \
@@ -111,7 +132,7 @@ jobs:
             if [ -f "$f" ]; then
               echo "  ✅ $f"
             else
-              echo "  ❌ MISSING: $f"
+              echo "  ❌ $f"
             fi
           done
 
@@ -128,18 +149,19 @@ jobs:
           if [ ${PIPESTATUS[0]} -ne 0 ]; then
             echo "=== BUILD FAILED ==="
             grep -i "error\|FAILURE" /tmp/build.log | head -30
-            tail -50 /tmp/build.log
+            tail -80 /tmp/build.log
             exit 1
           fi
-          echo "✅ Debug APK built"
+          echo "✅ APK built"
+          ls -la build/app/outputs/flutter-apk/
 
-      - name: Upload Debug APK
+      - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: guarch-debug-apk
           path: app/build/app/outputs/flutter-apk/app-debug.apk
 
-      - name: Upload build logs on failure
+      - name: Upload logs on failure
         if: failure()
         uses: actions/upload-artifact@v4
         with:
