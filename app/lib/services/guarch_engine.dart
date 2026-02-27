@@ -3,14 +3,16 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/services.dart';
 
-/// لاگ ساده Flutter-side
 class FlutterLog {
+  static const _logChannel = MethodChannel('com.guarch.app/logs');
   static final List<String> entries = [];
 
   static void d(String tag, String msg) {
     final time = DateTime.now().toString().substring(11, 23);
     entries.add('[$time] $tag: $msg');
     if (entries.length > 500) entries.removeAt(0);
+    // همزمان به native هم بنویس (توی فایل ذخیره بشه)
+    _writeToNative('$tag: $msg');
     // ignore: avoid_print
     print('[$tag] $msg');
   }
@@ -20,6 +22,7 @@ class FlutterLog {
     final errStr = error != null ? '\n  >> $error' : '';
     entries.add('[$time] E/$tag: $msg$errStr');
     if (entries.length > 500) entries.removeAt(0);
+    _writeToNative('E/$tag: $msg$errStr');
     // ignore: avoid_print
     print('[E/$tag] $msg $errStr');
   }
@@ -28,8 +31,15 @@ class FlutterLog {
     final time = DateTime.now().toString().substring(11, 23);
     entries.add('[$time] W/$tag: $msg');
     if (entries.length > 500) entries.removeAt(0);
+    _writeToNative('W/$tag: $msg');
     // ignore: avoid_print
     print('[W/$tag] $msg');
+  }
+
+  static void _writeToNative(String msg) {
+    try {
+      _logChannel.invokeMethod('writeFlutterLog', msg);
+    } catch (_) {}
   }
 
   static String getAll() {
@@ -62,14 +72,10 @@ class GuarchEngine {
     _initialized = true;
 
     try {
-      FlutterLog.d('Engine', 'Setting method call handler...');
       _channel.setMethodCallHandler(_handleMethodCall);
-      FlutterLog.d('Engine', 'Method call handler set');
 
-      FlutterLog.d('Engine', 'Setting up event channel...');
       _eventChannel.receiveBroadcastStream().listen(
         (event) {
-          FlutterLog.d('Engine', 'Event received: ${event.runtimeType}');
           if (event is Map) {
             final type = event['type'] as String?;
             final data = event['data'];
@@ -80,8 +86,7 @@ class GuarchEngine {
               case 'stats':
                 if (data is String) {
                   try {
-                    final map = jsonDecode(data) as Map<String, dynamic>;
-                    _statsController.add(map);
+                    _statsController.add(jsonDecode(data) as Map<String, dynamic>);
                   } catch (_) {}
                 } else if (data is Map) {
                   _statsController.add(Map<String, dynamic>.from(data));
@@ -97,40 +102,25 @@ class GuarchEngine {
           FlutterLog.e('Engine', 'Event channel error', e);
         },
       );
-      FlutterLog.d('Engine', 'Event channel setup done');
     } catch (e) {
       FlutterLog.e('Engine', 'init FAILED', e);
     }
-    FlutterLog.d('Engine', 'init() completed');
+    FlutterLog.d('Engine', 'init() done');
   }
 
   Future<dynamic> _handleMethodCall(MethodCall call) async {
-    FlutterLog.d('Engine', 'Incoming call from native: ${call.method}');
     switch (call.method) {
       case 'onStatusChanged':
         _statusController.add(call.arguments as String);
         break;
       case 'onStatsUpdate':
         try {
-          final map = jsonDecode(call.arguments as String) as Map<String, dynamic>;
-          _statsController.add(map);
+          _statsController.add(jsonDecode(call.arguments as String) as Map<String, dynamic>);
         } catch (_) {}
         break;
       case 'onLog':
         _logController.add(call.arguments as String);
         break;
-    }
-  }
-
-  Future<bool> requestVpnPermission() async {
-    FlutterLog.d('Engine', 'requestVpnPermission...');
-    try {
-      final result = await _channel.invokeMethod('requestVpnPermission');
-      FlutterLog.d('Engine', 'VPN permission result: $result');
-      return result == true;
-    } catch (e) {
-      FlutterLog.e('Engine', 'VPN permission error', e);
-      return false;
     }
   }
 
@@ -144,25 +134,16 @@ class GuarchEngine {
     bool coverEnabled = true,
     String protocol = 'guarch',
   }) async {
-    FlutterLog.d('Engine', '=== connect() START ===');
-    FlutterLog.d('Engine', '  addr=$serverAddr:$serverPort proto=$protocol');
-    FlutterLog.d('Engine', '  psk=${psk.isNotEmpty ? "${psk.length} chars" : "EMPTY"}');
-    FlutterLog.d('Engine', '  certPin=${certPin ?? "null"} listenPort=$listenPort');
-    FlutterLog.d('Engine', '  cover=$coverEnabled');
+    FlutterLog.d('Engine', '=== connect() ===');
+    FlutterLog.d('Engine', '  $protocol → $serverAddr:$serverPort');
 
-    if (serverAddr.isEmpty) {
-      FlutterLog.e('Engine', '  Server address is EMPTY');
-      _logController.add('Error: server address is empty');
-      return false;
-    }
-    if (psk.isEmpty) {
-      FlutterLog.e('Engine', '  PSK is EMPTY');
-      _logController.add('Error: PSK is required');
+    if (serverAddr.isEmpty || psk.isEmpty) {
+      FlutterLog.e('Engine', '  Empty addr or psk!');
       return false;
     }
 
     try {
-      final configMap = {
+      final config = jsonEncode({
         'server_addr': serverAddr,
         'server_port': serverPort,
         'psk': psk,
@@ -171,62 +152,45 @@ class GuarchEngine {
         'listen_port': listenPort,
         'cover_enabled': coverEnabled,
         'protocol': protocol,
-      };
-      FlutterLog.d('Engine', '  Config map built');
+      });
 
-      final config = jsonEncode(configMap);
-      FlutterLog.d('Engine', '  JSON encoded, length=${config.length}');
-      FlutterLog.d('Engine', '  JSON: ${config.substring(0, config.length.clamp(0, 200))}');
-
-      _logController.add('Connecting via $protocol to $serverAddr:$serverPort...');
-
-      FlutterLog.d('Engine', '  Calling invokeMethod("connect")...');
+      FlutterLog.d('Engine', '  invokeMethod("connect")...');
       final result = await _channel.invokeMethod('connect', config);
-      FlutterLog.d('Engine', '  invokeMethod returned: $result (${result.runtimeType})');
-
+      FlutterLog.d('Engine', '  result: $result');
       return result == true;
     } on PlatformException catch (e) {
-      FlutterLog.e('Engine', '  PlatformException: ${e.code} - ${e.message}', e);
-      _logController.add('Connect error: ${e.message}');
+      FlutterLog.e('Engine', '  PlatformException: ${e.code} ${e.message}', e);
       _statusController.add('disconnected');
       return false;
-    } on MissingPluginException catch (e) {
-      FlutterLog.e('Engine', '  MissingPluginException', e);
-      _logController.add('⚠️ Native engine not available');
+    } on MissingPluginException {
+      FlutterLog.e('Engine', '  MissingPlugin!');
       _nativeAvailable = false;
       _statusController.add('disconnected');
       return false;
     } catch (e) {
-      FlutterLog.e('Engine', '  UNEXPECTED ERROR', e);
-      _logController.add('Unexpected error: $e');
+      FlutterLog.e('Engine', '  UNEXPECTED', e);
       _statusController.add('disconnected');
       return false;
     }
   }
 
   Future<bool> disconnect() async {
-    FlutterLog.d('Engine', '=== disconnect() ===');
+    FlutterLog.d('Engine', 'disconnect()');
     try {
       final result = await _channel.invokeMethod('disconnect');
-      FlutterLog.d('Engine', '  Result: $result');
       return result == true;
-    } on PlatformException catch (e) {
-      FlutterLog.e('Engine', '  PlatformException', e);
-      return false;
     } on MissingPluginException {
-      FlutterLog.d('Engine', '  MissingPlugin - returning true');
       _statusController.add('disconnected');
       return true;
     } catch (e) {
-      FlutterLog.e('Engine', '  UNEXPECTED', e);
+      FlutterLog.e('Engine', 'disconnect error', e);
       return false;
     }
   }
 
   Future<String> getStatus() async {
     try {
-      final result = await _channel.invokeMethod('getStatus');
-      return result as String? ?? 'disconnected';
+      return await _channel.invokeMethod('getStatus') as String? ?? 'disconnected';
     } catch (_) {
       return 'disconnected';
     }
@@ -234,9 +198,9 @@ class GuarchEngine {
 
   Future<Map<String, dynamic>> getStats() async {
     try {
-      final result = await _channel.invokeMethod('getStats');
-      if (result is String) return jsonDecode(result) as Map<String, dynamic>;
-      if (result is Map) return Map<String, dynamic>.from(result);
+      final r = await _channel.invokeMethod('getStats');
+      if (r is String) return jsonDecode(r) as Map<String, dynamic>;
+      if (r is Map) return Map<String, dynamic>.from(r);
       return {};
     } catch (_) {
       return {};
@@ -248,18 +212,13 @@ class GuarchEngine {
   Future<int> ping(String address, int port) async {
     FlutterLog.d('Engine', 'ping $address:$port');
     try {
-      final addresses = await InternetAddress.lookup(address)
-          .timeout(const Duration(seconds: 5));
-      if (addresses.isEmpty) return -1;
-
-      final stopwatch = Stopwatch()..start();
-      final socket = await Socket.connect(
-        addresses.first.address, port,
-        timeout: const Duration(seconds: 5),
-      );
-      stopwatch.stop();
+      final addrs = await InternetAddress.lookup(address).timeout(const Duration(seconds: 5));
+      if (addrs.isEmpty) return -1;
+      final sw = Stopwatch()..start();
+      final socket = await Socket.connect(addrs.first.address, port, timeout: const Duration(seconds: 5));
+      sw.stop();
       socket.destroy();
-      return stopwatch.elapsedMilliseconds;
+      return sw.elapsedMilliseconds;
     } catch (e) {
       FlutterLog.e('Engine', 'Ping failed', e);
       return -1;
