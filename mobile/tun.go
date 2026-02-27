@@ -2,9 +2,9 @@ package mobile
 
 import (
 	"fmt"
-	"os"
+	"net"
 	"runtime/debug"
-	"syscall"
+	"time"
 
 	"github.com/xjasonlyu/tun2socks/v2/engine"
 )
@@ -14,79 +14,69 @@ var tunRunning bool
 func (e *Engine) StartTun(fd int32, socksPort int32) error {
 	defer func() {
 		if r := recover(); r != nil {
-			msg := fmt.Sprintf("PANIC in StartTun: %v\n%s", r, debug.Stack())
-			e.log(msg)
+			e.log(fmt.Sprintf("PANIC in StartTun: %v\n%s", r, debug.Stack()))
 		}
 	}()
 
-	if tunRunning {
-		e.log("TUN already running, stopping first...")
-		e.StopTun()
-	}
+	e.log(fmt.Sprintf("StartTun called: fd=%d socksPort=%d", fd, socksPort))
 
-	e.log(fmt.Sprintf("StartTun: fd=%d socksPort=%d", fd, socksPort))
+	// همیشه اول stop کن برای clean state
+	e.log("Ensuring clean state...")
+	func() {
+		defer func() { recover() }()
+		if tunRunning {
+			engine.Stop()
+			tunRunning = false
+		}
+	}()
 
 	if fd < 0 {
-		err := fmt.Errorf("invalid fd: %d", fd)
-		e.log(err.Error())
-		return err
+		return fmt.Errorf("invalid fd: %d", fd)
 	}
 
-	// چک fd معتبره
-	if err := syscall.SetNonblock(int(fd), true); err != nil {
-		e.log(fmt.Sprintf("fd %d invalid: %v", fd, err))
-		return fmt.Errorf("fd not valid: %v", err)
+	// صبر کن تا SOCKS5 proxy آماده بشه
+	proxy := fmt.Sprintf("127.0.0.1:%d", socksPort)
+	e.log(fmt.Sprintf("Waiting for SOCKS5 on %s...", proxy))
+
+	ready := false
+	for i := 0; i < 60; i++ { // حداکثر ۳۰ ثانیه
+		conn, err := net.DialTimeout("tcp", proxy, 500*time.Millisecond)
+		if err == nil {
+			conn.Close()
+			ready = true
+			break
+		}
+		if i%10 == 9 {
+			e.log(fmt.Sprintf("  Still waiting... %d/30s", (i+1)/2))
+		}
+		time.Sleep(500 * time.Millisecond)
 	}
 
-	f := os.NewFile(uintptr(fd), "tun")
-	if f == nil {
-		err := fmt.Errorf("os.NewFile nil for fd=%d", fd)
-		e.log(err.Error())
-		return err
+	if !ready {
+		e.log("SOCKS5 not ready after 30s")
+		return fmt.Errorf("SOCKS5 proxy not ready on port %d", socksPort)
 	}
-	e.log(fmt.Sprintf("fd=%d valid ✅", fd))
+	e.log("SOCKS5 ready ✅")
 
-	proxy := fmt.Sprintf("socks5://127.0.0.1:%d", socksPort)
 	device := fmt.Sprintf("fd://%d", fd)
-	e.log(fmt.Sprintf("tun2socks: device=%s proxy=%s", device, proxy))
+	proxyURL := fmt.Sprintf("socks5://%s", proxy)
+	e.log(fmt.Sprintf("tun2socks: device=%s proxy=%s", device, proxyURL))
 
 	key := &engine.Key{
 		Device:   device,
-		Proxy:    proxy,
+		Proxy:    proxyURL,
 		MTU:      1500,
-		LogLevel: "debug",
+		LogLevel: "warning",
 	}
 
 	e.log("engine.Insert()...")
 	engine.Insert(key)
-	e.log("engine.Insert() done ✅")
 
-	// engine.Start() مقدار برنمیگردونه — فقط صداش بزن
 	e.log("engine.Start()...")
-	startDone := make(chan struct{}, 1)
-	startPanic := make(chan string, 1)
-
-	go func() {
-		defer func() {
-			if r := recover(); r != nil {
-				startPanic <- fmt.Sprintf("PANIC: %v\n%s", r, debug.Stack())
-			}
-		}()
-		engine.Start()
-		startDone <- struct{}{}
-	}()
-
-	// یکم صبر کن ببین panic میکنه یا نه
-	select {
-	case msg := <-startPanic:
-		e.log("engine.Start() " + msg)
-		return fmt.Errorf("engine.Start panic")
-	case <-startDone:
-		e.log("engine.Start() done ✅")
-	}
+	engine.Start()
 
 	tunRunning = true
-	e.log("TUN started ✅")
+	e.log("TUN started ✅ — all traffic routed")
 	return nil
 }
 
