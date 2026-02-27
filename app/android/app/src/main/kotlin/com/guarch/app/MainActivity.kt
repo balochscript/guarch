@@ -54,11 +54,32 @@ class MainActivity : FlutterActivity() {
             }
         }
 
-        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, LOG_CHANNEL)
+                MethodChannel(flutterEngine.dartExecutor.binaryMessenger, LOG_CHANNEL)
             .setMethodCallHandler { call, result ->
                 when (call.method) {
                     "getLogs" -> result.success(CrashLogger.getCurrentLog(this))
                     "getCrashLog" -> result.success(CrashLogger.getPreviousCrashLog(this))
+                    "getGoLog" -> {
+                        // خوندن Go log file
+                        try {
+                            if (goEngine != null) {
+                                val method = goEngine!!.javaClass.getMethod("readGoLog")
+                                result.success(method.invoke(null) as? String ?: "No Go log")
+                            } else {
+                                // مستقیم فایل رو بخون
+                                val f = java.io.File(filesDir, "go_debug.log")
+                                result.success(if (f.exists()) f.readText() else "No Go log file")
+                            }
+                        } catch (e: Throwable) {
+                            // fallback: مستقیم فایل
+                            try {
+                                val f = java.io.File(filesDir, "go_debug.log")
+                                result.success(if (f.exists()) f.readText() else "No Go log: ${e.message}")
+                            } catch (e2: Throwable) {
+                                result.success("Error reading Go log: ${e2.message}")
+                            }
+                        }
+                    }
                     "clearLogs" -> { CrashLogger.init(this); result.success(true) }
                     "shareLogs" -> { shareLogs(); result.success(true) }
                     "writeFlutterLog" -> {
