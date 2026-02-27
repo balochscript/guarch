@@ -12,7 +12,6 @@ import (
 var tunRunning bool
 
 func (e *Engine) StartTun(fd int32, socksPort int32) error {
-	// ← recover از Go panic
 	defer func() {
 		if r := recover(); r != nil {
 			msg := fmt.Sprintf("PANIC in StartTun: %v\n%s", r, debug.Stack())
@@ -25,84 +24,69 @@ func (e *Engine) StartTun(fd int32, socksPort int32) error {
 		e.StopTun()
 	}
 
-	e.log(fmt.Sprintf("StartTun called: fd=%d socksPort=%d", fd, socksPort))
+	e.log(fmt.Sprintf("StartTun: fd=%d socksPort=%d", fd, socksPort))
 
-	// ← چک کن fd معتبره
-	e.log("Checking fd validity...")
 	if fd < 0 {
 		err := fmt.Errorf("invalid fd: %d", fd)
 		e.log(err.Error())
 		return err
 	}
 
-	// ← چک کن fd واقعاً باز هست
-	e.log("Checking fd is open...")
+	// چک fd معتبره
 	if err := syscall.SetNonblock(int(fd), true); err != nil {
-		e.log(fmt.Sprintf("fd %d not valid (SetNonblock failed): %v", fd, err))
+		e.log(fmt.Sprintf("fd %d invalid: %v", fd, err))
 		return fmt.Errorf("fd not valid: %v", err)
 	}
 
-	// ← چک فایل
 	f := os.NewFile(uintptr(fd), "tun")
 	if f == nil {
-		err := fmt.Errorf("os.NewFile returned nil for fd=%d", fd)
+		err := fmt.Errorf("os.NewFile nil for fd=%d", fd)
 		e.log(err.Error())
 		return err
 	}
-	// نکته: NewFile رو نمیبندیم چون tun2socks ازش استفاده میکنه
-	e.log(fmt.Sprintf("fd=%d is valid ✅", fd))
+	e.log(fmt.Sprintf("fd=%d valid ✅", fd))
 
 	proxy := fmt.Sprintf("socks5://127.0.0.1:%d", socksPort)
 	device := fmt.Sprintf("fd://%d", fd)
-
-	e.log(fmt.Sprintf("Configuring tun2socks: device=%s proxy=%s", device, proxy))
+	e.log(fmt.Sprintf("tun2socks: device=%s proxy=%s", device, proxy))
 
 	key := &engine.Key{
 		Device:   device,
 		Proxy:    proxy,
 		MTU:      1500,
-		LogLevel: "debug", // ← debug برای لاگ بیشتر
+		LogLevel: "debug",
 	}
 
-	e.log("Calling engine.Insert()...")
+	e.log("engine.Insert()...")
 	engine.Insert(key)
 	e.log("engine.Insert() done ✅")
 
-	e.log("Calling engine.Start()...")
+	// engine.Start() مقدار برنمیگردونه — فقط صداش بزن
+	e.log("engine.Start()...")
+	startDone := make(chan struct{}, 1)
+	startPanic := make(chan string, 1)
 
-	// ← engine.Start() رو توی goroutine با recover اجرا کن
-	startErr := make(chan error, 1)
 	go func() {
 		defer func() {
 			if r := recover(); r != nil {
-				msg := fmt.Sprintf("PANIC in engine.Start(): %v\n%s", r, debug.Stack())
-				e.log(msg)
-				startErr <- fmt.Errorf("engine.Start panic: %v", r)
+				startPanic <- fmt.Sprintf("PANIC: %v\n%s", r, debug.Stack())
 			}
 		}()
-
-		err := engine.Start()
-		if err != nil {
-			e.log(fmt.Sprintf("engine.Start() returned error: %v", err))
-			startErr <- err
-		} else {
-			e.log("engine.Start() returned OK ✅")
-			startErr <- nil
-		}
+		engine.Start()
+		startDone <- struct{}{}
 	}()
 
-	// ← منتظر بمون ببین Start موفق بود یا نه
-	e.log("Waiting for engine.Start() result...")
+	// یکم صبر کن ببین panic میکنه یا نه
 	select {
-	case err := <-startErr:
-		if err != nil {
-			e.log(fmt.Sprintf("TUN start FAILED: %v", err))
-			return err
-		}
+	case msg := <-startPanic:
+		e.log("engine.Start() " + msg)
+		return fmt.Errorf("engine.Start panic")
+	case <-startDone:
+		e.log("engine.Start() done ✅")
 	}
 
 	tunRunning = true
-	e.log("TUN handler started ✅ — all traffic routed")
+	e.log("TUN started ✅")
 	return nil
 }
 
@@ -116,8 +100,8 @@ func (e *Engine) StopTun() {
 	if !tunRunning {
 		return
 	}
-	e.log("Stopping TUN handler...")
+	e.log("Stopping TUN...")
 	engine.Stop()
 	tunRunning = false
-	e.log("TUN handler stopped ✅")
+	e.log("TUN stopped ✅")
 }
