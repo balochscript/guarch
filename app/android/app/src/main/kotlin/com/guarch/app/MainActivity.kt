@@ -256,12 +256,17 @@ class MainActivity : FlutterActivity() {
     // Disconnect — فقط Go engine قطع میشه
     // ═══════════════════════════════
 
-    private fun handleDisconnect(result: MethodChannel.Result) {
+        private fun handleDisconnect(result: MethodChannel.Result) {
         CrashLogger.d(TAG, "=== handleDisconnect ===")
         Thread {
             try {
                 if (goEngine != null) {
-                    // ← فقط disconnect — نه stopTun!
+                    try {
+                        goEngine!!.javaClass.getMethod("stopTun").invoke(goEngine)
+                        CrashLogger.d(TAG, "  stopTun ok")
+                    } catch (e: Throwable) {
+                        CrashLogger.e(TAG, "  stopTun err", unwrapException(e))
+                    }
                     try {
                         goEngine!!.javaClass.getMethod("disconnect").invoke(goEngine)
                         CrashLogger.d(TAG, "  disconnect ok")
@@ -269,8 +274,12 @@ class MainActivity : FlutterActivity() {
                         CrashLogger.e(TAG, "  disconnect err", unwrapException(e))
                     }
                 }
-                // ← VPN service رو STOP نمیکنیم!
-                // tun2socks زنده میمونه برای reconnect سریع
+
+                // VPN service هم stop بشه — fd بسته شد، سرویس لازم نیست
+                stopVpnService()
+                vpnAndTunStarted = false
+                CrashLogger.d(TAG, "  VPN stopped, ready for reconnect")
+
             } catch (e: Throwable) {
                 CrashLogger.e(TAG, "  Disconnect error", e)
             }
