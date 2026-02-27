@@ -190,18 +190,29 @@ class MainActivity : FlutterActivity() {
                         }
                     }
 
-                    // ۵. پشت صحنه: TUN شروع کن (خودش منتظر SOCKS5 میمونه)
+                                        // ۵. پشت صحنه: TUN شروع کن
                     if (goEngine != null && fd >= 0) {
                         try {
                             CrashLogger.d(TAG, "  S5: Starting TUN (fd=$fd port=$pendingSocksPort)...")
                             val startTunMethod = goEngine!!.javaClass.getMethod(
                                 "startTun", Int::class.java, Int::class.java
                             )
-                            startTunMethod.invoke(goEngine, fd, pendingSocksPort)
-                            CrashLogger.d(TAG, "  S5: TUN started ✅")
+                            val tunResult = startTunMethod.invoke(goEngine, fd, pendingSocksPort)
+                            CrashLogger.d(TAG, "  S5: TUN result=$tunResult ✅")
                         } catch (e: Throwable) {
-                            val cause = unwrapException(e)
-                            CrashLogger.e(TAG, "  S5: TUN FAILED: ${cause.message}", cause)
+                            // InvocationTargetException رو باز کن
+                            val real = if (e is java.lang.reflect.InvocationTargetException) {
+                                e.targetException ?: e.cause ?: e
+                            } else e
+                            
+                            CrashLogger.e(TAG, "  S5: TUN FAILED", real)
+                            CrashLogger.d(TAG, "  S5: Exception type: ${real.javaClass.name}")
+                            CrashLogger.d(TAG, "  S5: Message: ${real.message}")
+                            
+                            // Stack trace کامل
+                            val sw = java.io.StringWriter()
+                            real.printStackTrace(java.io.PrintWriter(sw))
+                            CrashLogger.d(TAG, "  S5: Full stack:\n$sw")
                         }
                     }
 
