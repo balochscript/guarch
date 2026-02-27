@@ -46,29 +46,19 @@ jobs:
           export PATH=$PATH:$(go env GOPATH)/bin
           echo "PATH=$PATH:$(go env GOPATH)/bin" >> $GITHUB_ENV
           gomobile init
-          echo "gomobile: $(which gomobile)"
-          echo "gobind: $(which gobind)"
 
       - name: Build mobile.aar
         run: |
           export PATH=$PATH:$(go env GOPATH)/bin
           mkdir -p app/android/app/libs
 
-          # ← کلید حل مشکل: اضافه کردن x/mobile/bind بعد از tidy
-          # gobind به این پکیج نیاز داره ولی go mod tidy حذفش میکنه
           go get golang.org/x/mobile/bind@latest
-          # ← نکته: go mod tidy رو اینجا اجرا نکن!
 
-          echo "=== go.mod check ==="
-          grep "x/mobile" go.mod || echo "x/mobile not in go.mod!"
-
-          echo ""
           echo "=== Building mobile.aar ==="
           gomobile bind -v -target=android -androidapi 21 \
             -o app/android/app/libs/mobile.aar \
             ./mobile/ 2>&1 | tee /tmp/gomobile.log
 
-          echo ""
           echo "=== Result ==="
           ls -la app/android/app/libs/
 
@@ -78,7 +68,6 @@ jobs:
             echo "✅ mobile.aar found ($(du -h app/android/app/libs/mobile.aar | cut -f1))"
           else
             echo "❌ mobile.aar NOT FOUND"
-            echo ""
             cat /tmp/gomobile.log
             exit 1
           fi
