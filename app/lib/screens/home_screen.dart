@@ -8,6 +8,7 @@ import 'package:guarch/screens/settings_screen.dart';
 import 'package:guarch/screens/logs_screen.dart';
 import 'package:guarch/widgets/connection_button.dart';
 import 'package:guarch/widgets/stats_card.dart';
+import 'package:guarch/screens/log_viewer_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -95,19 +96,21 @@ class _HomeTab extends StatelessWidget {
     );
   }
 
-  Widget _buildHeader(BuildContext context) {
-    return Row(
-      children: [
-        Container(
-          padding: const EdgeInsets.all(10),
-          decoration: BoxDecoration(
-            color: accentColor(context).withOpacity(0.15),
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: const Text('🎯', style: TextStyle(fontSize: 24)),
+  // bbb
+Widget _buildHeader(BuildContext context) {
+  return Row(
+    children: [
+      Container(
+        padding: const EdgeInsets.all(10),
+        decoration: BoxDecoration(
+          color: accentColor(context).withOpacity(0.15),
+          borderRadius: BorderRadius.circular(12),
         ),
-        const SizedBox(width: 12),
-        Column(
+        child: const Text('🎯', style: TextStyle(fontSize: 24)),
+      ),
+      const SizedBox(width: 12),
+      Expanded(
+        child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text('Guarch',
@@ -123,9 +126,19 @@ class _HomeTab extends StatelessWidget {
             ),
           ],
         ),
-      ],
-    );
-  }
+      ),
+      // ← دکمه لاگ اضافه شد
+      IconButton(
+        icon: const Icon(Icons.bug_report, color: Colors.orange),
+        onPressed: () => Navigator.push(
+          context,
+          MaterialPageRoute(builder: (_) => const LogViewerScreen()),
+        ),
+        tooltip: 'Debug Logs',
+      ),
+    ],
+  );
+}
 
   Widget _buildServerInfo(BuildContext context, dynamic server) {
     if (server == null) {
