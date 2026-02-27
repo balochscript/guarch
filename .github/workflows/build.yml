@@ -37,29 +37,15 @@ jobs:
 
       - name: Download Go dependencies
         run: |
-          go mod tidy
           go mod download
 
       - name: Install gomobile
         run: |
-          # ۱. اضافه کردن x/mobile به go.mod
-          go get golang.org/x/mobile@latest
-          go get golang.org/x/mobile/bind@latest
-          
-          # ۲. نصب ابزارها
           go install golang.org/x/mobile/cmd/gomobile@latest
           go install golang.org/x/mobile/cmd/gobind@latest
-          
           export PATH=$PATH:$(go env GOPATH)/bin
           echo "PATH=$PATH:$(go env GOPATH)/bin" >> $GITHUB_ENV
-          
-          # ۳. init
           gomobile init
-          
-          # ۴. sync مجدد
-          go mod tidy
-          
-          # ۵. تأیید
           echo "gomobile: $(which gomobile)"
           echo "gobind: $(which gobind)"
 
@@ -67,12 +53,21 @@ jobs:
         run: |
           export PATH=$PATH:$(go env GOPATH)/bin
           mkdir -p app/android/app/libs
-          
+
+          # ← کلید حل مشکل: اضافه کردن x/mobile/bind بعد از tidy
+          # gobind به این پکیج نیاز داره ولی go mod tidy حذفش میکنه
+          go get golang.org/x/mobile/bind@latest
+          # ← نکته: go mod tidy رو اینجا اجرا نکن!
+
+          echo "=== go.mod check ==="
+          grep "x/mobile" go.mod || echo "x/mobile not in go.mod!"
+
+          echo ""
           echo "=== Building mobile.aar ==="
           gomobile bind -v -target=android -androidapi 21 \
             -o app/android/app/libs/mobile.aar \
             ./mobile/ 2>&1 | tee /tmp/gomobile.log
-          
+
           echo ""
           echo "=== Result ==="
           ls -la app/android/app/libs/
@@ -84,7 +79,6 @@ jobs:
           else
             echo "❌ mobile.aar NOT FOUND"
             echo ""
-            echo "=== gomobile log ==="
             cat /tmp/gomobile.log
             exit 1
           fi
@@ -113,28 +107,6 @@ jobs:
               android/app/src/main/res/mipmap-${DENSITY}/ic_launcher_round.png
           done
           echo "✅ Icons done"
-
-      - name: Check files
-        working-directory: app
-        run: |
-          for f in \
-            "lib/main.dart" \
-            "lib/app.dart" \
-            "lib/providers/app_provider.dart" \
-            "lib/services/guarch_engine.dart" \
-            "lib/screens/home_screen.dart" \
-            "lib/screens/log_viewer_screen.dart" \
-            "android/app/src/main/kotlin/com/guarch/app/MainActivity.kt" \
-            "android/app/src/main/kotlin/com/guarch/app/GuarchService.kt" \
-            "android/app/src/main/kotlin/com/guarch/app/CrashLogger.kt" \
-            "android/app/src/main/AndroidManifest.xml" \
-            "android/app/libs/mobile.aar"; do
-            if [ -f "$f" ]; then
-              echo "  ✅ $f"
-            else
-              echo "  ❌ $f"
-            fi
-          done
 
       - name: Flutter pub get
         working-directory: app
