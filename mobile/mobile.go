@@ -128,7 +128,8 @@ func (e *Engine) Disconnect() (result bool) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	e.setStatus("disconnecting")
-	e.StopTun()
+
+	// ← StopTun حذف شد! tun2socks نباید Stop بشه
 
 	if e.cancel != nil {
 		e.cancel()
