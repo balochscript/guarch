@@ -40,6 +40,13 @@ class GuarchService : VpnService() {
                 ACTION_START -> {
                     val port = intent.getIntExtra("socks_port", 1080)
                     CrashLogger.d("Service", "  Starting port=$port")
+
+                    // ← اگر قبلاً اجرا شده، اول stop کن
+                    if (isRunning) {
+                        CrashLogger.d("Service", "  Already running, restarting...")
+                        stopVpnClean()
+                    }
+
                     startVpn(port)
                 }
             }
@@ -50,15 +57,10 @@ class GuarchService : VpnService() {
     }
 
     private fun startVpn(socksPort: Int) {
-        if (isRunning) {
-            CrashLogger.d("Service", "  Already running")
-            return
-        }
-
         try {
             CrashLogger.d("Service", "  S1: Foreground...")
             startForeground(NOTIFICATION_ID, createNotification())
-            CrashLogger.d("Service", "  S1: Done")
+            CrashLogger.d("Service", "  S1: Done ✅")
         } catch (e: Throwable) {
             CrashLogger.e("Service", "  S1: FAILED", e)
             stopSelf()
@@ -98,10 +100,16 @@ class GuarchService : VpnService() {
         }
     }
 
-    private fun stopVpn() {
-        CrashLogger.d("Service", "--- stopVpn ---")
+    // Stop بدون stopSelf (برای restart)
+    private fun stopVpnClean() {
+        CrashLogger.d("Service", "  stopVpnClean")
         isRunning = false; tunFd = -1
         try { vpnInterface?.close(); vpnInterface = null } catch (_: Throwable) {}
+    }
+
+    private fun stopVpn() {
+        CrashLogger.d("Service", "--- stopVpn ---")
+        stopVpnClean()
         stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelf()
     }
@@ -111,7 +119,7 @@ class GuarchService : VpnService() {
 
     private fun createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = NotificationChannel(CHANNEL_ID, "Guarch Connection", NotificationManager.IMPORTANCE_LOW)
+            val channel = NotificationChannel(CHANNEL_ID, "Guarch VPN", NotificationManager.IMPORTANCE_LOW)
             channel.setShowBadge(false)
             getSystemService(NotificationManager::class.java)?.createNotificationChannel(channel)
         }
@@ -123,7 +131,7 @@ class GuarchService : VpnService() {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("Guarch Active")
-            .setContentText("Connected")
+            .setContentText("🏹 Connected")
             .setSmallIcon(android.R.drawable.ic_lock_lock)
             .setContentIntent(pi)
             .setOngoing(true)
