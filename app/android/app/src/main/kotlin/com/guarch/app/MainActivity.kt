@@ -256,7 +256,7 @@ class MainActivity : FlutterActivity() {
     // Disconnect — فقط Go engine قطع میشه
     // ═══════════════════════════════
 
-        private fun handleDisconnect(result: MethodChannel.Result) {
+    private fun handleDisconnect(result: MethodChannel.Result) {
         CrashLogger.d(TAG, "=== handleDisconnect ===")
         Thread {
             try {
@@ -275,10 +275,16 @@ class MainActivity : FlutterActivity() {
                     }
                 }
 
-                // VPN service هم stop بشه — fd بسته شد، سرویس لازم نیست
-                stopVpnService()
+                // VPN service stop
+                try {
+                    startService(Intent(this@MainActivity, GuarchService::class.java).apply {
+                        action = GuarchService.ACTION_STOP
+                    })
+                    CrashLogger.d(TAG, "  VPN stopped")
+                } catch (e: Throwable) {
+                    CrashLogger.e(TAG, "  VPN stop err", e)
+                }
                 vpnAndTunStarted = false
-                CrashLogger.d(TAG, "  VPN stopped, ready for reconnect")
 
             } catch (e: Throwable) {
                 CrashLogger.e(TAG, "  Disconnect error", e)
