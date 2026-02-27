@@ -179,7 +179,7 @@ func (e *Engine) StartTun(fd int32, socksPort int32) (retErr error) {
 		if udpErr != nil {
 			return
 		}
-		conn := gonet.NewUDPConn(s, &wq, ep)
+		conn := gonet.NewUDPConn(&wq, ep)
 		dst := net.JoinHostPort(id.LocalAddress.String(), fmt.Sprintf("%d", id.LocalPort))
 		go relayUDP(conn, dst)
 	})
