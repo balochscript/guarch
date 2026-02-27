@@ -55,10 +55,9 @@ func (e *Engine) StartTun(fd int32, socksPort int32) (retErr error) {
 		}
 	}()
 
-	// ← اگه قبلاً اجرا شده، فقط لاگ بزن — Stop نکن!
-	// tun2socks بعد Stop دیگه Start نمیشه
+	// اگه قبلاً اجرا شده، دیگه دوباره Start نکن
 	if tunRunning {
-		goLog("TUN already running — skipping (tun2socks can't restart)")
+		goLog("TUN already running — skip")
 		e.log("TUN already active")
 		return nil
 	}
@@ -70,6 +69,7 @@ func (e *Engine) StartTun(fd int32, socksPort int32) (retErr error) {
 	// صبر برای SOCKS5
 	proxy := fmt.Sprintf("127.0.0.1:%d", socksPort)
 	goLog(fmt.Sprintf("Waiting for SOCKS5 on %s...", proxy))
+
 	ready := false
 	for i := 0; i < 120; i++ {
 		conn, err := net.DialTimeout("tcp", proxy, 200*time.Millisecond)
@@ -83,6 +83,7 @@ func (e *Engine) StartTun(fd int32, socksPort int32) (retErr error) {
 		}
 		time.Sleep(500 * time.Millisecond)
 	}
+
 	if !ready {
 		goLog("SOCKS5 not ready")
 		e.log("SOCKS5 not ready")
@@ -135,15 +136,13 @@ func (e *Engine) StartTun(fd int32, socksPort int32) (retErr error) {
 	return nil
 }
 
-// StopTun — هیچوقت engine.Stop() صدا نزن
-// فقط flag رو بذار false تا دفعه بعد Start بشه
+// StopTun — هیچوقت engine.Stop() صدا نمیزنیم
 func (e *Engine) StopTun() {
 	initGoLog()
-	goLog("StopTun called — NOT calling engine.Stop() (prevents crash)")
-	e.log("TUN marked for restart")
-	// ← engine.Stop() صدا نمیزنیم!
-	// وقتی VPN service stop بشه، fd بسته میشه و tun2socks خودش متوقف میشه
-	tunRunning = false
+	goLog("StopTun called — keeping tun2socks alive")
+	e.log("TUN kept alive for reconnect")
+	// engine.Stop() صدا نمیزنیم!
+	// وقتی VPN service بمیره fd بسته میشه و tun2socks خودش error میده
 }
 
 func ReadGoLog() string {
