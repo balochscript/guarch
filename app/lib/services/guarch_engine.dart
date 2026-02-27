@@ -24,6 +24,14 @@ class FlutterLog {
     print('[E/$tag] $msg $errStr');
   }
 
+  static void w(String tag, String msg) {
+    final time = DateTime.now().toString().substring(11, 23);
+    entries.add('[$time] W/$tag: $msg');
+    if (entries.length > 500) entries.removeAt(0);
+    // ignore: avoid_print
+    print('[W/$tag] $msg');
+  }
+
   static String getAll() {
     return entries.isEmpty ? 'No Flutter logs' : entries.join('\n');
   }
