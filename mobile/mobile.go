@@ -12,6 +12,7 @@ import (
 	"io"
 	"log"
 	"net"
+	"runtime/debug"
 	"sync"
 	"time"
 
@@ -79,7 +80,16 @@ func (e *Engine) SetCallback(cb Callback) { e.callback = cb }
 // Connect / Disconnect
 // ═══════════════════════════════════════
 
-func (e *Engine) Connect(configJSON string) bool {
+func (e *Engine) Connect(configJSON string) (result bool) {
+	// ← recover از panic
+	defer func() {
+		if r := recover(); r != nil {
+			e.log(fmt.Sprintf("PANIC in Connect: %v\n%s", r, debug.Stack()))
+			e.setStatus("disconnected")
+			result = false
+		}
+	}()
+
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	if e.status == "connected" || e.status == "connecting" {
@@ -107,7 +117,14 @@ func (e *Engine) Connect(configJSON string) bool {
 	return true
 }
 
-func (e *Engine) Disconnect() bool {
+func (e *Engine) Disconnect() (result bool) {
+	defer func() {
+		if r := recover(); r != nil {
+			e.log(fmt.Sprintf("PANIC in Disconnect: %v\n%s", r, debug.Stack()))
+			result = false
+		}
+	}()
+
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	e.setStatus("disconnecting")
@@ -142,6 +159,14 @@ func (e *Engine) Disconnect() bool {
 }
 
 func (e *Engine) connectAsync(ctx context.Context, cfg connectConfig) {
+	// ← recover
+	defer func() {
+		if r := recover(); r != nil {
+			e.log(fmt.Sprintf("PANIC in connectAsync: %v\n%s", r, debug.Stack()))
+			e.setStatus("disconnected")
+		}
+	}()
+
 	var coverMgr *cover.Manager
 	if cfg.CoverEnabled {
 		e.log("Starting cover traffic...")
@@ -167,6 +192,13 @@ func (e *Engine) connectAsync(ctx context.Context, cfg connectConfig) {
 // ═══════════════════════════════════════
 
 func (e *Engine) connectGuarch(ctx context.Context, cfg connectConfig, coverMgr *cover.Manager) {
+	defer func() {
+		if r := recover(); r != nil {
+			e.log(fmt.Sprintf("PANIC in connectGuarch: %v\n%s", r, debug.Stack()))
+			e.setStatus("disconnected")
+		}
+	}()
+
 	serverAddr := fmt.Sprintf("%s:%d", cfg.ServerAddr, cfg.ServerPort)
 
 	tlsConfig := &tls.Config{MinVersion: tls.VersionTLS13, InsecureSkipVerify: true}
@@ -230,6 +262,13 @@ func (e *Engine) connectGuarch(ctx context.Context, cfg connectConfig, coverMgr 
 // ═══════════════════════════════════════
 
 func (e *Engine) connectGrouk(ctx context.Context, cfg connectConfig, coverMgr *cover.Manager) {
+	defer func() {
+		if r := recover(); r != nil {
+			e.log(fmt.Sprintf("PANIC in connectGrouk: %v\n%s", r, debug.Stack()))
+			e.setStatus("disconnected")
+		}
+	}()
+
 	serverAddr := fmt.Sprintf("%s:%d", cfg.ServerAddr, cfg.ServerPort)
 	udpAddr, err := net.ResolveUDPAddr("udp", serverAddr)
 	if err != nil {
@@ -279,6 +318,12 @@ func (e *Engine) connectGrouk(ctx context.Context, cfg connectConfig, coverMgr *
 }
 
 func (e *Engine) groukReadLoop(ctx context.Context, session *transport.GroukSession, udpConn *net.UDPConn, serverAddr *net.UDPAddr) {
+	defer func() {
+		if r := recover(); r != nil {
+			e.log(fmt.Sprintf("PANIC in groukReadLoop: %v", r))
+		}
+	}()
+
 	buf := make([]byte, 2048)
 	for {
 		select {
@@ -311,6 +356,13 @@ func (e *Engine) groukReadLoop(ctx context.Context, session *transport.GroukSess
 // ═══════════════════════════════════════
 
 func (e *Engine) connectZhip(ctx context.Context, cfg connectConfig, coverMgr *cover.Manager) {
+	defer func() {
+		if r := recover(); r != nil {
+			e.log(fmt.Sprintf("PANIC in connectZhip: %v\n%s", r, debug.Stack()))
+			e.setStatus("disconnected")
+		}
+	}()
+
 	serverAddr := fmt.Sprintf("%s:%d", cfg.ServerAddr, cfg.ServerPort)
 
 	if coverMgr != nil {
@@ -356,6 +408,13 @@ func (e *Engine) connectZhip(ctx context.Context, cfg connectConfig, coverMgr *c
 // ═══════════════════════════════════════
 
 func (e *Engine) startSOCKS(ctx context.Context, cfg connectConfig, protoName string, openStream func() (io.ReadWriteCloser, error)) {
+	defer func() {
+		if r := recover(); r != nil {
+			e.log(fmt.Sprintf("PANIC in startSOCKS: %v\n%s", r, debug.Stack()))
+			e.setStatus("disconnected")
+		}
+	}()
+
 	listenAddr := fmt.Sprintf("%s:%d", cfg.ListenAddr, cfg.ListenPort)
 	ln, err := net.Listen("tcp", listenAddr)
 	if err != nil {
@@ -394,6 +453,11 @@ func (e *Engine) startSOCKS(ctx context.Context, cfg connectConfig, protoName st
 }
 
 func (e *Engine) handleSOCKS(socksConn net.Conn, openStream func() (io.ReadWriteCloser, error)) {
+	defer func() {
+		if r := recover(); r != nil {
+			e.log(fmt.Sprintf("PANIC in handleSOCKS: %v", r))
+		}
+	}()
 	defer socksConn.Close()
 
 	target, err := socks5.Handshake(socksConn)
@@ -460,6 +524,11 @@ func (e *Engine) relayWithStats(stream io.ReadWriteCloser, conn net.Conn) {
 	done := make(chan struct{}, 2)
 
 	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				e.log(fmt.Sprintf("PANIC in relay upload: %v", r))
+			}
+		}()
 		buf := make([]byte, 32768)
 		for {
 			n, err := conn.Read(buf)
@@ -477,6 +546,11 @@ func (e *Engine) relayWithStats(stream io.ReadWriteCloser, conn net.Conn) {
 	}()
 
 	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				e.log(fmt.Sprintf("PANIC in relay download: %v", r))
+			}
+		}()
 		buf := make([]byte, 32768)
 		for {
 			n, err := stream.Read(buf)
@@ -504,6 +578,12 @@ func (e *Engine) relayWithStats(stream io.ReadWriteCloser, conn net.Conn) {
 // ═══════════════════════════════════════
 
 func (e *Engine) statsReporter(ctx context.Context) {
+	defer func() {
+		if r := recover(); r != nil {
+			e.log(fmt.Sprintf("PANIC in statsReporter: %v", r))
+		}
+	}()
+
 	ticker := time.NewTicker(1 * time.Second)
 	defer ticker.Stop()
 	var lastUp, lastDown int64
