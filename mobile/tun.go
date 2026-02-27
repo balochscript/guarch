@@ -2,7 +2,6 @@ package mobile
 
 import (
 	"fmt"
-	"io"
 	"net"
 	"os"
 	"runtime/debug"
@@ -12,16 +11,12 @@ import (
 )
 
 var tunRunning bool
-
-// logFile برای لاگ مستقیم به فایل (حتی اگه process کرش کنه)
 var goLogFile *os.File
 
 func initGoLog() {
 	if goLogFile != nil {
 		return
 	}
-	// لاگ توی /data/data/com.guarch.app/files/go_debug.log
-	// از Android file path استفاده میکنیم
 	paths := []string{
 		"/data/data/com.guarch.app/files/go_debug.log",
 		"/data/user/0/com.guarch.app/files/go_debug.log",
@@ -40,7 +35,7 @@ func goLog(msg string) {
 	line := fmt.Sprintf("[%s] %s\n", time.Now().Format("15:04:05.000"), msg)
 	if goLogFile != nil {
 		goLogFile.WriteString(line)
-		goLogFile.Sync() // فوری flush
+		goLogFile.Sync()
 	}
 }
 
@@ -58,7 +53,7 @@ func (e *Engine) StartTun(fd int32, socksPort int32) (retErr error) {
 		}
 	}()
 
-	// Stop قبلی
+	// stop قبلی
 	func() {
 		defer func() { recover() }()
 		if tunRunning {
@@ -66,36 +61,27 @@ func (e *Engine) StartTun(fd int32, socksPort int32) (retErr error) {
 			engine.Stop()
 			tunRunning = false
 			time.Sleep(500 * time.Millisecond)
-			goLog("Previous TUN stopped")
 		}
 	}()
 
 	if fd < 0 {
-		goLog(fmt.Sprintf("ERROR: invalid fd %d", fd))
 		return fmt.Errorf("invalid fd: %d", fd)
 	}
 
-	// ═══ Step 1: چک fd ═══
-	goLog("Step 1: Checking fd...")
-	f := os.NewFile(uintptr(fd), "tun-test")
-	if f == nil {
-		goLog("ERROR: os.NewFile returned nil")
-		return fmt.Errorf("os.NewFile nil")
-	}
-	// فقط چک — نبند! tun2socks خودش استفاده میکنه
-	stat, err := f.Stat()
+	// dup fd — کپی بگیر تا Java بتونه اصلی رو نگه داره
+	// اینطوری VPN key میمونه + Go هم fd داره
+	goLog("Duplicating fd...")
+	dupFd, err := dupFD(int(fd))
 	if err != nil {
-		goLog(fmt.Sprintf("WARNING: fd stat error: %v (may be normal for tun)", err))
+		goLog(fmt.Sprintf("dup failed: %v — using original fd", err))
+		dupFd = int(fd)
 	} else {
-		goLog(fmt.Sprintf("fd stat: name=%s size=%d", stat.Name(), stat.Size()))
+		goLog(fmt.Sprintf("dup OK: %d → %d", fd, dupFd))
 	}
-	// بذار f بره — GC نباید close کنه چون detachFd بوده
-	f = nil
-	goLog("Step 1: fd OK ✅")
 
-	// ═══ Step 2: صبر برای SOCKS5 ═══
+	// صبر برای SOCKS5
 	proxy := fmt.Sprintf("127.0.0.1:%d", socksPort)
-	goLog(fmt.Sprintf("Step 2: Waiting for SOCKS5 on %s...", proxy))
+	goLog(fmt.Sprintf("Waiting for SOCKS5 on %s...", proxy))
 
 	ready := false
 	for i := 0; i < 120; i++ {
@@ -106,78 +92,57 @@ func (e *Engine) StartTun(fd int32, socksPort int32) (retErr error) {
 			break
 		}
 		if i%20 == 0 && i > 0 {
-			goLog(fmt.Sprintf("  Still waiting... %ds (err: %v)", i/2, err))
+			goLog(fmt.Sprintf("  Waiting... %ds", i/2))
 		}
 		time.Sleep(500 * time.Millisecond)
 	}
 
 	if !ready {
-		goLog("ERROR: SOCKS5 not ready after 60s")
-		e.log("SOCKS5 not ready — TUN aborted")
-		return fmt.Errorf("SOCKS5 not ready on %s", proxy)
+		goLog("SOCKS5 not ready — aborting")
+		e.log("SOCKS5 not ready")
+		return fmt.Errorf("SOCKS5 not ready")
 	}
-	goLog("Step 2: SOCKS5 ready ✅")
+	goLog("SOCKS5 ready ✅")
 
-	// ═══ Step 3: Test SOCKS5 ═══
-	goLog("Step 3: Testing SOCKS5 connection...")
-	testConn, err := net.DialTimeout("tcp", proxy, 2*time.Second)
-	if err != nil {
-		goLog(fmt.Sprintf("SOCKS5 test failed: %v", err))
-	} else {
-		goLog("SOCKS5 test connection OK ✅")
-		testConn.Close()
-	}
-
-	// ═══ Step 4: tun2socks config ═══
-	device := fmt.Sprintf("fd://%d", fd)
+	device := fmt.Sprintf("fd://%d", dupFd)
 	proxyURL := fmt.Sprintf("socks5://%s", proxy)
-	goLog(fmt.Sprintf("Step 4: device=%s proxy=%s mtu=1500", device, proxyURL))
+	goLog(fmt.Sprintf("tun2socks: device=%s proxy=%s", device, proxyURL))
 
 	key := &engine.Key{
 		Device:   device,
 		Proxy:    proxyURL,
 		MTU:      1500,
-		LogLevel: "silent",
+		LogLevel: "warning",
 	}
 
-	goLog("Step 4a: engine.Insert()...")
 	engine.Insert(key)
-	goLog("Step 4a: engine.Insert() done ✅")
+	goLog("engine.Insert() done")
 
-	// ═══ Step 5: engine.Start() — خطرناک! ═══
-	goLog("Step 5: engine.Start() — THIS IS WHERE CRASH MIGHT HAPPEN")
-	goLog("Step 5: Starting in goroutine with timeout...")
-
-	panicCh := make(chan string, 1)
 	doneCh := make(chan struct{}, 1)
+	panicCh := make(chan string, 1)
 
 	go func() {
 		defer func() {
 			if r := recover(); r != nil {
-				msg := fmt.Sprintf("PANIC in engine.Start(): %v\n%s", r, debug.Stack())
-				goLog(msg)
-				panicCh <- msg
+				panicCh <- fmt.Sprintf("%v\n%s", r, debug.Stack())
 			}
 		}()
-		goLog("Step 5: calling engine.Start()...")
 		engine.Start()
-		goLog("Step 5: engine.Start() returned ✅")
 		doneCh <- struct{}{}
 	}()
 
 	select {
 	case <-doneCh:
-		goLog("Step 5: engine.Start() completed ✅")
+		goLog("engine.Start() done ✅")
 	case msg := <-panicCh:
-		goLog("Step 5: engine.Start() PANICKED: " + msg)
-		e.log("TUN PANIC: " + msg)
+		goLog("engine.Start() PANIC: " + msg)
 		return fmt.Errorf("tun2socks panic")
 	case <-time.After(10 * time.Second):
-		goLog("Step 5: engine.Start() timeout (10s) — assuming running in background")
+		goLog("engine.Start() running in background")
 	}
 
 	tunRunning = true
-	goLog("TUN STARTED ✅ — all steps completed")
+	goLog("TUN STARTED ✅")
 	e.log("TUN started ✅")
 	return nil
 }
@@ -189,11 +154,10 @@ func (e *Engine) StopTun() {
 			goLog(fmt.Sprintf("PANIC in StopTun: %v", r))
 		}
 	}()
-
 	if !tunRunning {
 		return
 	}
-	goLog("StopTun called")
+	goLog("StopTun")
 	e.log("Stopping TUN...")
 	engine.Stop()
 	tunRunning = false
@@ -201,7 +165,6 @@ func (e *Engine) StopTun() {
 	e.log("TUN stopped ✅")
 }
 
-// ReadGoLog خوندن لاگ Go از Kotlin
 func ReadGoLog() string {
 	paths := []string{
 		"/data/data/com.guarch.app/files/go_debug.log",
@@ -213,10 +176,9 @@ func ReadGoLog() string {
 			return string(data)
 		}
 	}
-	return "No Go log file found"
+	return "No Go log"
 }
 
-// ClearGoLog پاک کردن لاگ
 func ClearGoLog() {
 	paths := []string{
 		"/data/data/com.guarch.app/files/go_debug.log",
@@ -225,24 +187,4 @@ func ClearGoLog() {
 	for _, p := range paths {
 		os.WriteFile(p, []byte(""), 0644)
 	}
-}
-
-// ═══ Helper: Test read/write on fd ═══
-func testFd(fd int32) error {
-	f := os.NewFile(uintptr(fd), "tun-rw-test")
-	if f == nil {
-		return fmt.Errorf("NewFile nil")
-	}
-	// تست read — TUN باید readable باشه
-	buf := make([]byte, 1)
-	f.SetReadDeadline(time.Now().Add(100 * time.Millisecond))
-	_, err := f.Read(buf)
-	if err != nil && err != io.EOF {
-		// timeout اوکیه — یعنی fd بازه ولی دیتایی نیست
-		if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
-			return nil // اوکیه
-		}
-		return fmt.Errorf("read test: %v", err)
-	}
-	return nil
 }
