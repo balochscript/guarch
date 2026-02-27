@@ -55,7 +55,6 @@ func (e *Engine) StartTun(fd int32, socksPort int32) (retErr error) {
 		}
 	}()
 
-	// اگه قبلاً اجرا شده، دیگه دوباره Start نکن
 	if tunRunning {
 		goLog("TUN already running — skip")
 		e.log("TUN already active")
@@ -66,7 +65,6 @@ func (e *Engine) StartTun(fd int32, socksPort int32) (retErr error) {
 		return fmt.Errorf("invalid fd: %d", fd)
 	}
 
-	// صبر برای SOCKS5
 	proxy := fmt.Sprintf("127.0.0.1:%d", socksPort)
 	goLog(fmt.Sprintf("Waiting for SOCKS5 on %s...", proxy))
 
@@ -104,7 +102,7 @@ func (e *Engine) StartTun(fd int32, socksPort int32) (retErr error) {
 
 	goLog("engine.Insert()...")
 	engine.Insert(key)
-	goLog("engine.Insert() done")
+	goLog("engine.Insert() done ✅")
 
 	goLog("engine.Start()...")
 	doneCh := make(chan struct{}, 1)
@@ -116,18 +114,20 @@ func (e *Engine) StartTun(fd int32, socksPort int32) (retErr error) {
 				panicCh <- fmt.Sprintf("%v\n%s", r, debug.Stack())
 			}
 		}()
+		goLog("calling engine.Start()...")
 		engine.Start()
+		goLog("engine.Start() returned ✅")
 		doneCh <- struct{}{}
 	}()
 
 	select {
 	case <-doneCh:
-		goLog("engine.Start() done ✅")
+		goLog("engine.Start() completed ✅")
 	case msg := <-panicCh:
 		goLog("engine.Start() PANIC: " + msg)
 		return fmt.Errorf("tun2socks panic")
 	case <-time.After(10 * time.Second):
-		goLog("engine.Start() running (background)")
+		goLog("engine.Start() running in background")
 	}
 
 	tunRunning = true
@@ -136,13 +136,10 @@ func (e *Engine) StartTun(fd int32, socksPort int32) (retErr error) {
 	return nil
 }
 
-// StopTun — هیچوقت engine.Stop() صدا نمیزنیم
 func (e *Engine) StopTun() {
 	initGoLog()
-	goLog("StopTun called — keeping tun2socks alive")
-	e.log("TUN kept alive for reconnect")
-	// engine.Stop() صدا نمیزنیم!
-	// وقتی VPN service بمیره fd بسته میشه و tun2socks خودش error میده
+	goLog("StopTun — keeping tun2socks alive")
+	e.log("TUN kept alive")
 }
 
 func ReadGoLog() string {
