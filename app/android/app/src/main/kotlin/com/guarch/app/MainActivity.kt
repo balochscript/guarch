@@ -27,6 +27,9 @@ class MainActivity : FlutterActivity() {
     private var pendingSocksPort: Int = 1080
     private var goEngine: Any? = null
 
+    // ← VPN service و TUN فقط یکبار شروع میشن
+    private var vpnAndTunStarted = false
+
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
 
@@ -54,30 +57,17 @@ class MainActivity : FlutterActivity() {
             }
         }
 
-                MethodChannel(flutterEngine.dartExecutor.binaryMessenger, LOG_CHANNEL)
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, LOG_CHANNEL)
             .setMethodCallHandler { call, result ->
                 when (call.method) {
                     "getLogs" -> result.success(CrashLogger.getCurrentLog(this))
                     "getCrashLog" -> result.success(CrashLogger.getPreviousCrashLog(this))
                     "getGoLog" -> {
-                        // خوندن Go log file
                         try {
-                            if (goEngine != null) {
-                                val method = goEngine!!.javaClass.getMethod("readGoLog")
-                                result.success(method.invoke(null) as? String ?: "No Go log")
-                            } else {
-                                // مستقیم فایل رو بخون
-                                val f = java.io.File(filesDir, "go_debug.log")
-                                result.success(if (f.exists()) f.readText() else "No Go log file")
-                            }
+                            val f = java.io.File(filesDir, "go_debug.log")
+                            result.success(if (f.exists()) f.readText() else "No Go log")
                         } catch (e: Throwable) {
-                            // fallback: مستقیم فایل
-                            try {
-                                val f = java.io.File(filesDir, "go_debug.log")
-                                result.success(if (f.exists()) f.readText() else "No Go log: ${e.message}")
-                            } catch (e2: Throwable) {
-                                result.success("Error reading Go log: ${e2.message}")
-                            }
+                            result.success("Error: ${e.message}")
                         }
                     }
                     "clearLogs" -> { CrashLogger.init(this); result.success(true) }
@@ -102,31 +92,58 @@ class MainActivity : FlutterActivity() {
     }
 
     // ═══════════════════════════════
-    // NPV-Style Connect
+    // Connect
     // ═══════════════════════════════
 
     private fun handleConnect(arguments: Any?, result: MethodChannel.Result) {
-        CrashLogger.d(TAG, "=== handleConnect (NPV-style) ===")
+        CrashLogger.d(TAG, "=== handleConnect ===")
 
         val config = arguments as? String
         if (config == null) {
-            CrashLogger.e(TAG, "  Config NULL!")
             result.error("NULL_CONFIG", "Config is null", null)
             return
         }
-        CrashLogger.d(TAG, "  config: ${config.take(200)}")
-        CrashLogger.d(TAG, "  goEngine: ${if (goEngine != null) "LOADED" else "NULL"}")
 
         if (goEngine == null) {
             result.error("NO_ENGINE", "Native engine not available", null)
             return
         }
 
-        // NPV-style: اول VPN شروع کن، بعد result برگردون
+        CrashLogger.d(TAG, "  config: ${config.take(200)}")
+        CrashLogger.d(TAG, "  vpnAndTunStarted: $vpnAndTunStarted")
         pendingConfig = config
-        startVpnFirst(result)
+
+        if (vpnAndTunStarted && GuarchService.isRunning) {
+            // VPN و TUN قبلاً شروع شدن — فقط Go engine وصل کن
+            CrashLogger.d(TAG, "  VPN/TUN already running — just reconnect Go engine")
+            connectGoEngineOnly(result)
+        } else {
+            // اولین بار — VPN + TUN + Go engine
+            CrashLogger.d(TAG, "  First connect — starting VPN + TUN + Go engine")
+            startVpnFirst(result)
+        }
     }
 
+    // فقط Go engine وصل کن (reconnect)
+    private fun connectGoEngineOnly(result: MethodChannel.Result) {
+        CrashLogger.d(TAG, "--- connectGoEngineOnly ---")
+        Thread {
+            try {
+                val config = pendingConfig ?: return@Thread
+                CrashLogger.d(TAG, "  Calling goEngine.connect()...")
+                val connectMethod = goEngine!!.javaClass.getMethod("connect", String::class.java)
+                val success = connectMethod.invoke(goEngine, config) as Boolean
+                CrashLogger.d(TAG, "  Go connect=$success")
+                runOnUiThread { result.success(success) }
+            } catch (e: Throwable) {
+                val real = unwrapException(e)
+                CrashLogger.e(TAG, "  Go connect FAILED", real)
+                runOnUiThread { result.success(false) }
+            }
+        }.start()
+    }
+
+    // اولین بار: VPN + TUN + Go
     private fun startVpnFirst(result: MethodChannel.Result) {
         CrashLogger.d(TAG, "--- startVpnFirst ---")
         try {
@@ -152,7 +169,6 @@ class MainActivity : FlutterActivity() {
             if (resultCode == Activity.RESULT_OK) {
                 vpnPermissionResult?.let { startVpnThenConnect(it) }
             } else {
-                CrashLogger.w(TAG, "  VPN permission denied")
                 vpnPermissionResult?.success(false)
             }
             vpnPermissionResult = null
@@ -162,7 +178,7 @@ class MainActivity : FlutterActivity() {
     private fun startVpnThenConnect(result: MethodChannel.Result) {
         CrashLogger.d(TAG, "=== startVpnThenConnect ===")
         try {
-            // ۱. VPN Service شروع کن
+            // ۱. VPN Service
             CrashLogger.d(TAG, "  S1: Starting VPN service...")
             val serviceIntent = Intent(this, GuarchService::class.java).apply {
                 action = GuarchService.ACTION_START
@@ -173,11 +189,12 @@ class MainActivity : FlutterActivity() {
             } else {
                 startService(serviceIntent)
             }
-            CrashLogger.d(TAG, "  S1: Service started ✅")
+            CrashLogger.d(TAG, "  S1: Done ✅")
 
-            // ۲. صبر کن fd آماده بشه (سریعه)
+            // ۲. Background: fd + Go engine + TUN
             Thread {
                 try {
+                    // صبر برای fd
                     CrashLogger.d(TAG, "  S2: Waiting for TUN fd...")
                     var attempts = 0
                     while (GuarchService.tunFd < 0 && attempts < 30) {
@@ -188,59 +205,44 @@ class MainActivity : FlutterActivity() {
                     CrashLogger.d(TAG, "  S2: fd=$fd attempts=$attempts")
 
                     if (fd < 0) {
-                        CrashLogger.e(TAG, "  S2: Failed to get TUN fd!")
+                        CrashLogger.e(TAG, "  S2: No fd!")
                         runOnUiThread { result.success(false) }
                         return@Thread
                     }
 
-                    // ۳. فوراً result برگردون → Flutter نشون میده "connected"
-                    CrashLogger.d(TAG, "  S3: Returning success to Flutter (NPV-style)")
+                    // فوری result بده
+                    CrashLogger.d(TAG, "  S3: Returning success (NPV-style)")
                     runOnUiThread { result.success(true) }
 
-                    // ۴. پشت صحنه: Go engine وصل کن
-                    CrashLogger.d(TAG, "  S4: Starting Go engine...")
+                    // Go engine connect
                     val config = pendingConfig
                     if (config != null && goEngine != null) {
                         try {
-                            val connectMethod = goEngine!!.javaClass.getMethod("connect", String::class.java)
-                            val connected = connectMethod.invoke(goEngine, config) as Boolean
-                            CrashLogger.d(TAG, "  S4: Go connect=$connected")
+                            CrashLogger.d(TAG, "  S4: Go connect...")
+                            val m = goEngine!!.javaClass.getMethod("connect", String::class.java)
+                            val ok = m.invoke(goEngine, config) as Boolean
+                            CrashLogger.d(TAG, "  S4: Go connect=$ok")
                         } catch (e: Throwable) {
-                            val cause = unwrapException(e)
-                            CrashLogger.e(TAG, "  S4: Go connect FAILED: ${cause.message}", cause)
+                            CrashLogger.e(TAG, "  S4: Go connect FAILED", unwrapException(e))
                         }
                     }
 
-                                        // ۵. پشت صحنه: TUN شروع کن
-                    if (goEngine != null && fd >= 0) {
+                    // TUN (فقط اگه هنوز شروع نشده)
+                    if (goEngine != null && fd >= 0 && !vpnAndTunStarted) {
                         try {
                             CrashLogger.d(TAG, "  S5: Starting TUN (fd=$fd port=$pendingSocksPort)...")
-                            val startTunMethod = goEngine!!.javaClass.getMethod(
-                                "startTun", Int::class.java, Int::class.java
-                            )
-                            val tunResult = startTunMethod.invoke(goEngine, fd, pendingSocksPort)
-                            CrashLogger.d(TAG, "  S5: TUN result=$tunResult ✅")
+                            val m = goEngine!!.javaClass.getMethod("startTun", Int::class.java, Int::class.java)
+                            m.invoke(goEngine, fd, pendingSocksPort)
+                            vpnAndTunStarted = true
+                            CrashLogger.d(TAG, "  S5: TUN done ✅")
                         } catch (e: Throwable) {
-                            // InvocationTargetException رو باز کن
-                            val real = if (e is java.lang.reflect.InvocationTargetException) {
-                                e.targetException ?: e.cause ?: e
-                            } else e
-                            
-                            CrashLogger.e(TAG, "  S5: TUN FAILED", real)
-                            CrashLogger.d(TAG, "  S5: Exception type: ${real.javaClass.name}")
-                            CrashLogger.d(TAG, "  S5: Message: ${real.message}")
-                            
-                            // Stack trace کامل
-                            val sw = java.io.StringWriter()
-                            real.printStackTrace(java.io.PrintWriter(sw))
-                            CrashLogger.d(TAG, "  S5: Full stack:\n$sw")
+                            CrashLogger.e(TAG, "  S5: TUN FAILED", unwrapException(e))
                         }
                     }
 
-                    CrashLogger.d(TAG, "=== Background setup complete ===")
-
+                    CrashLogger.d(TAG, "=== Setup complete ===")
                 } catch (e: Throwable) {
-                    CrashLogger.e(TAG, "  Background thread CRASHED", e)
+                    CrashLogger.e(TAG, "  Thread CRASHED", e)
                 }
             }.start()
 
@@ -251,7 +253,7 @@ class MainActivity : FlutterActivity() {
     }
 
     // ═══════════════════════════════
-    // Disconnect
+    // Disconnect — فقط Go engine قطع میشه
     // ═══════════════════════════════
 
     private fun handleDisconnect(result: MethodChannel.Result) {
@@ -259,12 +261,7 @@ class MainActivity : FlutterActivity() {
         Thread {
             try {
                 if (goEngine != null) {
-                    try {
-                        goEngine!!.javaClass.getMethod("stopTun").invoke(goEngine)
-                        CrashLogger.d(TAG, "  stopTun ok")
-                    } catch (e: Throwable) {
-                        CrashLogger.e(TAG, "  stopTun err", unwrapException(e))
-                    }
+                    // ← فقط disconnect — نه stopTun!
                     try {
                         goEngine!!.javaClass.getMethod("disconnect").invoke(goEngine)
                         CrashLogger.d(TAG, "  disconnect ok")
@@ -272,11 +269,11 @@ class MainActivity : FlutterActivity() {
                         CrashLogger.e(TAG, "  disconnect err", unwrapException(e))
                     }
                 }
+                // ← VPN service رو STOP نمیکنیم!
+                // tun2socks زنده میمونه برای reconnect سریع
             } catch (e: Throwable) {
                 CrashLogger.e(TAG, "  Disconnect error", e)
             }
-
-            stopVpnService()
             runOnUiThread { result.success(true) }
         }.start()
     }
@@ -324,23 +321,9 @@ class MainActivity : FlutterActivity() {
         }
     }
 
-    // InvocationTargetException رو باز کن تا خطای واقعی رو ببینیم
     private fun unwrapException(e: Throwable): Throwable {
-        if (e is java.lang.reflect.InvocationTargetException && e.cause != null) {
-            return e.cause!!
-        }
+        if (e is java.lang.reflect.InvocationTargetException && e.cause != null) return e.cause!!
         return e
-    }
-
-    private fun stopVpnService() {
-        CrashLogger.d(TAG, "--- stopVpnService ---")
-        try {
-            startService(Intent(this, GuarchService::class.java).apply {
-                action = GuarchService.ACTION_STOP
-            })
-        } catch (e: Throwable) {
-            CrashLogger.e(TAG, "stop err", e)
-        }
     }
 
     private fun shareLogs() {
@@ -354,13 +337,10 @@ class MainActivity : FlutterActivity() {
                 Intent(Intent.ACTION_SEND).apply {
                     type = "text/plain"
                     putExtra(Intent.EXTRA_STREAM, uri)
-                    putExtra(Intent.EXTRA_SUBJECT, "Guarch Debug Log")
                     addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                 }, "Share Log"
             ))
-        } catch (e: Exception) {
-            CrashLogger.e(TAG, "Share failed", e)
-        }
+        } catch (e: Exception) { CrashLogger.e(TAG, "Share failed", e) }
     }
 
     override fun onDestroy() {
