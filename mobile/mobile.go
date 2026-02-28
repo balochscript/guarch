@@ -12,6 +12,7 @@ import (
 	"io"
 	"log"
 	"net"
+	"runtime/debug"
 	"sync"
 	"time"
 
@@ -23,10 +24,6 @@ import (
 	"guarch/pkg/socks5"
 	"guarch/pkg/transport"
 )
-
-// ═══════════════════════════════════════
-// Callback + Types
-// ═══════════════════════════════════════
 
 type Callback interface {
 	OnStatusChanged(status string)
@@ -75,16 +72,21 @@ func New() *Engine {
 
 func (e *Engine) SetCallback(cb Callback) { e.callback = cb }
 
-// ═══════════════════════════════════════
-// Connect / Disconnect
-// ═══════════════════════════════════════
+func (e *Engine) Connect(configJSON string) (result bool) {
+	defer func() {
+		if r := recover(); r != nil {
+			e.log(fmt.Sprintf("Connect panic: %v\n%s", r, debug.Stack()))
+			e.setStatus("disconnected")
+			result = false
+		}
+	}()
 
-func (e *Engine) Connect(configJSON string) bool {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	if e.status == "connected" || e.status == "connecting" {
 		return false
 	}
+
 	var cfg connectConfig
 	if err := json.Unmarshal([]byte(configJSON), &cfg); err != nil {
 		e.log("Config error: " + err.Error())
@@ -97,9 +99,10 @@ func (e *Engine) Connect(configJSON string) bool {
 	if cfg.Protocol == "" {
 		cfg.Protocol = "guarch"
 	}
+
 	e.protocol = cfg.Protocol
 	e.setStatus("connecting")
-	e.log(fmt.Sprintf("Connecting via %s to %s:%d...", cfg.Protocol, cfg.ServerAddr, cfg.ServerPort))
+	e.log(fmt.Sprintf("Connecting via %s to %s:%d", cfg.Protocol, cfg.ServerAddr, cfg.ServerPort))
 
 	ctx, cancel := context.WithCancel(context.Background())
 	e.cancel = cancel
@@ -107,7 +110,14 @@ func (e *Engine) Connect(configJSON string) bool {
 	return true
 }
 
-func (e *Engine) Disconnect() bool {
+func (e *Engine) Disconnect() (result bool) {
+	defer func() {
+		if r := recover(); r != nil {
+			e.log(fmt.Sprintf("Disconnect panic: %v", r))
+			result = false
+		}
+	}()
+
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	e.setStatus("disconnecting")
@@ -136,20 +146,25 @@ func (e *Engine) Disconnect() bool {
 		e.zhipConn.CloseWithError(0, "disconnect")
 		e.zhipConn = nil
 	}
+
 	e.setStatus("disconnected")
 	e.log("Disconnected")
 	return true
 }
 
 func (e *Engine) connectAsync(ctx context.Context, cfg connectConfig) {
+	defer func() {
+		if r := recover(); r != nil {
+			e.log(fmt.Sprintf("connectAsync panic: %v\n%s", r, debug.Stack()))
+			e.setStatus("disconnected")
+		}
+	}()
+
 	var coverMgr *cover.Manager
 	if cfg.CoverEnabled {
-		e.log("Starting cover traffic...")
 		coverMgr = cover.NewManager(cover.DefaultConfig(), nil)
 		coverMgr.Start(ctx)
 		time.Sleep(2 * time.Second)
-		e.log(fmt.Sprintf("Cover ready: avg=%d samples=%d",
-			coverMgr.Stats().AvgPacketSize(), coverMgr.Stats().SampleCount()))
 	}
 
 	switch cfg.Protocol {
@@ -162,14 +177,17 @@ func (e *Engine) connectAsync(ctx context.Context, cfg connectConfig) {
 	}
 }
 
-// ═══════════════════════════════════════
-// Protocol: Guarch (TLS/TCP)
-// ═══════════════════════════════════════
-
 func (e *Engine) connectGuarch(ctx context.Context, cfg connectConfig, coverMgr *cover.Manager) {
-	serverAddr := fmt.Sprintf("%s:%d", cfg.ServerAddr, cfg.ServerPort)
+	defer func() {
+		if r := recover(); r != nil {
+			e.log(fmt.Sprintf("connectGuarch panic: %v", r))
+			e.setStatus("disconnected")
+		}
+	}()
 
+	serverAddr := fmt.Sprintf("%s:%d", cfg.ServerAddr, cfg.ServerPort)
 	tlsConfig := &tls.Config{MinVersion: tls.VersionTLS13, InsecureSkipVerify: true}
+
 	if cfg.CertPin != "" {
 		tlsConfig.VerifyPeerCertificate = func(rawCerts [][]byte, _ [][]*x509.Certificate) error {
 			if len(rawCerts) == 0 {
@@ -181,7 +199,6 @@ func (e *Engine) connectGuarch(ctx context.Context, cfg connectConfig, coverMgr 
 			}
 			return nil
 		}
-		e.log("Certificate PIN enabled")
 	}
 
 	if coverMgr != nil {
@@ -214,22 +231,18 @@ func (e *Engine) connectGuarch(ctx context.Context, cfg connectConfig, coverMgr 
 	e.muxConn = m
 	e.mu.Unlock()
 
-	openStream := func() (io.ReadWriteCloser, error) {
-		s, err := m.OpenStream()
-		if err != nil {
-			return nil, err
-		}
-		return s, nil
-	}
-
+	openStream := func() (io.ReadWriteCloser, error) { return m.OpenStream() }
 	e.startSOCKS(ctx, cfg, "Guarch", openStream)
 }
 
-// ═══════════════════════════════════════
-// Protocol: Grouk (Raw UDP)
-// ═══════════════════════════════════════
-
 func (e *Engine) connectGrouk(ctx context.Context, cfg connectConfig, coverMgr *cover.Manager) {
+	defer func() {
+		if r := recover(); r != nil {
+			e.log(fmt.Sprintf("connectGrouk panic: %v", r))
+			e.setStatus("disconnected")
+		}
+	}()
+
 	serverAddr := fmt.Sprintf("%s:%d", cfg.ServerAddr, cfg.ServerPort)
 	udpAddr, err := net.ResolveUDPAddr("udp", serverAddr)
 	if err != nil {
@@ -251,7 +264,6 @@ func (e *Engine) connectGrouk(ctx context.Context, cfg connectConfig, coverMgr *
 		coverMgr.SendOne()
 	}
 
-	e.log("Grouk handshake...")
 	session, err := transport.GroukClientHandshake(udpConn, udpAddr, []byte(cfg.PSK))
 	if err != nil {
 		e.log("Grouk handshake failed: " + err.Error())
@@ -267,18 +279,12 @@ func (e *Engine) connectGrouk(ctx context.Context, cfg connectConfig, coverMgr *
 
 	go e.groukReadLoop(ctx, session, udpConn, udpAddr)
 
-	openStream := func() (io.ReadWriteCloser, error) {
-		s, err := session.OpenStream()
-		if err != nil {
-			return nil, err
-		}
-		return s, nil
-	}
-
+	openStream := func() (io.ReadWriteCloser, error) { return session.OpenStream() }
 	e.startSOCKS(ctx, cfg, "Grouk", openStream)
 }
 
 func (e *Engine) groukReadLoop(ctx context.Context, session *transport.GroukSession, udpConn *net.UDPConn, serverAddr *net.UDPAddr) {
+	defer func() { recover() }()
 	buf := make([]byte, 2048)
 	for {
 		select {
@@ -306,18 +312,19 @@ func (e *Engine) groukReadLoop(ctx context.Context, session *transport.GroukSess
 	}
 }
 
-// ═══════════════════════════════════════
-// Protocol: Zhip (QUIC)
-// ═══════════════════════════════════════
-
 func (e *Engine) connectZhip(ctx context.Context, cfg connectConfig, coverMgr *cover.Manager) {
-	serverAddr := fmt.Sprintf("%s:%d", cfg.ServerAddr, cfg.ServerPort)
+	defer func() {
+		if r := recover(); r != nil {
+			e.log(fmt.Sprintf("connectZhip panic: %v", r))
+			e.setStatus("disconnected")
+		}
+	}()
 
+	serverAddr := fmt.Sprintf("%s:%d", cfg.ServerAddr, cfg.ServerPort)
 	if coverMgr != nil {
 		coverMgr.SendOne()
 	}
 
-	e.log("Zhip QUIC dial...")
 	conn, err := transport.ZhipDial(ctx, serverAddr, cfg.CertPin, nil)
 	if err != nil {
 		e.log("Zhip dial failed: " + err.Error())
@@ -340,22 +347,18 @@ func (e *Engine) connectZhip(ctx context.Context, cfg connectConfig, coverMgr *c
 	e.zhipConn = conn
 	e.mu.Unlock()
 
-	openStream := func() (io.ReadWriteCloser, error) {
-		s, err := conn.OpenStreamSync(ctx)
-		if err != nil {
-			return nil, err
-		}
-		return s, nil
-	}
-
+	openStream := func() (io.ReadWriteCloser, error) { return conn.OpenStreamSync(ctx) }
 	e.startSOCKS(ctx, cfg, "Zhip", openStream)
 }
 
-// ═══════════════════════════════════════
-// Generic SOCKS5 + Relay
-// ═══════════════════════════════════════
-
 func (e *Engine) startSOCKS(ctx context.Context, cfg connectConfig, protoName string, openStream func() (io.ReadWriteCloser, error)) {
+	defer func() {
+		if r := recover(); r != nil {
+			e.log(fmt.Sprintf("startSOCKS panic: %v", r))
+			e.setStatus("disconnected")
+		}
+	}()
+
 	listenAddr := fmt.Sprintf("%s:%d", cfg.ListenAddr, cfg.ListenPort)
 	ln, err := net.Listen("tcp", listenAddr)
 	if err != nil {
@@ -370,7 +373,7 @@ func (e *Engine) startSOCKS(ctx context.Context, cfg connectConfig, protoName st
 	e.mu.Unlock()
 
 	e.setStatus("connected")
-	e.log(fmt.Sprintf("Connected via %s! SOCKS5 on %s", protoName, listenAddr))
+	e.log(fmt.Sprintf("Connected via %s — SOCKS5 on %s", protoName, listenAddr))
 
 	go e.statsReporter(ctx)
 
@@ -394,6 +397,7 @@ func (e *Engine) startSOCKS(ctx context.Context, cfg connectConfig, protoName st
 }
 
 func (e *Engine) handleSOCKS(socksConn net.Conn, openStream func() (io.ReadWriteCloser, error)) {
+	defer func() { recover() }()
 	defer socksConn.Close()
 
 	target, err := socks5.Handshake(socksConn)
@@ -438,7 +442,6 @@ func (e *Engine) sendConnectRequest(stream io.ReadWriter, target string) error {
 
 	lenBuf := make([]byte, 2)
 	binary.BigEndian.PutUint16(lenBuf, uint16(len(reqData)))
-
 	if _, err := stream.Write(lenBuf); err != nil {
 		return err
 	}
@@ -458,8 +461,8 @@ func (e *Engine) sendConnectRequest(stream io.ReadWriter, target string) error {
 
 func (e *Engine) relayWithStats(stream io.ReadWriteCloser, conn net.Conn) {
 	done := make(chan struct{}, 2)
-
 	go func() {
+		defer func() { recover() }()
 		buf := make([]byte, 32768)
 		for {
 			n, err := conn.Read(buf)
@@ -475,8 +478,8 @@ func (e *Engine) relayWithStats(stream io.ReadWriteCloser, conn net.Conn) {
 		}
 		done <- struct{}{}
 	}()
-
 	go func() {
+		defer func() { recover() }()
 		buf := make([]byte, 32768)
 		for {
 			n, err := stream.Read(buf)
@@ -492,18 +495,14 @@ func (e *Engine) relayWithStats(stream io.ReadWriteCloser, conn net.Conn) {
 		}
 		done <- struct{}{}
 	}()
-
 	<-done
 	stream.Close()
 	conn.Close()
 	<-done
 }
 
-// ═══════════════════════════════════════
-// Stats + Helpers
-// ═══════════════════════════════════════
-
 func (e *Engine) statsReporter(ctx context.Context) {
+	defer func() { recover() }()
 	ticker := time.NewTicker(1 * time.Second)
 	defer ticker.Stop()
 	var lastUp, lastDown int64
@@ -514,18 +513,16 @@ func (e *Engine) statsReporter(ctx context.Context) {
 			return
 		case <-ticker.C:
 			e.stats.mu.Lock()
-			upSpeed := e.stats.totalUpload - lastUp
-			downSpeed := e.stats.totalDownload - lastDown
-			lastUp = e.stats.totalUpload
-			lastDown = e.stats.totalDownload
 			data := map[string]interface{}{
-				"upload_speed":     upSpeed,
-				"download_speed":   downSpeed,
+				"upload_speed":     e.stats.totalUpload - lastUp,
+				"download_speed":   e.stats.totalDownload - lastDown,
 				"total_upload":     e.stats.totalUpload,
 				"total_download":   e.stats.totalDownload,
 				"cover_requests":   e.stats.coverRequests,
 				"duration_seconds": int(time.Since(e.stats.startTime).Seconds()),
 			}
+			lastUp = e.stats.totalUpload
+			lastDown = e.stats.totalDownload
 			e.stats.mu.Unlock()
 			jsonData, _ := json.Marshal(data)
 			if e.callback != nil {
