@@ -10,6 +10,8 @@ on:
       - 'mobile/**'
       - 'pkg/**'
       - 'cmd/**'
+      - 'go.mod'
+      - 'go.sum'
       - '.github/workflows/release-debug.yml'
   workflow_dispatch:
 
@@ -34,6 +36,7 @@ jobs:
         with:
           go-version: ${{ env.GO_VERSION }}
           cache: true
+          cache-dependency-path: go.sum
       
       - name: Set up Java
         uses: actions/setup-java@v4
@@ -48,246 +51,421 @@ jobs:
           channel: 'stable'
           cache: true
       
+      - name: Set up Android NDK
+        run: |
+          echo "y" | ${ANDROID_SDK_ROOT}/cmdline-tools/latest/bin/sdkmanager --install "ndk;25.2.9519653"
+          echo "ANDROID_NDK_HOME=${ANDROID_SDK_ROOT}/ndk/25.2.9519653" >> $GITHUB_ENV
+      
+      - name: Verify Go module
+        run: |
+          echo "=== Go Module Info ==="
+          go version
+          go env GOVERSION
+          cat go.mod | head -20
+          echo ""
+          echo "Module: $(go list -m)"
+      
+      - name: Download Go dependencies
+        run: |
+          go mod download
+          go mod verify
+          echo ""
+          echo "=== Key Dependencies ==="
+          go list -m all | grep -E "(mobile|quic|tun2socks)"
+      
       - name: Install gomobile
         run: |
           go install golang.org/x/mobile/cmd/gomobile@latest
           go install golang.org/x/mobile/cmd/gobind@latest
-          gomobile init
+          echo "$(go env GOPATH)/bin" >> $GITHUB_PATH
       
-      - name: Cache Go mobile dependencies
-        uses: actions/cache@v3
-        with:
-          path: |
-            ~/go/pkg/mod
-            ~/go/pkg/gomobile
-          key: ${{ runner.os }}-gomobile-${{ hashFiles('**/go.sum') }}
-          restore-keys: |
-            ${{ runner.os }}-gomobile-
+      - name: Initialize gomobile
+        run: |
+          export ANDROID_NDK_HOME="${ANDROID_SDK_ROOT}/ndk/25.2.9519653"
+          gomobile init -ndk $ANDROID_NDK_HOME -v
+      
+      - name: Verify mobile package
+        run: |
+          echo "=== Mobile Package ==="
+          ls -la mobile/
+          echo ""
+          echo "=== Package imports ==="
+          head -30 mobile/mobile.go | grep -E "^import|^\t\""
       
       - name: Build Go mobile library
         run: |
+          set -e
           mkdir -p app/android/app/libs
-          gomobile bind -target=android -androidapi 21 \
+          
+          export PATH=$PATH:$(go env GOPATH)/bin
+          export ANDROID_NDK_HOME="${ANDROID_SDK_ROOT}/ndk/25.2.9519653"
+          
+          echo "=== Building mobile.aar ==="
+          echo "Working directory: $(pwd)"
+          echo "Module name: guarch"
+          echo "Package: guarch/mobile"
+          echo "NDK: $ANDROID_NDK_HOME"
+          echo ""
+          
+          # Build با module name صحیح
+          gomobile bind -v \
+            -target=android \
+            -androidapi=21 \
+            -javapkg=com.guarch \
             -o app/android/app/libs/mobile.aar \
             -ldflags="-s -w" \
-            ./mobile/
+            guarch/mobile
+          
+          echo ""
+          echo "=== Build completed ==="
+          ls -lh app/android/app/libs/mobile.aar
+      
+      - name: Verify AAR file
+        run: |
+          if [ ! -f "app/android/app/libs/mobile.aar" ]; then
+            echo "❌ ERROR: mobile.aar was not created!"
+            echo ""
+            echo "Checking directory contents:"
+            find app/android/app/libs -type f
+            exit 1
+          fi
+          
+          echo "✅ mobile.aar created successfully"
+          echo ""
+          echo "File size: $(du -h app/android/app/libs/mobile.aar | cut -f1)"
+          echo ""
+          echo "AAR contents:"
+          unzip -l app/android/app/libs/mobile.aar | head -30
+      
+      - name: Cache Flutter dependencies
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.pub-cache
+            app/.dart_tool
+          key: ${{ runner.os }}-flutter-${{ hashFiles('**/pubspec.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-flutter-
       
       - name: Get Flutter dependencies
         working-directory: app
-        run: flutter pub get
+        run: |
+          flutter pub get
+          flutter pub upgrade
       
-      - name: Run Flutter analyzer
-        working-directory: app
-        run: flutter analyze --no-fatal-infos
+      - name: Run Flutter doctor
+        run: flutter doctor -v
       
       - name: Generate build number
         id: build_number
         run: |
           BUILD_NUMBER=$(date +%Y%m%d%H%M)
+          BUILD_NAME="0.1.0-debug+$BUILD_NUMBER"
           echo "BUILD_NUMBER=$BUILD_NUMBER" >> $GITHUB_OUTPUT
-          echo "BUILD_NAME=0.1.0-debug+$BUILD_NUMBER" >> $GITHUB_OUTPUT
+          echo "BUILD_NAME=$BUILD_NAME" >> $GITHUB_OUTPUT
+          echo ""
+          echo "Build Number: $BUILD_NUMBER"
+          echo "Build Name: $BUILD_NAME"
       
       - name: Build Android Debug APK
         working-directory: app
         env:
           BUILD_NUMBER: ${{ steps.build_number.outputs.BUILD_NUMBER }}
+          BUILD_NAME: ${{ steps.build_number.outputs.BUILD_NAME }}
         run: |
+          echo "=== Building APK ==="
+          echo "Build number: $BUILD_NUMBER"
+          echo "Build name: $BUILD_NAME"
+          echo ""
+          
           flutter build apk \
             --debug \
             --build-number=$BUILD_NUMBER \
-            --build-name=${{ steps.build_number.outputs.BUILD_NAME }}
+            --build-name=$BUILD_NAME \
+            --verbose
       
-      - name: Build Android Debug App Bundle
-        working-directory: app
-        env:
-          BUILD_NUMBER: ${{ steps.build_number.outputs.BUILD_NUMBER }}
+      - name: List build outputs
         run: |
-          flutter build appbundle \
-            --debug \
-            --build-number=$BUILD_NUMBER \
-            --build-name=${{ steps.build_number.outputs.BUILD_NAME }}
+          echo "=== Build outputs ==="
+          find app/build/app/outputs -type f -name "*.apk" -o -name "*.aab"
       
-      - name: Rename APK
+      - name: Rename and verify APK
+        id: apk_info
         run: |
-          mv app/build/app/outputs/flutter-apk/app-debug.apk \
-             app/build/app/outputs/flutter-apk/guarch-debug-${{ steps.build_number.outputs.BUILD_NUMBER }}.apk
+          APK_ORIG="app/build/app/outputs/flutter-apk/app-debug.apk"
+          APK_NEW="app/build/app/outputs/flutter-apk/guarch-debug-${{ steps.build_number.outputs.BUILD_NUMBER }}.apk"
+          
+          if [ ! -f "$APK_ORIG" ]; then
+            echo "❌ ERROR: APK not found at $APK_ORIG"
+            echo ""
+            echo "Available files:"
+            ls -la app/build/app/outputs/flutter-apk/ || echo "Directory not found"
+            exit 1
+          fi
+          
+          mv "$APK_ORIG" "$APK_NEW"
+          
+          APK_SIZE=$(du -h "$APK_NEW" | cut -f1)
+          APK_SIZE_BYTES=$(stat -f%z "$APK_NEW" 2>/dev/null || stat -c%s "$APK_NEW")
+          
+          echo "APK_SIZE=$APK_SIZE" >> $GITHUB_OUTPUT
+          echo "APK_SIZE_BYTES=$APK_SIZE_BYTES" >> $GITHUB_OUTPUT
+          echo "APK_NAME=guarch-debug-${{ steps.build_number.outputs.BUILD_NUMBER }}.apk" >> $GITHUB_OUTPUT
+          
+          echo "✅ APK created successfully"
+          echo "   Name: guarch-debug-${{ steps.build_number.outputs.BUILD_NUMBER }}.apk"
+          echo "   Size: $APK_SIZE ($APK_SIZE_BYTES bytes)"
       
       - name: Generate checksums
         working-directory: app/build/app/outputs/flutter-apk
         run: |
-          sha256sum guarch-debug-${{ steps.build_number.outputs.BUILD_NUMBER }}.apk > checksums.txt
-          md5sum guarch-debug-${{ steps.build_number.outputs.BUILD_NUMBER }}.apk >> checksums.txt
+          echo "=== Generating checksums ==="
+          sha256sum guarch-debug-*.apk > checksums.txt
+          md5sum guarch-debug-*.apk >> checksums.txt
+          echo ""
+          echo "Checksums:"
+          cat checksums.txt
       
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: guarch-android-debug-apk
+          name: guarch-android-debug-apk-${{ steps.build_number.outputs.BUILD_NUMBER }}
           path: |
             app/build/app/outputs/flutter-apk/guarch-debug-*.apk
             app/build/app/outputs/flutter-apk/checksums.txt
           retention-days: 30
+          if-no-files-found: error
+          compression-level: 0
       
-      - name: Upload App Bundle artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: guarch-android-debug-aab
-          path: app/build/app/outputs/bundle/debug/app-debug.aab
-          retention-days: 30
-      
-      - name: Create Release Notes
-        id: release_notes
+      - name: Create release notes
         run: |
-          cat > release_notes.md << 'EOF'
+          cat > release_notes.md << 'NOTES'
           ## 🚧 Guarch Protocol Suite - Debug Build
           
-          **⚠️ WARNING: This is a DEBUG build for testing purposes only!**
+          **⚠️ DEBUG BUILD - Testing Only!**
           
-          ### What is this?
-          This is an early debug build of the Guarch Android app. It includes:
-          - 🏹 Guarch (TLS/TCP) protocol support
-          - 🌩️ Grouk (Raw UDP) protocol support
-          - ⚡ Zhip (QUIC) protocol support
-          - System-wide VPN functionality
-          - Real-time statistics and logs
+          ### 📦 Protocols Included
           
-          ### Debug Build Information
-          - **Build Number:** ${{ steps.build_number.outputs.BUILD_NUMBER }}
-          - **Build Name:** ${{ steps.build_number.outputs.BUILD_NAME }}
-          - **Commit:** ${{ github.sha }}
-          - **Branch:** debug
+          | Protocol | Transport | Best For |
+          |----------|-----------|----------|
+          | 🏹 **Guarch** | TLS/TCP | Maximum stealth + cover traffic |
+          | 🌩️ **Grouk** | Raw UDP | Maximum speed + low latency |
+          | ⚡ **Zhip** | QUIC | Balanced + 0-RTT resumption |
           
-          ### ⚠️ Known Issues
-          - Debug symbols included (larger APK size ~50MB)
-          - Verbose logging enabled (may impact performance)
-          - Not optimized for production use
-          - May contain experimental features
+          ### 🔧 Build Information
           
-          ### 📝 Testing Checklist
+          | Item | Value |
+          |------|-------|
+          | **Build Number** | `${{ steps.build_number.outputs.BUILD_NUMBER }}` |
+          | **Version** | `${{ steps.build_number.outputs.BUILD_NAME }}` |
+          | **APK Size** | `${{ steps.apk_info.outputs.APK_SIZE }}` |
+          | **Commit** | `${{ github.sha }}` |
+          | **Branch** | `debug` |
+          | **Go Version** | `1.21` |
+          | **Flutter Version** | `3.16.0` |
+          | **Built** | `$(date -u '+%Y-%m-%d %H:%M:%S UTC')` |
+          
+          ### ⚠️ Debug Build Characteristics
+          
+          - ✅ **Debug symbols included** (~50MB APK)
+          - ✅ **Verbose logging** (all protocols)
+          - ✅ **Stack traces** on crashes
+          - ✅ **Performance profiling** enabled
+          - ❌ **NOT optimized** for battery
+          - ❌ **NOT for production** use
+          
+          ### 🧪 Testing Checklist
+          
           Please test and report:
-          - [ ] VPN connection establishment
-          - [ ] Protocol switching (Guarch/Grouk/Zhip)
-          - [ ] Server import/export
-          - [ ] Real-time stats accuracy
-          - [ ] Battery usage
-          - [ ] Any crashes or freezes
           
-          ### 🐛 Report Issues
-          Found a bug? Please report at:
-          https://github.com/balochscript/guarch/issues
+          **Connectivity:**
+          - [ ] Guarch protocol connection
+          - [ ] Grouk protocol connection
+          - [ ] Zhip protocol connection
+          - [ ] Protocol switching while connected
+          - [ ] Reconnection on network change
           
-          Include:
-          - Android version
-          - Device model
-          - Steps to reproduce
-          - Connection logs (if possible)
+          **Features:**
+          - [ ] Server import via URI (`guarch://`, `grouk://`, `zhip://`)
+          - [ ] Server import via JSON clipboard
+          - [ ] Server export and sharing
+          - [ ] Cover traffic configuration
+          - [ ] Real-time statistics accuracy
           
-          ### 📦 Installation
+          **Stability:**
+          - [ ] Background VPN service
+          - [ ] Network switching (WiFi ↔ Mobile)
+          - [ ] App switching / multitasking
+          - [ ] Battery drain monitoring
+          - [ ] Memory usage (check for leaks)
+          - [ ] Long-duration connections (>1 hour)
+          
+          **UI/UX:**
+          - [ ] Dark/Light theme switching
+          - [ ] Connection button states
+          - [ ] Log viewer functionality
+          - [ ] Settings persistence
+          
+          ### 📥 Installation
+          
+          **Method 1: Direct Download**
+          1. Download APK from Assets ⬇️
+          2. Enable "Install from Unknown Sources" in Android settings
+          3. Open downloaded APK
+          4. Tap Install
+          
+          **Method 2: ADB Install**
           ```bash
           # Download APK
-          wget https://github.com/balochscript/guarch/releases/download/debug-${{ steps.build_number.outputs.BUILD_NUMBER }}/guarch-debug-${{ steps.build_number.outputs.BUILD_NUMBER }}.apk
+          wget https://github.com/${{ github.repository }}/releases/download/debug-${{ steps.build_number.outputs.BUILD_NUMBER }}/guarch-debug-${{ steps.build_number.outputs.BUILD_NUMBER }}.apk
           
-          # Verify checksum
-          sha256sum guarch-debug-${{ steps.build_number.outputs.BUILD_NUMBER }}.apk
-          
-          # Install
+          # Install via ADB
           adb install guarch-debug-${{ steps.build_number.outputs.BUILD_NUMBER }}.apk
+          
+          # View live logs
+          adb logcat | grep -E "(Guarch|Flutter|GoLog)"
+          
+          # Clear app data (for fresh start)
+          adb shell pm clear com.guarch.app
           ```
           
-          ### 🔐 Security Note
-          This debug build includes:
-          - Debug symbols and logging
-          - No certificate pinning for localhost testing
-          - Relaxed security checks
+          ### 🔐 Verify Download (Checksums)
           
-          **DO NOT use for production or sensitive activities!**
+          ```
+          $(cat app/build/app/outputs/flutter-apk/checksums.txt 2>/dev/null || echo "SHA256: [will be shown after download]")
+          ```
           
-          ### 📊 File Information
-          - **APK Size:** ~50-60 MB (debug symbols included)
-          - **Min Android:** 5.0 (API 21)
-          - **Target Android:** 14 (API 34)
+          Verify after download:
+          ```bash
+          # Linux/Mac
+          sha256sum guarch-debug-${{ steps.build_number.outputs.BUILD_NUMBER }}.apk
           
-          ### 🙏 Thank You
-          Your testing and feedback help make Guarch better!
+          # Windows (PowerShell)
+          Get-FileHash guarch-debug-${{ steps.build_number.outputs.BUILD_NUMBER }}.apk -Algorithm SHA256
+          ```
+          
+          ### 🐛 Bug Reporting
+          
+          **Found a bug?** Please report: https://github.com/${{ github.repository }}/issues/new
+          
+          **Include these details:**
+          - 📱 **Device:** Model & Android version
+          - 🔧 **Build:** `${{ steps.build_number.outputs.BUILD_NUMBER }}`
+          - 🎯 **Protocol:** Guarch / Grouk / Zhip
+          - 📋 **Steps:** How to reproduce
+          - 📸 **Screenshots:** If UI-related
+          - 📝 **Logs:** From the app's log viewer
+          
+          **Priority bugs:**
+          - 🔴 **Critical:** App crashes, VPN fails
+          - 🟠 **High:** Connection drops, memory leaks
+          - 🟡 **Medium:** UI glitches, slow performance
+          - 🟢 **Low:** Minor visual issues
+          
+          ### 📊 Technical Specifications
+          
+          **APK Details:**
+          - **Package Name:** `com.guarch.app`
+          - **Min SDK:** Android 5.0 (API 21)
+          - **Target SDK:** Android 14 (API 34)
+          - **Architectures:** arm64-v8a, armeabi-v7a, x86_64
+          - **Permissions:** `INTERNET`, `BIND_VPN_SERVICE`, `FOREGROUND_SERVICE`
+          
+          **Protocol Stack:**
+          - **Guarch:** TLS 1.3 + ChaCha20-Poly1305 + X25519 + PSK Auth
+          - **Grouk:** Custom UDP + AIMD Congestion Control + Retransmit
+          - **Zhip:** QUIC + TLS 1.3 + 0-RTT + PSK Auth
+          
+          **VPN Implementation:**
+          - Uses Android `VpnService` API
+          - Routes ALL device traffic through tunnel
+          - `tun2socks` for packet forwarding
+          - SOCKS5 proxy to protocol engine
+          
+          ### 🔒 Security Notes
+          
+          **This debug build has:**
+          - ⚠️ Debug symbols (easier to reverse engineer)
+          - ⚠️ Verbose logging (may log sensitive data)
+          - ⚠️ Relaxed certificate validation (for testing)
+          - ⚠️ Performance profiling enabled
+          
+          **For testing ONLY. Do NOT use for:**
+          - ❌ Production / real-world circumvention
+          - ❌ Sensitive communications
+          - ❌ Privacy-critical activities
+          
+          ### 🙏 Thank You!
+          
+          Your testing and feedback are invaluable. Every bug report, feature suggestion, and performance note helps make Guarch better for everyone.
+          
+          **Special thanks to early testers!** 🎉
           
           ---
           
-          Built with 🏹🌩️⚡ | Hidden like a Balochi hunter
-          EOF
+          **Built with** 🏹🌩️⚡ **by the community**  
+          *Hidden like a Balochi hunter*
           
-          echo "RELEASE_NOTES<<EOF" >> $GITHUB_OUTPUT
-          cat release_notes.md >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
+          **Support the project:**
+          - ⭐ Star on GitHub
+          - 🐛 Report bugs
+          - 💡 Suggest features
+          - 📢 Share with others
+          - 🤝 Contribute code
+          NOTES
       
       - name: Create GitHub Release
+        id: create_release
         uses: softprops/action-gh-release@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           tag_name: debug-${{ steps.build_number.outputs.BUILD_NUMBER }}
-          name: "Debug Build ${{ steps.build_number.outputs.BUILD_NUMBER }}"
+          name: "🚧 Debug Build ${{ steps.build_number.outputs.BUILD_NUMBER }}"
           body_path: release_notes.md
           draft: false
           prerelease: true
           files: |
             app/build/app/outputs/flutter-apk/guarch-debug-*.apk
             app/build/app/outputs/flutter-apk/checksums.txt
+          fail_on_unmatched_files: true
       
       - name: Comment on commit
         uses: peter-evans/commit-comment@v3
         with:
           body: |
-            ## ✅ Debug Build Created Successfully!
+            ## ✅ Debug Build Successful!
             
-            **Build:** `${{ steps.build_number.outputs.BUILD_NUMBER }}`
+            ### 📦 Build Details
+            | Item | Value |
+            |------|-------|
+            | **Build** | `${{ steps.build_number.outputs.BUILD_NUMBER }}` |
+            | **Version** | `${{ steps.build_number.outputs.BUILD_NAME }}` |
+            | **Size** | `${{ steps.apk_info.outputs.APK_SIZE }}` |
+            | **Protocols** | Guarch 🏹 + Grouk 🌩️ + Zhip ⚡ |
+            | **Commit** | `${{ github.sha }}` |
             
-            📦 [Download APK](https://github.com/${{ github.repository }}/releases/tag/debug-${{ steps.build_number.outputs.BUILD_NUMBER }})
+            ### 📱 Download Now
+            **[⬇️ Download APK](${{ steps.create_release.outputs.url }})**
             
-            **Checksums:**
+            ### 🔐 Checksums
             ```
             $(cat app/build/app/outputs/flutter-apk/checksums.txt)
             ```
-
-  notify-discord:
-    name: Notify Discord
-    needs: build-android-debug
-    runs-on: ubuntu-latest
-    if: always()
-    
-    steps:
-      - name: Send Discord notification
-        uses: sarisia/actions-status-discord@v1
-        if: always()
+            
+            ### 🧪 Ready for Testing
+            Please test all three protocols and report any issues at the [Issues page](https://github.com/${{ github.repository }}/issues).
+            
+            ---
+            *🤖 Automated build by GitHub Actions*
+      
+      - name: Upload build logs (on failure)
+        if: failure()
+        uses: actions/upload-artifact@v4
         with:
-          webhook: ${{ secrets.DISCORD_WEBHOOK }}
-          status: ${{ job.status }}
-          title: "Guarch Debug Build"
-          description: |
-            Debug build ${{ needs.build-android-debug.outputs.BUILD_NUMBER }} completed!
-            
-            **Status:** ${{ job.status }}
-            **Commit:** ${{ github.sha }}
-            **Author:** ${{ github.actor }}
-          color: 0x00ff00
-          username: Guarch Bot
-          avatar_url: https://github.com/balochscript.png
-
-  notify-telegram:
-    name: Notify Telegram
-    needs: build-android-debug
-    runs-on: ubuntu-latest
-    if: success()
-    
-    steps:
-      - name: Send Telegram notification
-        uses: appleboy/telegram-action@master
-        with:
-          to: ${{ secrets.TELEGRAM_CHAT_ID }}
-          token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          message: |
-            🏹 Guarch Debug Build Ready!
-            
-            Build: ${{ needs.build-android-debug.outputs.BUILD_NUMBER }}
-            Commit: ${{ github.sha }}
-            Author: ${{ github.actor }}
-            
-            Download: https://github.com/${{ github.repository }}/releases/tag/debug-${{ needs.build-android-debug.outputs.BUILD_NUMBER }}
+          name: build-logs-failed-${{ steps.build_number.outputs.BUILD_NUMBER }}
+          path: |
+            app/build/app/outputs/logs/
+            ~/.gradle/daemon/*/daemon-*.out.log
+          if-no-files-found: ignore
+          retention-days: 7
