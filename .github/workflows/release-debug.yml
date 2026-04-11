@@ -16,14 +16,17 @@ on:
   workflow_dispatch:
 
 env:
-  GO_VERSION: '1.21'
-  FLUTTER_VERSION: '3.16.0'
+  # VVVVVV VVVVVV
+  GO_VERSION: '1.24' 
+  FLUTTER_VERSION: '3.16.0' # 
   JAVA_VERSION: '17'
 
 jobs:
   build-android-debug:
-    name: Build Android Debug APK
+    name: Build and Release Debug APK
     runs-on: ubuntu-latest
+    permissions:
+      contents: write 
     
     steps:
       - name: Checkout code
@@ -51,260 +54,109 @@ jobs:
           channel: 'stable'
           cache: true
       
-      # Debug: بررسی Android SDK
-      - name: Check Android SDK
-        run: |
-          echo "=== Android SDK Info ==="
-          echo "ANDROID_SDK_ROOT: ${ANDROID_SDK_ROOT}"
-          echo "ANDROID_HOME: ${ANDROID_HOME}"
-          ls -la ${ANDROID_SDK_ROOT}/ || echo "SDK root not found"
-          echo ""
-          echo "=== Available NDK versions ==="
-          ls -la ${ANDROID_SDK_ROOT}/ndk/ 2>/dev/null || echo "No NDK directory"
-      
-      # نصب NDK
       - name: Install Android NDK
         run: |
-          echo "=== Installing NDK ==="
-          ${ANDROID_SDK_ROOT}/cmdline-tools/latest/bin/sdkmanager --list | grep ndk
-          echo ""
-          echo "Installing NDK 25.2.9519653..."
-          yes | ${ANDROID_SDK_ROOT}/cmdline-tools/latest/bin/sdkmanager --install "ndk;25.2.9519653"
-          
-          echo ""
-          echo "=== Verifying NDK installation ==="
+          echo "y" | sudo ${ANDROID_SDK_ROOT}/cmdline-tools/latest/bin/sdkmanager --install "ndk;25.2.9519653" --sdk_root=${ANDROID_SDK_ROOT}
           NDK_PATH="${ANDROID_SDK_ROOT}/ndk/25.2.9519653"
-          if [ -d "$NDK_PATH" ]; then
-            echo "✅ NDK installed at: $NDK_PATH"
-            ls -la "$NDK_PATH" | head -10
-          else
-            echo "❌ NDK installation failed!"
-            exit 1
-          fi
-          
-          # تنظیم environment variables
+          if [ ! -d "$NDK_PATH" ]; then echo "❌ NDK installation failed!"; exit 1; fi
           echo "ANDROID_NDK_HOME=$NDK_PATH" >> $GITHUB_ENV
-          echo "ANDROID_HOME=${ANDROID_SDK_ROOT}" >> $GITHUB_ENV
-      
-      - name: Verify Go environment
-        run: |
-          echo "=== Go Environment ==="
-          go version
-          go env | grep -E "(GOPATH|GOROOT|GOCACHE|GOMODCACHE)"
-          echo ""
-          echo "=== Go Module ==="
-          cat go.mod | head -20
-          echo ""
-          go list -m
-      
+          
       - name: Download Go dependencies
-        run: |
-          echo "=== Downloading dependencies ==="
-          go mod download
-          go mod verify
-          echo ""
-          echo "=== Key dependencies ==="
-          go list -m all | grep -E "(mobile|quic|crypto|tun2socks)" || echo "No matching deps"
-      
+        run: go mod download
+
       - name: Install gomobile tools
         run: |
-          echo "=== Installing gomobile ==="
-          go install -v golang.org/x/mobile/cmd/gomobile@latest
-          go install -v golang.org/x/mobile/cmd/gobind@latest
-          
-          GOBIN="$(go env GOPATH)/bin"
-          echo "$GOBIN" >> $GITHUB_PATH
-          
-          echo ""
-          echo "=== Verifying installation ==="
-          ls -la "$GOBIN"/gomobile "$GOBIN"/gobind
-          
-          # تست اجرا
-          "$GOBIN/gomobile" version || "$GOBIN/gomobile" help || echo "Gomobile installed"
-      
-      # Initialize gomobile با export صریح
+          go install golang.org/x/mobile/cmd/gomobile@latest
+          go install golang.org/x/mobile/cmd/gobind@latest
+          echo "$(go env GOPATH)/bin" >> $GITHUB_PATH
+
+      # VVVVVV
+      - name: Get gomobile dependencies
+        run: |
+          echo "Getting required gomobile packages..."
+          go get golang.org/x/mobile/bind
+          go get golang.org/x/mobile/bind/java
+          go get golang.org/x/mobile/bind/objc
+
       - name: Initialize gomobile
-        run: |
-          export ANDROID_NDK_HOME="${ANDROID_SDK_ROOT}/ndk/25.2.9519653"
-          export ANDROID_HOME="${ANDROID_SDK_ROOT}"
-          export PATH="$(go env GOPATH)/bin:$PATH"
+        run: gomobile init -v
           
-          echo "=== Environment Check ==="
-          echo "ANDROID_NDK_HOME: $ANDROID_NDK_HOME"
-          echo "ANDROID_HOME: $ANDROID_HOME"
-          echo "PATH: $PATH"
-          echo "Which gomobile: $(which gomobile)"
-          echo ""
-          
-          echo "=== Initializing gomobile ==="
-          gomobile init -v || gomobile init || {
-            echo "❌ gomobile init failed"
-            echo "Trying alternative initialization..."
-            cd $(go env GOPATH)/pkg/gomobile
-            ls -la || echo "gomobile pkg not found"
-            exit 1
-          }
-          
-          echo "✅ Gomobile initialized"
-      
-      - name: Verify mobile package
-        run: |
-          echo "=== Mobile Package ==="
-          ls -la mobile/
-          echo ""
-          echo "=== Checking imports ==="
-          head -50 mobile/mobile.go
-          echo ""
-          echo "=== Package info ==="
-          go list -f '{{.Dir}}' guarch/mobile
-          go list -f '{{.Imports}}' guarch/mobile || true
-      
       - name: Build mobile.aar
         run: |
           set -e
-          
-          # تنظیم environment
-          export ANDROID_NDK_HOME="${ANDROID_SDK_ROOT}/ndk/25.2.9519653"
-          export ANDROID_HOME="${ANDROID_SDK_ROOT}"
-          export PATH="$(go env GOPATH)/bin:$PATH"
-          
           mkdir -p app/android/app/libs
           
-          echo "=== Build Configuration ==="
-          echo "PWD: $(pwd)"
-          echo "Module: guarch"
-          echo "Package: guarch/mobile"
-          echo "Output: app/android/app/libs/mobile.aar"
-          echo "NDK: $ANDROID_NDK_HOME"
-          echo "Go: $(go version)"
-          echo ""
-          
-          echo "=== Running gomobile bind ==="
+          # 
           gomobile bind -v -x \
             -target=android \
             -androidapi=21 \
             -javapkg=com.guarch \
             -o app/android/app/libs/mobile.aar \
             -ldflags="-s -w" \
-            guarch/mobile 2>&1 | tee build.log
-          
-          BUILD_EXIT_CODE=${PIPESTATUS[0]}
-          
-          if [ $BUILD_EXIT_CODE -ne 0 ]; then
-            echo ""
-            echo "❌ Build failed with exit code: $BUILD_EXIT_CODE"
-            echo ""
-            echo "=== Build log ==="
-            cat build.log
-            exit 1
-          fi
-          
-          echo ""
-          echo "✅ Build completed successfully"
-      
+            guarch/mobile
+            
       - name: Verify AAR
         run: |
-          AAR_PATH="app/android/app/libs/mobile.aar"
-          
-          if [ ! -f "$AAR_PATH" ]; then
-            echo "❌ mobile.aar not found at: $AAR_PATH"
-            echo ""
-            echo "Directory listing:"
-            find app/android/app/libs -type f
-            echo ""
-            echo "Build log:"
-            cat build.log 2>/dev/null || echo "No build log"
+          if [ ! -f "app/android/app/libs/mobile.aar" ]; then
+            echo "❌ mobile.aar not found!"
             exit 1
           fi
+          echo "✅ mobile.aar created successfully."
+          ls -lh app/android/app/libs/mobile.aar
           
-          echo "✅ mobile.aar created successfully"
-          echo ""
-          echo "File info:"
-          ls -lh "$AAR_PATH"
-          echo ""
-          echo "AAR contents:"
-          unzip -l "$AAR_PATH" | head -40
-      
       - name: Get Flutter dependencies
         working-directory: app
-        run: |
-          flutter pub get
-          flutter pub upgrade
+        run: flutter pub get
       
-      - name: Flutter doctor
-        run: flutter doctor -v
-      
-      - name: Generate build number
-        id: build_number
+      - name: Generate build info
+        id: build_info
         run: |
           BUILD_NUMBER=$(date +%Y%m%d%H%M)
-          BUILD_NAME="0.1.0-debug+$BUILD_NUMBER"
-          
           echo "BUILD_NUMBER=$BUILD_NUMBER" >> $GITHUB_OUTPUT
-          echo "BUILD_NAME=$BUILD_NAME" >> $GITHUB_OUTPUT
+          echo "BUILD_NAME=0.1.0-debug+$BUILD_NUMBER" >> $GITHUB_OUTPUT
           
-          echo "Build: $BUILD_NUMBER"
-          echo "Version: $BUILD_NAME"
-      
       - name: Build Flutter APK
         working-directory: app
-        env:
-          BUILD_NUMBER: ${{ steps.build_number.outputs.BUILD_NUMBER }}
-          BUILD_NAME: ${{ steps.build_number.outputs.BUILD_NAME }}
         run: |
-          echo "=== Building APK ==="
           flutter build apk \
             --debug \
-            --build-number=$BUILD_NUMBER \
-            --build-name=$BUILD_NAME \
+            --build-number=${{ steps.build_info.outputs.BUILD_NUMBER }} \
+            --build-name=${{ steps.build_info.outputs.BUILD_NAME }} \
             --verbose
-      
-      - name: Verify and rename APK
-        id: apk_info
+            
+      - name: Prepare release files
+        id: prep_release
         run: |
-          APK_ORIG="app/build/app/outputs/flutter-apk/app-debug.apk"
-          APK_NAME="guarch-debug-${{ steps.build_number.outputs.BUILD_NUMBER }}.apk"
-          APK_NEW="app/build/app/outputs/flutter-apk/$APK_NAME"
+          APK_DIR="app/build/app/outputs/flutter-apk"
+          APK_ORIG="$APK_DIR/app-debug.apk"
+          if [ ! -f "$APK_ORIG" ]; then echo "❌ APK not found!"; exit 1; fi
           
-          if [ ! -f "$APK_ORIG" ]; then
-            echo "❌ APK not found!"
-            find app/build -name "*.apk"
-            exit 1
-          fi
+          APK_NAME="guarch-debug-${{ steps.build_info.outputs.BUILD_NUMBER }}.apk"
+          mv "$APK_ORIG" "$APK_DIR/$APK_NAME"
           
-          mv "$APK_ORIG" "$APK_NEW"
+          cd $APK_DIR
+          sha256sum $APK_NAME > checksums.txt
+          md5sum $APK_NAME >> checksums.txt
+          cd -
           
-          APK_SIZE=$(du -h "$APK_NEW" | cut -f1)
-          
-          echo "APK_SIZE=$APK_SIZE" >> $GITHUB_OUTPUT
+          echo "APK_PATH=$APK_DIR/$APK_NAME" >> $GITHUB_OUTPUT
+          echo "CHECKSUMS_PATH=$APK_DIR/checksums.txt" >> $GITHUB_OUTPUT
           echo "APK_NAME=$APK_NAME" >> $GITHUB_OUTPUT
-          
-          echo "✅ APK: $APK_NAME ($APK_SIZE)"
-      
-      - name: Generate checksums
-        working-directory: app/build/app/outputs/flutter-apk
-        run: |
-          sha256sum guarch-debug-*.apk | tee checksums.txt
-          md5sum guarch-debug-*.apk | tee -a checksums.txt
-      
-      - name: Upload APK artifact
-        uses: actions/upload-artifact@v4
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
         with:
-          name: guarch-debug-${{ steps.build_number.outputs.BUILD_NUMBER }}
-          path: |
-            app/build/app/outputs/flutter-apk/guarch-debug-*.apk
-            app/build/app/outputs/flutter-apk/checksums.txt
-          retention-days: 30
-          if-no-files-found: error
-      
-      - name: Create release
-        uses: softprops/action-gh-release@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          tag_name: debug-${{ steps.build_number.outputs.BUILD_NUMBER }}
-          name: "🚧 Debug Build ${{ steps.build_number.outputs.BUILD_NUMBER }}"
+          tag_name: debug-${{ steps.build_info.outputs.BUILD_NUMBER }}
+          name: "🚧 Debug Build ${{ steps.build_info.outputs.BUILD_NUMBER }}"
           body: |
             ## 🚧 Guarch Debug Build
             
-            **Build:** `${{ steps.build_number.outputs.BUILD_NUMBER }}`  
+            This is an automated debug build generated by GitHub Actions.
+            - **Version:** `${{ steps.build_info.outputs.BUILD_NAME }}`
+            
+            ### Files
+            - `${{ steps.prep_release.outputs.APK_NAME }}`
+          files: |
+            ${{ steps.prep_release.outputs.APK_PATH }}
+            ${{ steps.prep_release.outputs.CHECKSUMS_PATH }}
+          prerelease: true
