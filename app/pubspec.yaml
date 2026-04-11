@@ -39,3 +39,6 @@ flutter:
   uses-material-design: true
   assets:
     - assets/
+
+dependency_overrides:
+  path: 1.8.3
