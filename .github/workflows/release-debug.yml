@@ -90,7 +90,7 @@ jobs:
           gomobile bind -v -x \
             -target=android \
             -androidapi=21 \
-            -javapkg=com.guarch \
+            -javapkg=com.guarch.app \
             -o app/android/app/libs/mobile.aar \
             -ldflags="-s -w" \
             guarch/mobile
