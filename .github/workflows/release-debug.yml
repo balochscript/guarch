@@ -111,9 +111,15 @@ jobs:
       - name: Generate build info
         id: build_info
         run: |
-          BUILD_NUMBER=$(date +%Y%m%d%H%M)
+          # VVVVVV این خط را تغییر دهید VVVVVV
+          BUILD_NUMBER=$(date +%s)
+          # ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
           echo "BUILD_NUMBER=$BUILD_NUMBER" >> $GITHUB_OUTPUT
           echo "BUILD_NAME=0.1.0-debug+$BUILD_NUMBER" >> $GITHUB_OUTPUT
+          
+          echo "Build Number: $BUILD_NUMBER"
+          echo "Build Name: 0.1.0-debug+$BUILD_NUMBER"
           
       - name: Build Flutter APK
         working-directory: app
