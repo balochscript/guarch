@@ -1,0 +1,162 @@
+{
+  "version": 1,
+  "server": {
+    "name": "Iran Stealth Server",
+    "address": "1.2.3.4:8443",
+    "protocol": "guarch",
+    "psk": "YOUR_HEX_PSK_KEY_HERE_MINIMUM_32_CHARS",
+    "cert_pin": "sha256-abcd1234..."
+  },
+  
+  "sni": {
+    "enabled": true,
+    "mode": "weighted",
+    "domains": [
+      {
+        "domain": "digikala.com",
+        "weight": 25,
+        "check_health": true
+      },
+      {
+        "domain": "aparat.com",
+        "weight": 20,
+        "check_health": true
+      },
+      {
+        "domain": "snapp.ir",
+        "weight": 15,
+        "check_health": true
+      },
+      {
+        "domain": "divar.ir",
+        "weight": 15,
+        "check_health": true
+      },
+      {
+        "domain": "cloudflare.com",
+        "weight": 10,
+        "fallback": true
+      },
+      {
+        "domain": "microsoft.com",
+        "weight": 10,
+        "fallback": true
+      },
+      {
+        "domain": "apple.com",
+        "weight": 5,
+        "fallback": true
+      }
+    ],
+    "rotation_interval": "3m",
+    "health_check_interval": "30s",
+    "health_check_timeout": "5s"
+  },
+  
+  "cover_traffic": {
+    "enabled": true,
+    "mode": "stealth",
+    "domains": [
+      {
+        "domain": "www.google.com",
+        "paths": ["/", "/search?q=weather", "/search?q=news", "/maps"],
+        "weight": 30,
+        "interval_min": "2s",
+        "interval_max": "8s"
+      },
+      {
+        "domain": "www.microsoft.com",
+        "paths": ["/", "/windows", "/office", "/azure"],
+        "weight": 20,
+        "interval_min": "3s",
+        "interval_max": "10s"
+      },
+      {
+        "domain": "github.com",
+        "paths": ["/", "/explore", "/trending"],
+        "weight": 15,
+        "interval_min": "4s",
+        "interval_max": "12s"
+      },
+      {
+        "domain": "stackoverflow.com",
+        "paths": ["/", "/questions", "/tags"],
+        "weight": 15,
+        "interval_min": "3s",
+        "interval_max": "10s"
+      },
+      {
+        "domain": "www.cloudflare.com",
+        "paths": ["/", "/learning", "/products"],
+        "weight": 10,
+        "interval_min": "5s",
+        "interval_max": "15s"
+      },
+      {
+        "domain": "learn.microsoft.com",
+        "paths": ["/", "/docs", "/training"],
+        "weight": 10,
+        "interval_min": "4s",
+        "interval_max": "12s"
+      }
+    ],
+    "adaptive": {
+      "enabled": true,
+      "battery_aware": true,
+      "data_saver_mode": false,
+      "idle_threshold": "50KB/min",
+      "light_threshold": "500KB/min",
+      "medium_threshold": "5MB/min"
+    }
+  },
+  
+  "dns_fallback": {
+    "enabled": true,
+    "domain": "tunnel.example.com",
+    "servers": ["8.8.8.8:53", "1.1.1.1:53", "208.67.222.222:53"],
+    "auto_switch": true,
+    "switch_threshold": 3,
+    "timeout": "5s"
+  },
+  
+  "utls": {
+    "enabled": true,
+    "fingerprint": "chrome_auto",
+    "options": ["chrome_120", "chrome_119", "firefox_121", "edge_120"]
+  },
+  
+  "fragmentation": {
+    "enabled": false,
+    "min_size": 64,
+    "max_size": 256
+  },
+  
+  "modes": {
+    "stealth": {
+      "cover_rate": "high",
+      "padding": 1024,
+      "sni_rotation": "fast",
+      "dns_fallback": true
+    },
+    "balanced": {
+      "cover_rate": "medium",
+      "padding": 256,
+      "sni_rotation": "normal",
+      "dns_fallback": true
+    },
+    "fast": {
+      "cover_rate": "off",
+      "padding": 0,
+      "sni_rotation": "off",
+      "dns_fallback": false
+    }
+  },
+  
+  "metadata": {
+    "created_at": "2024-01-20T10:00:00Z",
+    "country": "IR",
+    "isp_hint": "MCI/Irancell",
+    "notes": "Optimized for Iranian networks with heavy filtering",
+    "tags": ["iran", "stealth", "mci", "irancell"]
+  }
+}
