@@ -1,9 +1,14 @@
 package cover
 
 import (
+	"fmt"
 	"log"
 	"time"
 )
+
+// ═══════════════════════════════════════════════════════════
+// Mode Types
+// ═══════════════════════════════════════════════════════════
 
 type Mode int
 
@@ -26,6 +31,7 @@ func (m Mode) String() string {
 	}
 }
 
+// ParseMode تبدیل string به Mode
 func ParseMode(s string) Mode {
 	switch s {
 	case "stealth":
@@ -42,7 +48,12 @@ func ParseMode(s string) Mode {
 	}
 }
 
-type ModeConfig struct {
+// ═══════════════════════════════════════════════════════════
+// ModeConfig - تنظیمات هر mode
+// ═══════════════════════════════════════════════════════════
+
+// ModeSettings تنظیمات یک mode
+type ModeSettings struct {
 	Mode             Mode
 	CoverEnabled     bool
 	CoverDomainCount int
@@ -54,10 +65,11 @@ type ModeConfig struct {
 	IdleInterval     time.Duration
 }
 
-func GetModeConfig(mode Mode) *ModeConfig {
+// GetModeSettings دریافت تنظیمات یک mode
+func GetModeSettings(mode Mode) *ModeSettings {
 	switch mode {
 	case ModeStealth:
-		return &ModeConfig{
+		return &ModeSettings{
 			Mode:             ModeStealth,
 			CoverEnabled:     true,
 			CoverDomainCount: 6,
@@ -70,7 +82,7 @@ func GetModeConfig(mode Mode) *ModeConfig {
 		}
 
 	case ModeBalanced:
-		return &ModeConfig{
+		return &ModeSettings{
 			Mode:             ModeBalanced,
 			CoverEnabled:     true,
 			CoverDomainCount: 3,
@@ -83,7 +95,7 @@ func GetModeConfig(mode Mode) *ModeConfig {
 		}
 
 	case ModeFast:
-		return &ModeConfig{
+		return &ModeSettings{
 			Mode:             ModeFast,
 			CoverEnabled:     false,
 			CoverDomainCount: 0,
@@ -94,31 +106,60 @@ func GetModeConfig(mode Mode) *ModeConfig {
 		}
 
 	default:
-		return GetModeConfig(ModeBalanced)
+		return GetModeSettings(ModeBalanced)
 	}
 }
 
-func ConfigForMode(mode Mode) *Config {
-	mc := GetModeConfig(mode)
+// ═══════════════════════════════════════════════════════════
+// 🔥 CHANGED: ApplyModeToConfig - به جای ConfigForMode
+// ═══════════════════════════════════════════════════════════
 
-	if !mc.CoverEnabled {
-		return &Config{Enabled: false}
+// ApplyModeToConfig اعمال mode به یک config موجود
+func ApplyModeToConfig(cfg *Config, mode Mode) error {
+	if cfg == nil {
+		return fmt.Errorf("nil config")
 	}
-
-	full := DefaultConfig()
-
-	if mc.CoverDomainCount < len(full.Domains) {
-		full.Domains = full.Domains[:mc.CoverDomainCount]
+	
+	settings := GetModeSettings(mode)
+	
+	// اگه mode=fast، cover رو غیرفعال کن
+	if mode == ModeFast {
+		cfg.Enabled = false
+		return nil
 	}
-
+	
+	// اگه domain نداریم، خطا بده
+	if len(cfg.Domains) == 0 {
+		return fmt.Errorf("no domains in config")
+	}
+	
+	cfg.Enabled = settings.CoverEnabled
+	cfg.IdleTraffic = settings.IdleTraffic
+	
+	// محدود کردن تعداد domain های فعال
+	if settings.CoverDomainCount < len(cfg.Domains) {
+		cfg.Domains = cfg.Domains[:settings.CoverDomainCount]
+	}
+	
+	// تنظیم intervals برای balanced mode
 	if mode == ModeBalanced {
-		for i := range full.Domains {
-			full.Domains[i].MinInterval = full.Domains[i].MinInterval * 4
-			full.Domains[i].MaxInterval = full.Domains[i].MaxInterval * 4
+		for i := range cfg.Domains {
+			cfg.Domains[i].MinInterval = cfg.Domains[i].MinInterval * 2
+			cfg.Domains[i].MaxInterval = cfg.Domains[i].MaxInterval * 2
 		}
 	}
+	
+	return nil
+}
 
-	full.Enabled = true
-	full.IdleTraffic = mc.IdleTraffic
-	return full
+// ═══════════════════════════════════════════════════════════
+// ModeConfig for Adaptive/Shaping
+// ═══════════════════════════════════════════════════════════
+
+// GetModeConfigForAdaptive دریافت ModeConfig برای adaptive
+func GetModeConfigForAdaptive(mode Mode) *ModeConfig {
+	settings := GetModeSettings(mode)
+	return &ModeConfig{
+		MaxPadding: settings.MaxPadding,
+	}
 }
