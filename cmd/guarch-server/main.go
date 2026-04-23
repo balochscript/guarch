@@ -7,6 +7,7 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"flag"
+	"fmt"
 	"io"
 	"log"
 	"net"
@@ -18,6 +19,7 @@ import (
 
 	"guarch/cmd/internal/cmdutil"
 	"guarch/pkg/antidetect"
+	"guarch/pkg/config"
 	"guarch/pkg/cover"
 	"guarch/pkg/health"
 	"guarch/pkg/mux"
@@ -26,62 +28,162 @@ import (
 )
 
 var (
+	version = "1.0.1-dev"
+	
+	// Global state
+	serverConfig  *config.ServerConfig
 	probeDetector *antidetect.ProbeDetector
 	decoyServer   *antidetect.DecoyServer
 	healthCheck   *health.Checker
+	coverManager  *cover.Manager
+	adaptive      *cover.AdaptiveCover
+	
 	serverPSK     []byte
-	serverMode    cover.Mode
-	activeWg      sync.WaitGroup // ✅ M28
+	activeWg      sync.WaitGroup
+	maxConns      = make(chan struct{}, 1000)
 )
 
-var maxConns = make(chan struct{}, 1000)
-
 func main() {
-	addr := flag.String("addr", ":8443", "listen address")
-	decoyAddr := flag.String("decoy", ":8080", "decoy web server")
-	healthAddr := flag.String("health", "127.0.0.1:9090", "health check")
-	psk := flag.String("psk", "", "pre-shared key (required)")
-	certFile := flag.String("cert", "cert.pem", "TLS certificate file")
-	keyFile := flag.String("key", "key.pem", "TLS private key file")
-	coverEnabled := flag.Bool("cover", true, "enable server cover traffic")
-	mode := flag.String("mode", "balanced", "mode: stealth|balanced|fast")
+	// ═══════════════════════════════════════
+	// Flags
+	// ═══════════════════════════════════════
+	
+	// Config sources
+	configFile := flag.String("config", "", "Path to config file (JSON)")
+	
+	// Direct flags (backward compatibility)
+	addr       := flag.String("addr", ":8443", "Listen address")
+	psk        := flag.String("psk", "", "Pre-shared key (required)")
+	certFile   := flag.String("cert", "cert.pem", "TLS certificate file")
+	keyFile    := flag.String("key", "key.pem", "TLS private key file")
+	decoyAddr  := flag.String("decoy", ":8080", "Decoy web server address")
+	healthAddr := flag.String("health", "127.0.0.1:9090", "Health check endpoint")
+	mode       := flag.String("mode", "balanced", "Mode: stealth, balanced, fast")
+	
+	// Feature toggles
+	enableCover := flag.Bool("cover", true, "Enable server cover traffic")
+	enableProbe := flag.Bool("probe", true, "Enable probe detection")
+	
+	showVersion := flag.Bool("version", false, "Show version")
 	flag.Parse()
 
-	if *psk == "" {
-		log.Fatal("[guarch] -psk is required")
+	if *showVersion {
+		fmt.Printf("Guarch Server v%s\n", version)
+		return
 	}
-	serverPSK = []byte(*psk)
-	serverMode = cover.ParseMode(*mode)
 
+	// ═══════════════════════════════════════
+	// Load Config
+	// ═══════════════════════════════════════
+	
+	var cfg *config.ServerConfig
+	var err error
+	
+	if *configFile != "" {
+		log.Printf("📄 Loading config from file: %s", *configFile)
+		loader := config.NewLoader()
+		cfg, err = loader.LoadFromFile(*configFile)
+		if err != nil {
+			log.Fatalf("❌ Config error: %v", err)
+		}
+	} else {
+		// Build config from flags
+		if *psk == "" {
+			log.Fatal("❌ -psk is required")
+		}
+		
+		log.Printf("⚙️  Building config from flags")
+		cfg, err = buildServerConfigFromFlags(*addr, *psk, *mode)
+		if err != nil {
+			log.Fatalf("❌ Config error: %v", err)
+		}
+	}
+	
+	// Apply feature flags (override config)
+	if !*enableCover {
+		cfg.Cover.Enabled = false
+	}
+	
+	serverConfig = cfg
+	serverPSK = []byte(cfg.Server.PSK)
+
+	// ═══════════════════════════════════════
+	// Banner
+	// ═══════════════════════════════════════
+	
+	log.Println("")
+	log.Println("  ██████  ██    ██  █████  ██████   ██████ ██   ██")
+	log.Println(" ██       ██    ██ ██   ██ ██   ██ ██      ██   ██")
+	log.Println(" ██   ███ ██    ██ ███████ ██████  ██      ███████")
+	log.Println(" ██    ██ ██    ██ ██   ██ ██   ██ ██      ██   ██")
+	log.Println("  ██████   ██████  ██   ██ ██   ██  ██████ ██   ██")
+	log.Println("")
+	log.Printf("🏹 Guarch Server v%s", version)
+	log.Printf("📋 Config: %s", cfg.Server.Name)
+	log.Printf("   Listen: %s", cfg.Server.Address)
+	log.Printf("   Protocol: %s", cfg.Server.Protocol)
+	log.Printf("   Cover Traffic: %v (%d domains)", cfg.Cover.Enabled, len(cfg.Cover.Domains))
+	log.Printf("   Probe Detection: %v", *enableProbe)
+	log.Printf("   Decoy Server: %s", *decoyAddr)
+	log.Printf("   Health Check: %s", *healthAddr)
+
+	// ═══════════════════════════════════════
+	// Initialize Modules
+	// ═══════════════════════════════════════
+	
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
+	// Health checker
 	healthCheck = health.New()
-	probeDetector = antidetect.NewProbeDetector(10, time.Minute)
+	
+	// Probe detector
+	if *enableProbe {
+		probeDetector = antidetect.NewProbeDetector(10, time.Minute)
+		log.Println("[probe] detector enabled (max: 10 attempts/min)")
+	}
+	
+	// Decoy server
 	decoyServer = antidetect.NewDecoyServer()
-
 	go startDecoy(*decoyAddr)
 
-	// ✅ M21: handle health server error
-	_, err := healthCheck.StartServer(*healthAddr)
-	if err != nil {
-		log.Printf("[guarch] ⚠️  health server failed: %v", err)
+	// Health server
+	if *healthAddr != "" {
+		_, err := healthCheck.StartServer(*healthAddr)
+		if err != nil {
+			log.Printf("⚠️  Health server failed: %v", err)
+		} else {
+			log.Printf("[health] endpoint: http://%s/health", *healthAddr)
+		}
 	}
 
-	var adaptive *cover.AdaptiveCover
-	if *coverEnabled && serverMode != cover.ModeFast {
-		modeCfg := cover.GetModeConfig(serverMode)
+	// Cover traffic manager (اگه enabled باشه)
+	if cfg.Cover.Enabled {
+		coverCfg := &cover.Config{
+			Enabled:       cfg.Cover.Enabled,
+			Domains:       convertCoverDomains(cfg.Cover.Domains),
+			MaxConcurrent: 3,
+			IdleTraffic:   cfg.Cover.Adaptive.Enabled,
+		}
+		
+		// Adaptive
+		modeCfg := &cover.ModeConfig{MaxPadding: 1024}
 		adaptive = cover.NewAdaptiveCover(modeCfg)
-		coverCfg := cover.ConfigForMode(serverMode)
-		coverMgr := cover.NewManager(coverCfg, adaptive)
-		coverMgr.Start(ctx)
-		log.Printf("[guarch] server cover traffic started (mode: %s)", serverMode)
+		
+		coverManager = cover.NewManager(coverCfg, adaptive)
+		coverManager.Start(ctx)
+		
+		log.Printf("[cover] manager started (domains: %d, adaptive: %v)", 
+			len(coverCfg.Domains), cfg.Cover.Adaptive.Enabled)
 	}
 
-	// ✅ M27: shared cert loading
+	// ═══════════════════════════════════════
+	// TLS Certificate
+	// ═══════════════════════════════════════
+	
 	cert, err := cmdutil.LoadOrGenerateCert(*certFile, *keyFile, "guarch")
 	if err != nil {
-		log.Fatal("cert:", err)
+		log.Fatalf("❌ Certificate error: %v", err)
 	}
 
 	certPin := sha256.Sum256(cert.Certificate[0])
@@ -92,24 +194,30 @@ func main() {
 		MinVersion:   tls.VersionTLS13,
 	}
 
-	ln, err := tls.Listen("tcp", *addr, tlsConfig)
+	// ═══════════════════════════════════════
+	// Start TLS Listener
+	// ═══════════════════════════════════════
+	
+	listenAddr := cfg.Server.Address
+	if listenAddr == "" {
+		listenAddr = *addr
+	}
+	
+	ln, err := tls.Listen("tcp", listenAddr, tlsConfig)
 	if err != nil {
-		log.Fatal("listen:", err)
+		log.Fatalf("❌ Listen error: %v", err)
 	}
 
-	log.Println("")
-	log.Println("  ██████  ██    ██  █████  ██████   ██████ ██   ██")
-	log.Println(" ██       ██    ██ ██   ██ ██   ██ ██      ██   ██")
-	log.Println(" ██   ███ ██    ██ ███████ ██████  ██      ███████")
-	log.Println(" ██    ██ ██    ██ ██   ██ ██   ██ ██      ██   ██")
-	log.Println("  ██████   ██████  ██   ██ ██   ██  ██████ ██   ██")
-	log.Println("")
-	log.Printf("[guarch] server on %s (mode: %s)", *addr, serverMode)
 	log.Println("╔══════════════════════════════════════════════════════════════════╗")
 	log.Printf("║  Certificate PIN: %s  ║", certPinHex)
 	log.Println("╚══════════════════════════════════════════════════════════════════╝")
+	log.Printf("✅ Server ready on %s", listenAddr)
 	log.Println("[guarch] ready to accept connections 🏹")
 
+	// ═══════════════════════════════════════
+	// Accept Loop
+	// ═══════════════════════════════════════
+	
 	go func() {
 		for {
 			conn, err := ln.Accept()
@@ -121,12 +229,14 @@ func main() {
 					continue
 				}
 			}
+			
+			// Connection limiting
 			select {
 			case maxConns <- struct{}{}:
-				activeWg.Add(1) // ✅ M28
+				activeWg.Add(1)
 				go func() {
 					defer func() { <-maxConns }()
-					defer activeWg.Done() // ✅ M28
+					defer activeWg.Done()
 					handleConn(conn)
 				}()
 			default:
@@ -136,30 +246,70 @@ func main() {
 		}
 	}()
 
+	// ═══════════════════════════════════════
+	// Signal Handling
+	// ═══════════════════════════════════════
+	
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, os.Interrupt)
 	<-sigCh
 
-	log.Println("[guarch] shutting down...")
+	log.Println("\n🛑 Shutting down...")
 	cancel()
 	ln.Close()
-	probeDetector.Close()
+	
+	if probeDetector != nil {
+		probeDetector.Close()
+	}
+	
+	if coverManager != nil {
+		coverManager.Stop()
+	}
+	
 	if adaptive != nil {
 		adaptive.Close()
 	}
 
-	// ✅ M28: wait for active connections
+	// Wait for active connections
 	done := make(chan struct{})
 	go func() { activeWg.Wait(); close(done) }()
 	cmdutil.GracefulWait("guarch", done, 30*time.Second)
+	
+	// Print stats
+	stats := healthCheck.Stats()
+	log.Println("📊 Final Stats:")
+	log.Printf("   Total Connections: %d", stats.TotalConns)
+	log.Printf("   Active Connections: %d", stats.ActiveConns)
+	log.Printf("   Total Errors: %d", stats.TotalErrors)
+	log.Printf("   Uptime: %v", stats.Uptime)
+	
+	log.Println("👋 Goodbye!")
 }
 
-func startDecoy(addr string) {
-	log.Printf("[decoy] fake website on %s", addr)
-	if err := http.ListenAndServe(addr, decoyServer); err != nil {
-		log.Printf("[decoy] error: %v", err)
+// ═══════════════════════════════════════════════════════════
+// Config Building
+// ═══════════════════════════════════════════════════════════
+
+func buildServerConfigFromFlags(addr, psk, mode string) (*config.ServerConfig, error) {
+	// شروع با preset
+	presetName := fmt.Sprintf("iran_%s", mode)
+	preset, ok := config.GetPreset(presetName)
+	if !ok {
+		// اگه preset نبود، از balanced استفاده کن
+		preset, _ = config.GetPreset("iran_balanced")
 	}
+	
+	// Override server settings
+	preset.Server.Address = addr
+	preset.Server.PSK = psk
+	preset.Server.Name = fmt.Sprintf("Guarch Server (%s)", mode)
+	
+	return preset, nil
 }
+
+// ═══════════════════════════════════════════════════════════
+// Connection Handler
+// ═══════════════════════════════════════════════════════════
 
 func handleConn(raw net.Conn) {
 	defer raw.Close()
@@ -168,13 +318,15 @@ func handleConn(raw net.Conn) {
 	healthCheck.AddConn()
 	defer healthCheck.RemoveConn()
 
-	if probeDetector.Check(remoteAddr) {
+	// Probe detection
+	if probeDetector != nil && probeDetector.Check(remoteAddr) {
 		log.Printf("[probe] suspicious: %s → serving decoy", remoteAddr)
 		healthCheck.AddError()
 		serveDecoyToRaw(raw)
 		return
 	}
 
+	// Handshake timeout
 	raw.SetDeadline(time.Now().Add(30 * time.Second))
 
 	hsCfg := &transport.HandshakeConfig{PSK: serverPSK}
@@ -188,19 +340,11 @@ func handleConn(raw net.Conn) {
 	raw.SetDeadline(time.Time{})
 	log.Printf("[guarch] authenticated: %s ✅", remoteAddr)
 
-	var m *mux.Mux
-	if serverMode != cover.ModeFast {
-		modeCfg := cover.GetModeConfig(serverMode)
-		stats := cover.NewStats(100)
-		shaper := cover.NewAdaptiveShaper(stats, modeCfg.ShapingPattern, nil, modeCfg.MaxPadding)
-		pm := mux.NewPaddedMux(sc, shaper, true)
-		m = pm.Mux
-		defer pm.Close()
-	} else {
-		m = mux.NewMux(sc, true)
-		defer m.Close()
-	}
+	// Create mux
+	m := mux.NewMux(sc, true)
+	defer m.Close()
 
+	// Accept streams
 	for {
 		stream, err := m.AcceptStream()
 		if err != nil {
@@ -211,23 +355,31 @@ func handleConn(raw net.Conn) {
 	}
 }
 
+// ═══════════════════════════════════════════════════════════
+// Stream Handler
+// ═══════════════════════════════════════════════════════════
+
 func handleStream(stream *mux.Stream, remoteAddr string) {
 	defer stream.Close()
 
+	// Read request length
 	lenBuf := make([]byte, 2)
 	if _, err := io.ReadFull(stream, lenBuf); err != nil {
 		return
 	}
+	
 	reqLen := binary.BigEndian.Uint16(lenBuf)
 	if reqLen > 1024 {
 		return
 	}
 
+	// Read request data
 	reqData := make([]byte, reqLen)
 	if _, err := io.ReadFull(stream, reqData); err != nil {
 		return
 	}
 
+	// Unmarshal request
 	req, err := protocol.UnmarshalConnectRequest(reqData)
 	if err != nil {
 		stream.Write([]byte{protocol.ConnectFailed})
@@ -237,6 +389,7 @@ func handleStream(stream *mux.Stream, remoteAddr string) {
 	target := req.Address()
 	log.Printf("[guarch] %s → %s (stream %d)", remoteAddr, target, stream.ID())
 
+	// Connect to target
 	targetConn, err := net.DialTimeout("tcp", target, 10*time.Second)
 	if err != nil {
 		log.Printf("[guarch] dial %s: %v", target, err)
@@ -245,11 +398,81 @@ func handleStream(stream *mux.Stream, remoteAddr string) {
 	}
 	defer targetConn.Close()
 
+	// Send success
 	if _, err := stream.Write([]byte{protocol.ConnectSuccess}); err != nil {
 		return
 	}
 
-	mux.RelayStream(stream, targetConn)
+	// Relay
+	if adaptive != nil {
+		relayWithTracking(stream, targetConn)
+	} else {
+		mux.RelayStream(stream, targetConn)
+	}
+}
+
+// ═══════════════════════════════════════════════════════════
+// Relay with Adaptive Tracking
+// ═══════════════════════════════════════════════════════════
+
+func relayWithTracking(stream *mux.Stream, conn net.Conn) {
+	ch := make(chan error, 2)
+
+	go func() {
+		buf := make([]byte, 32768)
+		for {
+			n, err := conn.Read(buf)
+			if n > 0 {
+				adaptive.RecordTraffic(int64(n))
+				if _, werr := stream.Write(buf[:n]); werr != nil {
+					ch <- werr
+					return
+				}
+			}
+			if err != nil {
+				ch <- err
+				return
+			}
+		}
+	}()
+
+	go func() {
+		buf := make([]byte, 32768)
+		for {
+			n, err := stream.Read(buf)
+			if n > 0 {
+				adaptive.RecordTraffic(int64(n))
+				if _, werr := conn.Write(buf[:n]); werr != nil {
+					ch <- werr
+					return
+				}
+			}
+			if err != nil {
+				ch <- err
+				return
+			}
+		}
+	}()
+
+	<-ch
+	stream.Close()
+	conn.Close()
+	<-ch
+}
+
+// ═══════════════════════════════════════════════════════════
+// Decoy Server
+// ═══════════════════════════════════════════════════════════
+
+func startDecoy(addr string) {
+	log.Printf("[decoy] fake website on http://%s", addr)
+	srv := &http.Server{
+		Addr:    addr,
+		Handler: decoyServer,
+	}
+	if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		log.Printf("[decoy] error: %v", err)
+	}
 }
 
 func serveDecoyToRaw(conn net.Conn) {
@@ -260,4 +483,22 @@ func serveDecoyToRaw(conn net.Conn) {
 		"Strict-Transport-Security: max-age=31536000\r\n\r\n"
 	conn.Write([]byte(response))
 	conn.Write([]byte(decoyServer.GenerateHomePage()))
+}
+
+// ═══════════════════════════════════════════════════════════
+// Helper: Config Conversion
+// ═══════════════════════════════════════════════════════════
+
+func convertCoverDomains(domains []config.CoverDomain) []cover.DomainConfig {
+	result := make([]cover.DomainConfig, len(domains))
+	for i, d := range domains {
+		result[i] = cover.DomainConfig{
+			Domain:      d.Domain,
+			Paths:       d.Paths,
+			Weight:      d.Weight,
+			MinInterval: d.IntervalMin.Duration,
+			MaxInterval: d.IntervalMax.Duration,
+		}
+	}
+	return result
 }
