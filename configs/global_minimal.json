@@ -1,0 +1,30 @@
+{
+  "version": 1,
+  "server": {
+    "name": "Fast Server",
+    "address": "1.2.3.4:8443",
+    "protocol": "guarch",
+    "psk": "YOUR_HEX_PSK_KEY_HERE_MINIMUM_32_CHARS"
+  },
+  
+  "sni": {
+    "enabled": false
+  },
+  
+  "cover_traffic": {
+    "enabled": false
+  },
+  
+  "dns_fallback": {
+    "enabled": false
+  },
+  
+  "utls": {
+    "enabled": false
+  },
+  
+  "metadata": {
+    "notes": "Minimal configuration for maximum speed - use only in non-censored networks",
+    "tags": ["fast", "minimal"]
+  }
+}
