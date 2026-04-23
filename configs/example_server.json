@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "server": {
+    "name": "Guarch Server",
+    "address": ":8443",
+    "protocol": "guarch",
+    "psk": "YOUR_HEX_PSK_KEY_HERE_32_CHARS_MIN"
+  },
+  
+  "cover_traffic": {
+    "enabled": true,
+    "mode": "balanced",
+    "domains": [
+      {
+        "domain": "www.google.com",
+        "paths": ["/"],
+        "weight": 30,
+        "interval_min": "10s",
+        "interval_max": "30s"
+      }
+    ],
+    "adaptive": {
+      "enabled": true
+    }
+  }
+}
