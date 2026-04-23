@@ -1,0 +1,60 @@
+{
+  "version": 1,
+  "server": {
+    "name": "My Iran Server",
+    "address": "YOUR_SERVER_IP:8443",
+    "protocol": "guarch",
+    "psk": "YOUR_HEX_PSK_KEY_HERE_32_CHARS_MIN",
+    "cert_pin": "OPTIONAL_SHA256_PIN"
+  },
+  
+  "sni": {
+    "enabled": true,
+    "mode": "weighted",
+    "domains": [
+      {"domain": "digikala.com", "weight": 30, "check_health": true},
+      {"domain": "aparat.com", "weight": 25, "check_health": true},
+      {"domain": "cloudflare.com", "weight": 20, "fallback": true},
+      {"domain": "google.com", "weight": 25, "fallback": true}
+    ],
+    "rotation_interval": "5m",
+    "health_check_interval": "30s"
+  },
+  
+  "cover_traffic": {
+    "enabled": true,
+    "mode": "balanced",
+    "domains": [
+      {
+        "domain": "www.google.com",
+        "paths": ["/", "/search?q=news"],
+        "weight": 30,
+        "interval_min": "4s",
+        "interval_max": "16s"
+      },
+      {
+        "domain": "www.microsoft.com",
+        "paths": ["/", "/windows"],
+        "weight": 25,
+        "interval_min": "6s",
+        "interval_max": "20s"
+      },
+      {
+        "domain": "github.com",
+        "paths": ["/", "/explore"],
+        "weight": 25,
+        "interval_min": "8s",
+        "interval_max": "24s"
+      }
+    ],
+    "adaptive": {
+      "enabled": true,
+      "battery_aware": true,
+      "data_saver_mode": false
+    }
+  },
+  
+  "dns_fallback": {
+    "enabled": false
+  }
+}
