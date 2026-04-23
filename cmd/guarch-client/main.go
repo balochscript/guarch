@@ -18,6 +18,8 @@ import (
 	"time"
 
 	"guarch/cmd/internal/cmdutil"
+	"guarch/pkg/config"
+	"guarch/pkg/core/sni"
 	"guarch/pkg/cover"
 	"guarch/pkg/mux"
 	"guarch/pkg/protocol"
@@ -25,70 +27,78 @@ import (
 	"guarch/pkg/transport"
 )
 
+var version = "1.0.1-dev"
+
 type Client struct {
-	serverAddr string
-	certPin    string
-	psk        []byte
-	mode       cover.Mode
-	coverMgr   *cover.Manager
-	adaptive   *cover.AdaptiveCover
+	config         *config.ServerConfig
+	serverAddr     string
+	certPin        string
+	psk            []byte
+	
+	// Modules
+	sniManager     *sni.Manager
+	coverMgr       *cover.Manager
+	adaptive       *cover.AdaptiveCover
 
 	mu             sync.Mutex
 	activeMux      *mux.Mux
 	activePM       *mux.PaddedMux
-	connectBackoff time.Duration // ✅ M26
+	connectBackoff time.Duration
 }
 
 func main() {
+	// ═══════════════════════════════════════
+	// Flags
+	// ═══════════════════════════════════════
+	
+	// Config sources
+	configFile := flag.String("config", "", "Path to config file (JSON)")
+	configURI  := flag.String("uri", "", "Config URI (guarch://...)")
+	
+	// Direct flags (backward compatibility)
 	listenAddr := flag.String("listen", "127.0.0.1:1080", "SOCKS5 listen address")
-	serverAddr := flag.String("server", "", "guarch server address (required)")
-	psk := flag.String("psk", "", "pre-shared key (required)")
-	certPin := flag.String("pin", "", "server TLS certificate SHA-256 pin")
-	coverEnabled := flag.Bool("cover", true, "enable cover traffic")
-	mode := flag.String("mode", "balanced", "mode: stealth|balanced|fast")
+	serverAddr := flag.String("server", "", "Server address (IP:PORT)")
+	psk        := flag.String("psk", "", "Pre-shared key")
+	certPin    := flag.String("pin", "", "Certificate SHA-256 pin")
+	mode       := flag.String("mode", "balanced", "Mode: stealth, balanced, fast")
+	
+	// Feature toggles
+	enableSNI   := flag.Bool("sni", true, "Enable SNI")
+	enableCover := flag.Bool("cover", true, "Enable cover traffic")
+	enableDNS   := flag.Bool("dns", false, "Enable DNS fallback")
+	
+	showVersion := flag.Bool("version", false, "Show version")
 	flag.Parse()
 
-	if *serverAddr == "" {
-		log.Fatal("[guarch] -server is required")
-	}
-	if *psk == "" {
-		log.Fatal("[guarch] -psk is required for security")
+	if *showVersion {
+		fmt.Printf("Guarch Client v%s\n", version)
+		return
 	}
 
-	clientMode := cover.ParseMode(*mode)
-
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	modeCfg := cover.GetModeConfig(clientMode)
-	var coverMgr *cover.Manager
-	var adaptive *cover.AdaptiveCover
-
-	if *coverEnabled && modeCfg.CoverEnabled {
-		log.Printf("[guarch] starting cover traffic (mode: %s)...", clientMode)
-		adaptive = cover.NewAdaptiveCover(modeCfg)
-		coverCfg := cover.ConfigForMode(clientMode)
-		coverMgr = cover.NewManager(coverCfg, adaptive)
-		coverMgr.Start(ctx)
-		time.Sleep(2 * time.Second)
-		log.Printf("[guarch] cover ready: avg_size=%d samples=%d",
-			coverMgr.Stats().AvgPacketSize(), coverMgr.Stats().SampleCount())
-	}
-
-	client := &Client{
-		serverAddr: *serverAddr,
-		certPin:    *certPin,
-		psk:        []byte(*psk),
-		mode:       clientMode,
-		coverMgr:   coverMgr,
-		adaptive:   adaptive,
-	}
-
-	ln, err := net.Listen("tcp", *listenAddr)
+	// ═══════════════════════════════════════
+	// Load Config
+	// ═══════════════════════════════════════
+	
+	cfg, err := loadConfig(*configFile, *configURI, *serverAddr, *psk, *certPin, *mode)
 	if err != nil {
-		log.Fatal("listen:", err)
+		log.Fatalf("❌ Config error: %v", err)
+	}
+	
+	// Apply feature flags (override config)
+	if !*enableSNI {
+		cfg.SNI.Enabled = false
+	}
+	if !*enableCover {
+		cfg.Cover.Enabled = false
+	}
+	if !*enableDNS {
+		cfg.DNS.Enabled = false
 	}
 
+	// ═══════════════════════════════════════
+	// Banner
+	// ═══════════════════════════════════════
+	
 	log.Println("")
 	log.Println("  ██████  ██    ██  █████  ██████   ██████ ██   ██")
 	log.Println(" ██       ██    ██ ██   ██ ██   ██ ██      ██   ██")
@@ -96,11 +106,50 @@ func main() {
 	log.Println(" ██    ██ ██    ██ ██   ██ ██   ██ ██      ██   ██")
 	log.Println("  ██████   ██████  ██   ██ ██   ██  ██████ ██   ██")
 	log.Println("")
-	log.Printf("[guarch] client ready on socks5://%s", *listenAddr)
-	log.Printf("[guarch] server: %s | mode: %s", *serverAddr, clientMode)
-	if *certPin != "" {
-		log.Printf("[guarch] certificate pin: %s...", (*certPin)[:min(16, len(*certPin))])
+	log.Printf("🏹 Guarch Client v%s", version)
+	log.Printf("📋 Config: %s", cfg.Server.Name)
+	log.Printf("   Server: %s", cfg.Server.Address)
+	log.Printf("   Protocol: %s", cfg.Server.Protocol)
+	log.Printf("   SNI: %v (%d domains)", cfg.SNI.Enabled, len(cfg.SNI.Domains))
+	log.Printf("   Cover: %v (%d domains)", cfg.Cover.Enabled, len(cfg.Cover.Domains))
+	log.Printf("   DNS Fallback: %v", cfg.DNS.Enabled)
+	if cfg.SNI.Enabled {
+		log.Printf("   SNI Mode: %s", cfg.SNI.Mode)
 	}
+	if cfg.Cover.Enabled {
+		log.Printf("   Cover Mode: %s", cfg.Cover.Mode)
+	}
+
+	// ═══════════════════════════════════════
+	// Initialize Client
+	// ═══════════════════════════════════════
+	
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	client := &Client{
+		config:     cfg,
+		serverAddr: cfg.Server.Address,
+		certPin:    cfg.Server.CertPin,
+		psk:        []byte(cfg.Server.PSK),
+	}
+
+	// Initialize modules
+	if err := client.initModules(ctx); err != nil {
+		log.Fatalf("❌ Init modules: %v", err)
+	}
+
+	// ═══════════════════════════════════════
+	// Start SOCKS5 Server
+	// ═══════════════════════════════════════
+	
+	ln, err := net.Listen("tcp", *listenAddr)
+	if err != nil {
+		log.Fatalf("❌ Listen error: %v", err)
+	}
+
+	log.Printf("✅ SOCKS5 server ready on %s", *listenAddr)
+	log.Println("[guarch] ready to accept connections 🏹")
 
 	go func() {
 		for {
@@ -117,27 +166,129 @@ func main() {
 		}
 	}()
 
+	// ═══════════════════════════════════════
+	// Signal Handling
+	// ═══════════════════════════════════════
+	
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, os.Interrupt)
 	<-sigCh
 
-	log.Println("[guarch] shutting down...")
+	log.Println("\n🛑 Shutting down...")
 	cancel()
 	ln.Close()
 	client.close()
+	
+	log.Println("👋 Goodbye!")
 }
 
-// ✅ M26: exponential backoff on reconnect
+// ═══════════════════════════════════════════════════════════
+// Config Loading
+// ═══════════════════════════════════════════════════════════
+
+func loadConfig(configFile, configURI, serverAddr, psk, certPin, mode string) (*config.ServerConfig, error) {
+	loader := config.NewLoader()
+	
+	// اولویت 1: Config file
+	if configFile != "" {
+		log.Printf("📄 Loading config from file: %s", configFile)
+		return loader.LoadFromFile(configFile)
+	}
+	
+	// اولویت 2: URI
+	if configURI != "" {
+		log.Printf("🔗 Loading config from URI")
+		return loader.LoadFromURI(configURI)
+	}
+	
+	// اولویت 3: Direct flags
+	if serverAddr != "" && psk != "" {
+		log.Printf("⚙️  Building config from flags")
+		return buildConfigFromFlags(serverAddr, psk, certPin, mode)
+	}
+	
+	return nil, fmt.Errorf("no config source provided (use -config, -uri, or -server/-psk)")
+}
+
+func buildConfigFromFlags(serverAddr, psk, certPin, mode string) (*config.ServerConfig, error) {
+	// شروع با preset
+	presetName := fmt.Sprintf("iran_%s", mode)
+	preset, ok := config.GetPreset(presetName)
+	if !ok {
+		return nil, fmt.Errorf("unknown mode: %s", mode)
+	}
+	
+	// Override server settings
+	preset.Server.Address = serverAddr
+	preset.Server.PSK = psk
+	if certPin != "" {
+		preset.Server.CertPin = certPin
+	}
+	
+	return preset, nil
+}
+
+// ═══════════════════════════════════════════════════════════
+// Client Methods
+// ═══════════════════════════════════════════════════════════
+
+func (c *Client) initModules(ctx context.Context) error {
+	// SNI Manager
+	if c.config.SNI.Enabled {
+		sniCfg := &sni.Config{
+			Enabled:             c.config.SNI.Enabled,
+			Mode:                sni.SelectionMode(c.config.SNI.Mode),
+			Domains:             convertSNIDomains(c.config.SNI.Domains),
+			RotationInterval:    c.config.SNI.RotationInterval.Duration,
+			HealthCheckInterval: c.config.SNI.HealthCheckInterval.Duration,
+			HealthCheckTimeout:  c.config.SNI.HealthCheckTimeout.Duration,
+		}
+		
+		var err error
+		c.sniManager, err = sni.NewManager(sniCfg)
+		if err != nil {
+			return fmt.Errorf("sni manager: %w", err)
+		}
+		
+		if err := c.sniManager.Start(ctx); err != nil {
+			return fmt.Errorf("start sni: %w", err)
+		}
+		
+		log.Printf("[sni] manager started (mode: %s, domains: %d)", 
+			sniCfg.Mode, len(sniCfg.Domains))
+	}
+	
+	// Cover Traffic Manager
+	if c.config.Cover.Enabled {
+		coverCfg := &cover.Config{
+			Enabled:       c.config.Cover.Enabled,
+			Domains:       convertCoverDomains(c.config.Cover.Domains),
+			MaxConcurrent: 3,
+			IdleTraffic:   c.config.Cover.Adaptive.Enabled,
+		}
+		
+		// Adaptive
+		modeCfg := &cover.ModeConfig{MaxPadding: 1024}
+		c.adaptive = cover.NewAdaptiveCover(modeCfg)
+		
+		c.coverMgr = cover.NewManager(coverCfg, c.adaptive)
+		c.coverMgr.Start(ctx)
+		
+		log.Printf("[cover] manager started (domains: %d)", len(coverCfg.Domains))
+	}
+	
+	return nil
+}
+
 func (c *Client) getOrCreateMux() (*mux.Mux, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
 	if c.activeMux != nil && !c.activeMux.IsClosed() {
-		c.connectBackoff = 0 // reset on success
+		c.connectBackoff = 0
 		return c.activeMux, nil
 	}
 
-	// ✅ M26: backoff
 	if c.connectBackoff > 0 {
 		log.Printf("[guarch] reconnect backoff: %v", c.connectBackoff)
 		time.Sleep(c.connectBackoff)
@@ -146,7 +297,6 @@ func (c *Client) getOrCreateMux() (*mux.Mux, error) {
 	log.Println("[guarch] connecting to server...")
 	m, err := c.connect()
 	if err != nil {
-		// ✅ M26: increase backoff
 		if c.connectBackoff == 0 {
 			c.connectBackoff = 1 * time.Second
 		} else {
@@ -159,32 +309,44 @@ func (c *Client) getOrCreateMux() (*mux.Mux, error) {
 	}
 
 	c.activeMux = m
-	c.connectBackoff = 0 // reset
+	c.connectBackoff = 0
 	log.Println("[guarch] connected successfully ✅")
 	return m, nil
 }
 
 func (c *Client) connect() (*mux.Mux, error) {
+	// TLS Config
 	tlsConfig := &tls.Config{
 		MinVersion:         tls.VersionTLS13,
 		InsecureSkipVerify: true,
 	}
+	
+	// SNI
+	if c.sniManager != nil {
+		sniName := c.sniManager.Get()
+		if sniName != "" {
+			tlsConfig.ServerName = sniName
+			log.Printf("[sni] using: %s", sniName)
+		}
+	}
 
+	// Certificate Pinning
 	if c.certPin != "" {
 		expectedPin := c.certPin
 		tlsConfig.VerifyPeerCertificate = func(rawCerts [][]byte, _ [][]*x509.Certificate) error {
 			if len(rawCerts) == 0 {
-				return fmt.Errorf("guarch: no server certificate")
+				return fmt.Errorf("no server certificate")
 			}
 			hash := sha256.Sum256(rawCerts[0])
 			got := hex.EncodeToString(hash[:])
 			if got != expectedPin {
-				return fmt.Errorf("guarch: certificate PIN mismatch!\n  expected: %s\n  got:      %s", expectedPin, got)
+				return fmt.Errorf("certificate PIN mismatch!")
 			}
 			return nil
 		}
 	}
 
+	// Dial
 	tlsConn, err := tls.DialWithDialer(
 		&net.Dialer{Timeout: 15 * time.Second},
 		"tcp", c.serverAddr, tlsConfig,
@@ -193,6 +355,7 @@ func (c *Client) connect() (*mux.Mux, error) {
 		return nil, fmt.Errorf("TLS: %w", err)
 	}
 
+	// Handshake
 	hsCfg := &transport.HandshakeConfig{PSK: c.psk}
 	tlsConn.SetDeadline(time.Now().Add(30 * time.Second))
 	sc, err := transport.Handshake(tlsConn, false, hsCfg)
@@ -202,24 +365,23 @@ func (c *Client) connect() (*mux.Mux, error) {
 	}
 	tlsConn.SetDeadline(time.Time{})
 
-	modeCfg := cover.GetModeConfig(c.mode)
-
-	if c.mode != cover.ModeFast && modeCfg.ShapingEnabled {
-		stats := cover.NewStats(100)
-		shaper := cover.NewAdaptiveShaper(stats, modeCfg.ShapingPattern, c.adaptive, modeCfg.MaxPadding)
-		pm := mux.NewPaddedMux(sc, shaper, false)
-		c.activePM = pm
-		return pm.Mux, nil
-	}
-
+	// Mux
 	m := mux.NewMux(sc, false)
-	c.activePM = nil
 	return m, nil
 }
 
 func (c *Client) close() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	
+	if c.sniManager != nil {
+		c.sniManager.Stop()
+	}
+	
+	if c.coverMgr != nil {
+		c.coverMgr.Stop()
+	}
+	
 	if c.activePM != nil {
 		c.activePM.Close()
 	} else if c.activeMux != nil {
@@ -251,7 +413,7 @@ func (c *Client) handleSOCKS(socksConn net.Conn, ctx context.Context) {
 
 	stream, err := m.OpenStream()
 	if err != nil {
-		log.Printf("[guarch] open stream failed: %v, reconnecting...", err)
+		log.Printf("[guarch] open stream failed: %v", err)
 		c.mu.Lock()
 		c.activeMux = nil
 		c.activePM = nil
@@ -269,7 +431,6 @@ func (c *Client) handleSOCKS(socksConn net.Conn, ctx context.Context) {
 		}
 	}
 
-	// ✅ M25 + M27: SplitTarget handles error
 	host, port, addrType, err := cmdutil.SplitTarget(target)
 	if err != nil {
 		log.Printf("[guarch] %v", err)
@@ -366,5 +527,37 @@ func (c *Client) relayWithTracking(stream *mux.Stream, conn net.Conn) {
 	<-ch
 	stream.Close()
 	conn.Close()
-	<-ch // ✅ M19
+	<-ch
+}
+
+// ═══════════════════════════════════════════════════════════
+// Helper: Config Conversion
+// ═══════════════════════════════════════════════════════════
+
+func convertSNIDomains(domains []config.SNIDomain) []sni.Domain {
+	result := make([]sni.Domain, len(domains))
+	for i, d := range domains {
+		result[i] = sni.Domain{
+			Domain:      d.Domain,
+			Weight:      d.Weight,
+			CheckHealth: d.CheckHealth,
+			Fallback:    d.Fallback,
+			Priority:    d.Priority,
+		}
+	}
+	return result
+}
+
+func convertCoverDomains(domains []config.CoverDomain) []cover.DomainConfig {
+	result := make([]cover.DomainConfig, len(domains))
+	for i, d := range domains {
+		result[i] = cover.DomainConfig{
+			Domain:      d.Domain,
+			Paths:       d.Paths,
+			Weight:      d.Weight,
+			MinInterval: d.IntervalMin.Duration,
+			MaxInterval: d.IntervalMax.Duration,
+		}
+	}
+	return result
 }
