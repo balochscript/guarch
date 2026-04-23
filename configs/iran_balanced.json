@@ -1,0 +1,86 @@
+{
+  "version": 1,
+  "server": {
+    "name": "Iran Balanced Server",
+    "address": "1.2.3.4:8443",
+    "protocol": "guarch",
+    "psk": "YOUR_HEX_PSK_KEY_HERE_MINIMUM_32_CHARS",
+    "cert_pin": "sha256-abcd1234..."
+  },
+  
+  "sni": {
+    "enabled": true,
+    "mode": "weighted",
+    "domains": [
+      {"domain": "digikala.com", "weight": 25, "check_health": true},
+      {"domain": "aparat.com", "weight": 20, "check_health": true},
+      {"domain": "cloudflare.com", "weight": 15, "fallback": true},
+      {"domain": "microsoft.com", "weight": 15, "fallback": true},
+      {"domain": "google.com", "weight": 25, "fallback": true}
+    ],
+    "rotation_interval": "5m",
+    "health_check_interval": "1m"
+  },
+  
+  "cover_traffic": {
+    "enabled": true,
+    "mode": "balanced",
+    "domains": [
+      {
+        "domain": "www.google.com",
+        "paths": ["/", "/search?q=news"],
+        "weight": 30,
+        "interval_min": "4s",
+        "interval_max": "16s"
+      },
+      {
+        "domain": "www.microsoft.com",
+        "paths": ["/", "/windows"],
+        "weight": 20,
+        "interval_min": "6s",
+        "interval_max": "20s"
+      },
+      {
+        "domain": "github.com",
+        "paths": ["/", "/explore"],
+        "weight": 25,
+        "interval_min": "8s",
+        "interval_max": "24s"
+      },
+      {
+        "domain": "stackoverflow.com",
+        "paths": ["/"],
+        "weight": 25,
+        "interval_min": "6s",
+        "interval_max": "20s"
+      }
+    ],
+    "adaptive": {
+      "enabled": true,
+      "battery_aware": true,
+      "data_saver_mode": true,
+      "idle_threshold": "50KB/min",
+      "light_threshold": "500KB/min",
+      "medium_threshold": "5MB/min"
+    }
+  },
+  
+  "dns_fallback": {
+    "enabled": true,
+    "domain": "tunnel.example.com",
+    "servers": ["8.8.8.8:53", "1.1.1.1:53"],
+    "auto_switch": true,
+    "switch_threshold": 3
+  },
+  
+  "utls": {
+    "enabled": true,
+    "fingerprint": "chrome_auto"
+  },
+  
+  "metadata": {
+    "country": "IR",
+    "notes": "Balanced mode - recommended for daily use in Iran",
+    "tags": ["iran", "balanced", "recommended"]
+  }
+}
