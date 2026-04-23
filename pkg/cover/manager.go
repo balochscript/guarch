@@ -13,9 +13,9 @@ import (
 	"time"
 )
 
-// ═══════════════════════════════════════
+// ═══════════════════════════════════════════════════════════
 // Crypto-secure random helpers
-// ═══════════════════════════════════════
+// ═══════════════════════════════════════════════════════════
 
 func cryptoRandIntn(n int) int {
 	if n <= 0 {
@@ -40,9 +40,9 @@ func cryptoRandDuration(min, max time.Duration) time.Duration {
 	return min + time.Duration(val.Int64())
 }
 
-// ═══════════════════════════════════════
+// ═══════════════════════════════════════════════════════════
 // Manager
-// ═══════════════════════════════════════
+// ═══════════════════════════════════════════════════════════
 
 type Manager struct {
 	config   *Config
@@ -54,9 +54,10 @@ type Manager struct {
 	wg       sync.WaitGroup
 }
 
+// NewManager ساخت manager جدید
 func NewManager(cfg *Config, adaptive *AdaptiveCover) *Manager {
 	if cfg == nil {
-		cfg = DefaultConfig()
+		cfg = NewConfig()
 	}
 
 	return &Manager{
@@ -77,9 +78,10 @@ func NewManager(cfg *Config, adaptive *AdaptiveCover) *Manager {
 	}
 }
 
+// NewManagerWithClient ساخت manager با HTTP client دلخواه
 func NewManagerWithClient(cfg *Config, client *http.Client, adaptive *AdaptiveCover) *Manager {
 	if cfg == nil {
-		cfg = DefaultConfig()
+		cfg = NewConfig()
 	}
 	return &Manager{
 		config:   cfg,
@@ -89,12 +91,18 @@ func NewManagerWithClient(cfg *Config, client *http.Client, adaptive *AdaptiveCo
 	}
 }
 
+// Start شروع cover traffic
 func (m *Manager) Start(ctx context.Context) {
 	m.mu.Lock()
+	if !m.config.Enabled {
+		m.mu.Unlock()
+		log.Println("[cover] disabled in config, not starting")
+		return
+	}
 	m.running = true
 	m.mu.Unlock()
 
-	log.Println("[cover] starting cover traffic")
+	log.Printf("[cover] starting cover traffic with %d domains", len(m.config.Domains))
 
 	for i, domain := range m.config.Domains {
 		m.wg.Add(1)
@@ -102,6 +110,7 @@ func (m *Manager) Start(ctx context.Context) {
 	}
 }
 
+// domainWorker worker برای هر domain
 func (m *Manager) domainWorker(ctx context.Context, dc DomainConfig, index int) {
 	defer m.wg.Done()
 	defer func() {
@@ -110,6 +119,7 @@ func (m *Manager) domainWorker(ctx context.Context, dc DomainConfig, index int) 
 		m.mu.Unlock()
 	}()
 
+	// تاخیر اولیه تصادفی
 	initDelay := cryptoRandDuration(0, 5*time.Second)
 	initTimer := time.NewTimer(initDelay)
 	select {
@@ -129,6 +139,7 @@ func (m *Manager) domainWorker(ctx context.Context, dc DomainConfig, index int) 
 		default:
 		}
 
+		// بررسی adaptive mode
 		if m.adaptive != nil {
 			activeDomains := m.adaptive.GetActiveDomains()
 			if index >= activeDomains {
@@ -143,6 +154,7 @@ func (m *Manager) domainWorker(ctx context.Context, dc DomainConfig, index int) 
 			}
 		}
 
+		// 5% احتمال skip
 		if cryptoRandIntn(100) < 5 {
 			skipTimer := time.NewTimer(cryptoRandDuration(2*time.Second, 10*time.Second))
 			select {
@@ -154,8 +166,10 @@ func (m *Manager) domainWorker(ctx context.Context, dc DomainConfig, index int) 
 			continue
 		}
 
+		// ارسال request
 		m.sendRequest(ctx, dc)
 
+		// محاسبه interval
 		interval := m.coverInterval(dc)
 
 		intervalTimer := time.NewTimer(interval)
@@ -168,8 +182,11 @@ func (m *Manager) domainWorker(ctx context.Context, dc DomainConfig, index int) 
 	}
 }
 
+// coverInterval محاسبه interval بین request ها
 func (m *Manager) coverInterval(dc DomainConfig) time.Duration {
 	var min, max time.Duration
+	
+	// اگه adaptive فعاله، از اون استفاده کن
 	if m.adaptive != nil {
 		min, max = m.adaptive.GetCoverInterval()
 	} else {
@@ -177,25 +194,29 @@ func (m *Manager) coverInterval(dc DomainConfig) time.Duration {
 		max = dc.MaxInterval
 	}
 
+	// Heavy-tailed distribution
 	r := cryptoRandIntn(100)
 	switch {
-	case r < 15:
+	case r < 15: // 15% fast bursts
 		short := min / 4
 		if short < 200*time.Millisecond {
 			short = 200 * time.Millisecond
 		}
 		return cryptoRandDuration(short, min)
-	case r < 25:
+		
+	case r < 25: // 10% long pauses
 		long := max * 3
 		if long > 2*time.Minute {
 			long = 2 * time.Minute
 		}
 		return cryptoRandDuration(max, long)
-	default:
+		
+	default: // 75% normal
 		return cryptoRandDuration(min, max)
 	}
 }
 
+// sendRequest ارسال یک HTTP request
 func (m *Manager) sendRequest(ctx context.Context, dc DomainConfig) {
 	if len(dc.Paths) == 0 {
 		m.stats.RecordError()
@@ -211,6 +232,7 @@ func (m *Manager) sendRequest(ctx context.Context, dc DomainConfig) {
 		return
 	}
 
+	// Headers
 	req.Header.Set("User-Agent", randomUserAgent())
 	req.Header.Set("Accept", randomAcceptHeader())
 	req.Header.Set("Accept-Language", randomAcceptLanguage())
@@ -236,6 +258,7 @@ func (m *Manager) sendRequest(ctx context.Context, dc DomainConfig) {
 		req.Header.Set("Sec-Fetch-User", "?1")
 	}
 
+	// ارسال request
 	resp, err := m.client.Do(req)
 	if err != nil {
 		m.stats.RecordError()
@@ -243,6 +266,7 @@ func (m *Manager) sendRequest(ctx context.Context, dc DomainConfig) {
 	}
 	defer resp.Body.Close()
 
+	// خواندن محدود response
 	readLimit := int64(10*1024 + cryptoRandIntn(90*1024))
 	written, err := io.Copy(io.Discard, io.LimitReader(resp.Body, readLimit))
 	if err != nil {
@@ -255,6 +279,7 @@ func (m *Manager) sendRequest(ctx context.Context, dc DomainConfig) {
 	m.stats.RecordRecv(size)
 }
 
+// SendOne ارسال یک request واحد
 func (m *Manager) SendOne() {
 	if len(m.config.Domains) == 0 {
 		return
@@ -266,6 +291,7 @@ func (m *Manager) SendOne() {
 	m.sendRequest(context.Background(), *dc)
 }
 
+// pickDomain انتخاب domain بر اساس weight
 func (m *Manager) pickDomain() *DomainConfig {
 	if len(m.config.Domains) == 0 {
 		return nil
@@ -293,34 +319,39 @@ func (m *Manager) pickDomain() *DomainConfig {
 	return &dc
 }
 
+// Stats دریافت آمار
 func (m *Manager) Stats() *Stats {
 	return m.stats
 }
 
+// Adaptive دریافت adaptive cover
 func (m *Manager) Adaptive() *AdaptiveCover {
 	return m.adaptive
 }
 
+// IsRunning چک کردن وضعیت
 func (m *Manager) IsRunning() bool {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	return m.running
 }
 
-// ═══════════════════════════════════════
+// Stop متوقف کردن manager
+func (m *Manager) Stop() {
+	m.wg.Wait()
+	log.Println("[cover] stopped")
+}
+
+// ═══════════════════════════════════════════════════════════
 // Header helpers
-// ═══════════════════════════════════════
+// ═══════════════════════════════════════════════════════════
 
 func randomUserAgent() string {
 	agents := []string{
 		"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
 		"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
-		"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
 		"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-		"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
 		"Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:123.0) Gecko/20100101 Firefox/123.0",
-		"Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:122.0) Gecko/20100101 Firefox/122.0",
-		"Mozilla/5.0 (X11; Linux x86_64; rv:122.0) Gecko/20100101 Firefox/122.0",
 		"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
 		"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36 Edg/122.0.0.0",
 		"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.3 Safari/605.1.15",
@@ -338,10 +369,6 @@ func randomAcceptLanguage() string {
 		"en-US,en;q=0.9,de;q=0.8",
 		"en,fa;q=0.9,en-US;q=0.8",
 		"en-US,en;q=0.5",
-		"en-US,en;q=0.9,fr;q=0.8",
-		"en-US,en;q=0.9,es;q=0.8,pt;q=0.7",
-		"en-US,en;q=0.9,ja;q=0.8",
-		"en-US,en;q=0.9,zh-CN;q=0.8,zh;q=0.7",
 	}
 	return langs[cryptoRandIntn(len(langs))]
 }
@@ -351,7 +378,6 @@ func randomAcceptHeader() string {
 		"text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
 		"text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
 		"text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
-		"text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
 	}
 	return accepts[cryptoRandIntn(len(accepts))]
 }
@@ -361,7 +387,6 @@ func randomReferer(domain string) string {
 		"https://www.google.com/",
 		"https://www.google.com/search?q=",
 		"https://www.bing.com/search?q=",
-		"https://duckduckgo.com/?q=",
 		fmt.Sprintf("https://%s/", domain),
 	}
 	return refs[cryptoRandIntn(len(refs))]
