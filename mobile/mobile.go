@@ -13,11 +13,16 @@ import (
 	"log"
 	"net"
 	"runtime/debug"
+	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/quic-go/quic-go"
 
+	"guarch/pkg/config"
+	"guarch/pkg/core/dns"
+	"guarch/pkg/core/sni"
 	"guarch/pkg/cover"
 	"guarch/pkg/mux"
 	"guarch/pkg/protocol"
@@ -25,217 +30,418 @@ import (
 	"guarch/pkg/transport"
 )
 
-// ═══════════════════════════════════════
-// Callback + Types
-// ═══════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════
+// Constants
+// ═══════════════════════════════════════════════════════════════
+
+const (
+	Version           = "1.0.1"
+	MaxRetryAttempts  = 3
+	RetryDelay        = 5 * time.Second
+	ConnectionTimeout = 15 * time.Second
+	HandshakeTimeout  = 30 * time.Second
+)
+
+// ═══════════════════════════════════════════════════════════════
+// Callback Interface
+// ═══════════════════════════════════════════════════════════════
 
 type Callback interface {
 	OnStatusChanged(status string)
 	OnStatsUpdate(jsonData string)
-	OnLog(message string)
+	OnLog(level, message string)
+	OnError(errorMsg string)
+	OnSNIRotation(newSNI string)
+	OnDNSFallback(enabled bool)
 }
 
+// ═══════════════════════════════════════════════════════════════
+// Engine Structure
+// ═══════════════════════════════════════════════════════════════
+
 type Engine struct {
-	mu       sync.Mutex
+	mu       sync.RWMutex
 	callback Callback
+	ctx      context.Context
 	cancel   context.CancelFunc
 
+	// Configuration
+	config *config.ServerConfig
+
+	// Connection components
 	muxConn      *mux.Mux
 	groukSession *transport.GroukSession
 	groukUDP     *net.UDPConn
-	zhipConn     *quic.Conn
+	zhipConn     quic.Connection
 
+	// Enhanced features (v1.0.1)
+	sniManager    *sni.Manager
+	coverManager  *cover.Manager
+	adaptiveCover *cover.AdaptiveCover
+	dnsClient     *dns.Client
+
+	// SOCKS5 server
 	listener net.Listener
-	status   string
-	stats    *engineStats
-	protocol string
+
+	// State
+	status           string
+	stats            *engineStats
+	protocol         string
+	usingDNSFallback atomic.Bool
+	batteryLevel     int
+	dataSaverMode    bool
+	retryCount       int
 }
+
+// ═══════════════════════════════════════════════════════════════
+// Statistics
+// ═══════════════════════════════════════════════════════════════
 
 type engineStats struct {
-	mu            sync.Mutex
-	totalUpload   int64
-	totalDownload int64
-	coverRequests int64
-	startTime     time.Time
+	mu               sync.RWMutex
+	totalUpload      int64
+	totalDownload    int64
+	coverRequests    int64
+	activeStreams    int32
+	totalConnections int64
+	startTime        time.Time
+	connectTime      time.Time
+
+	// Enhanced stats (v1.0.1)
+	currentSNI     string
+	sniSwitches    int64
+	dnsQueriesSent int64
+	activityLevel  string
+	lastSpeedUp    int64
+	lastSpeedDown  int64
 }
 
-type connectConfig struct {
-	ServerAddr   string `json:"server_addr"`
-	ServerPort   int    `json:"server_port"`
-	PSK          string `json:"psk"`
-	CertPin      string `json:"cert_pin"`
-	ListenAddr   string `json:"listen_addr"`
-	ListenPort   int    `json:"listen_port"`
-	CoverEnabled bool   `json:"cover_enabled"`
-	Protocol     string `json:"protocol"`
-}
+// ═══════════════════════════════════════════════════════════════
+// Constructor
+// ═══════════════════════════════════════════════════════════════
 
 func New() *Engine {
-	return &Engine{status: "disconnected", stats: &engineStats{}}
-}
-
-func (e *Engine) SetCallback(cb Callback) { e.callback = cb }
-
-// ═══════════════════════════════════════
-// Connect / Disconnect
-// ═══════════════════════════════════════
-
-func (e *Engine) Connect(configJSON string) (result bool) {
-	// ← recover از panic
-	defer func() {
-		if r := recover(); r != nil {
-			e.log(fmt.Sprintf("PANIC in Connect: %v\n%s", r, debug.Stack()))
-			e.setStatus("disconnected")
-			result = false
-		}
-	}()
-
-	e.mu.Lock()
-	defer e.mu.Unlock()
-	if e.status == "connected" || e.status == "connecting" {
-		return false
-	}
-	var cfg connectConfig
-	if err := json.Unmarshal([]byte(configJSON), &cfg); err != nil {
-		e.log("Config error: " + err.Error())
-		return false
-	}
-	if cfg.PSK == "" {
-		e.log("Error: PSK is required")
-		return false
-	}
-	if cfg.Protocol == "" {
-		cfg.Protocol = "guarch"
-	}
-	e.protocol = cfg.Protocol
-	e.setStatus("connecting")
-	e.log(fmt.Sprintf("Connecting via %s to %s:%d...", cfg.Protocol, cfg.ServerAddr, cfg.ServerPort))
-
 	ctx, cancel := context.WithCancel(context.Background())
-	e.cancel = cancel
-	go e.connectAsync(ctx, cfg)
-	return true
+	return &Engine{
+		ctx:          ctx,
+		cancel:       cancel,
+		status:       "disconnected",
+		stats:        &engineStats{startTime: time.Now()},
+		batteryLevel: 100,
+	}
 }
 
-func (e *Engine) Disconnect() (result bool) {
-	defer func() {
-		if r := recover(); r != nil {
-			e.log(fmt.Sprintf("PANIC in Disconnect: %v\n%s", r, debug.Stack()))
-			result = false
-		}
-	}()
-
+func (e *Engine) SetCallback(cb Callback) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	e.setStatus("disconnecting")
+	e.callback = cb
+}
 
-	e.StopTun() // ← با gVisor این safe هست — stack.Close() درست کار میکنه
+// ═══════════════════════════════════════════════════════════════
+// Configuration Loading (Enhanced v1.0.1)
+// ═══════════════════════════════════════════════════════════════
 
-	if e.cancel != nil {
-		e.cancel()
+func (e *Engine) LoadConfigJSON(jsonStr string) bool {
+	defer e.recoverPanic("LoadConfigJSON")
+
+	loader := config.NewLoader()
+	cfg, err := loader.LoadFromJSON([]byte(jsonStr))
+	if err != nil {
+		e.logError("Config load failed: " + err.Error())
+		return false
 	}
-	if e.listener != nil {
-		e.listener.Close()
-		e.listener = nil
+
+	if err := cfg.Validate(); err != nil {
+		e.logError("Config validation failed: " + err.Error())
+		return false
 	}
-	if e.muxConn != nil {
-		e.muxConn.Close()
-		e.muxConn = nil
-	}
-	if e.groukSession != nil {
-		e.groukSession.Close()
-		e.groukSession = nil
-	}
-	if e.groukUDP != nil {
-		e.groukUDP.Close()
-		e.groukUDP = nil
-	}
-	if e.zhipConn != nil {
-		e.zhipConn.CloseWithError(0, "disconnect")
-		e.zhipConn = nil
-	}
-	e.setStatus("disconnected")
-	e.log("Disconnected")
+
+	e.mu.Lock()
+	e.config = cfg
+	e.protocol = cfg.Server.Protocol
+	e.mu.Unlock()
+
+	e.logInfo(fmt.Sprintf("Config loaded: %s (%s)", cfg.Server.Name, cfg.Server.Protocol))
 	return true
 }
 
-func (e *Engine) connectAsync(ctx context.Context, cfg connectConfig) {
-	// ← recover
-	defer func() {
-		if r := recover(); r != nil {
-			e.log(fmt.Sprintf("PANIC in connectAsync: %v\n%s", r, debug.Stack()))
-			e.setStatus("disconnected")
+func (e *Engine) LoadConfigURI(uri string) bool {
+	defer e.recoverPanic("LoadConfigURI")
+
+	loader := config.NewLoader()
+	cfg, err := loader.LoadFromURI(uri)
+	if err != nil {
+		e.logError("URI load failed: " + err.Error())
+		return false
+	}
+
+	e.mu.Lock()
+	e.config = cfg
+	e.protocol = cfg.Server.Protocol
+	e.mu.Unlock()
+
+	e.logInfo(fmt.Sprintf("Config loaded from URI: %s", cfg.Server.Name))
+	return true
+}
+
+func (e *Engine) LoadPreset(presetName string) bool {
+	defer e.recoverPanic("LoadPreset")
+
+	cfg, err := config.GetPreset(presetName)
+	if err != nil {
+		e.logError("Preset load failed: " + err.Error())
+		return false
+	}
+
+	e.mu.Lock()
+	e.config = cfg
+	e.protocol = cfg.Server.Protocol
+	e.mu.Unlock()
+
+	e.logInfo(fmt.Sprintf("Preset loaded: %s", presetName))
+	return true
+}
+
+func (e *Engine) ExportConfigURI() string {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+
+	if e.config == nil {
+		return ""
+	}
+
+	jsonData, _ := json.Marshal(e.config)
+	return "guarch://" + string(jsonData)
+}
+
+func (e *Engine) ExportConfigJSON() string {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+
+	if e.config == nil {
+		return ""
+	}
+
+	jsonData, _ := json.MarshalIndent(e.config, "", "  ")
+	return string(jsonData)
+}
+
+// ═══════════════════════════════════════════════════════════════
+// Battery & Data Saver
+// ═══════════════════════════════════════════════════════════════
+
+func (e *Engine) SetBatteryLevel(level int) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
+	e.batteryLevel = level
+	e.logDebug(fmt.Sprintf("Battery level: %d%%", level))
+
+	if e.config == nil || e.adaptiveCover == nil {
+		return
+	}
+
+	if e.config.CoverTraffic.BatteryAware.Enabled {
+		threshold := e.config.CoverTraffic.BatteryAware.LowBatteryThreshold
+		if level < threshold {
+			e.logWarn(fmt.Sprintf("Low battery (%d%%) - reducing cover traffic", level))
+			e.adaptiveCover.SetBatteryMode(true)
+		} else {
+			e.adaptiveCover.SetBatteryMode(false)
 		}
-	}()
+	}
+}
+
+func (e *Engine) SetDataSaverMode(enabled bool) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
+	e.dataSaverMode = enabled
+	if e.config != nil {
+		e.config.CoverTraffic.DataSaver.Enabled = enabled
+	}
+
+	if e.adaptiveCover != nil {
+		e.adaptiveCover.SetDataSaverMode(enabled)
+	}
+
+	e.logInfo(fmt.Sprintf("Data saver mode: %v", enabled))
+}
+
+// ═══════════════════════════════════════════════════════════════
+// Connect (Main Entry Point)
+// ═══════════════════════════════════════════════════════════════
+
+func (e *Engine) Connect() bool {
+	defer e.recoverPanic("Connect")
+
+	e.mu.Lock()
+	if e.status == "connected" || e.status == "connecting" {
+		e.mu.Unlock()
+		return false
+	}
+
+	if e.config == nil {
+		e.mu.Unlock()
+		e.logError("No config loaded")
+		return false
+	}
+
+	e.setStatus("connecting")
+	e.retryCount = 0
+	e.mu.Unlock()
+
+	go e.connectWithRetry()
+	return true
+}
+
+func (e *Engine) connectWithRetry() {
+	defer e.recoverPanic("connectWithRetry")
+
+	for e.retryCount < MaxRetryAttempts {
+		e.logInfo(fmt.Sprintf("Connection attempt %d/%d...", e.retryCount+1, MaxRetryAttempts))
+
+		err := e.connectInternal()
+		if err == nil {
+			e.setStatus("connected")
+			e.logInfo("✓ Connected successfully!")
+			return
+		}
+
+		e.logError(fmt.Sprintf("Attempt %d failed: %v", e.retryCount+1, err))
+		e.retryCount++
+
+		if e.retryCount < MaxRetryAttempts {
+			e.logInfo(fmt.Sprintf("Retrying in %v...", RetryDelay))
+			time.Sleep(RetryDelay)
+		}
+	}
+
+	if e.config.DNSFallback.Enabled && e.config.DNSFallback.Mode == "auto" {
+		e.logWarn("All TLS attempts failed - trying DNS fallback...")
+		if err := e.enableDNSFallback(); err != nil {
+			e.logError("DNS fallback also failed: " + err.Error())
+			e.setStatus("disconnected")
+		} else {
+			e.setStatus("connected")
+			e.logInfo("✓ Connected via DNS fallback!")
+		}
+	} else {
+		e.setStatus("disconnected")
+	}
+}
+
+// ═══════════════════════════════════════════════════════════════
+// Internal Connection Logic
+// ═══════════════════════════════════════════════════════════════
+
+func (e *Engine) connectInternal() error {
+	e.mu.RLock()
+	cfg := e.config
+	protocol := e.protocol
+	e.mu.RUnlock()
+
+	if cfg.SNI.Enabled {
+		sniMgr, err := sni.NewManager(cfg.SNI)
+		if err != nil {
+			e.logWarn("SNI manager init failed: " + err.Error())
+		} else {
+			e.mu.Lock()
+			e.sniManager = sniMgr
+			e.mu.Unlock()
+
+			currentSNI := sniMgr.Get()
+			e.stats.mu.Lock()
+			e.stats.currentSNI = currentSNI
+			e.stats.mu.Unlock()
+
+			e.logInfo(fmt.Sprintf("SNI rotation enabled (%s mode, current: %s)",
+				cfg.SNI.Mode, currentSNI))
+		}
+	}
 
 	var coverMgr *cover.Manager
-	if cfg.CoverEnabled {
-		e.log("Starting cover traffic...")
-		coverMgr = cover.NewManager(cover.DefaultConfig(), nil)
-		coverMgr.Start(ctx)
-		time.Sleep(2 * time.Second)
-		e.log(fmt.Sprintf("Cover ready: avg=%d samples=%d",
-			coverMgr.Stats().AvgPacketSize(), coverMgr.Stats().SampleCount()))
+	if cfg.CoverTraffic.Enabled {
+		coverCfg := e.buildCoverConfig(cfg.CoverTraffic)
+		adaptiveCover := cover.NewAdaptiveCover(coverCfg)
+		coverMgr = cover.NewManager(coverCfg, adaptiveCover)
+
+		e.mu.Lock()
+		e.coverManager = coverMgr
+		e.adaptiveCover = adaptiveCover
+		e.mu.Unlock()
+
+		coverMgr.Start(e.ctx)
+		e.logInfo(fmt.Sprintf("Cover traffic enabled (%s mode, %d domains)",
+			cfg.CoverTraffic.Mode, len(cfg.CoverTraffic.Domains)))
 	}
 
-	switch cfg.Protocol {
+	switch strings.ToLower(protocol) {
 	case "grouk":
-		e.connectGrouk(ctx, cfg, coverMgr)
+		return e.connectGrouk(cfg, coverMgr)
 	case "zhip":
-		e.connectZhip(ctx, cfg, coverMgr)
+		return e.connectZhip(cfg, coverMgr)
 	default:
-		e.connectGuarch(ctx, cfg, coverMgr)
+		return e.connectGuarch(cfg, coverMgr)
 	}
 }
 
-// ═══════════════════════════════════════
-// Protocol: Guarch (TLS/TCP)
-// ═══════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════
+// Protocol: Guarch (Enhanced with SNI)
+// ═══════════════════════════════════════════════════════════════
 
-func (e *Engine) connectGuarch(ctx context.Context, cfg connectConfig, coverMgr *cover.Manager) {
-	defer func() {
-		if r := recover(); r != nil {
-			e.log(fmt.Sprintf("PANIC in connectGuarch: %v\n%s", r, debug.Stack()))
-			e.setStatus("disconnected")
-		}
-	}()
+func (e *Engine) connectGuarch(cfg *config.ServerConfig, coverMgr *cover.Manager) error {
+	serverAddr := cfg.Server.Address
 
-	serverAddr := fmt.Sprintf("%s:%d", cfg.ServerAddr, cfg.ServerPort)
+	var currentSNI string
+	if e.sniManager != nil {
+		currentSNI = e.sniManager.Get()
+		e.logInfo(fmt.Sprintf("Using SNI: %s", currentSNI))
+	}
 
-	tlsConfig := &tls.Config{MinVersion: tls.VersionTLS13, InsecureSkipVerify: true}
-	if cfg.CertPin != "" {
+	tlsConfig := &tls.Config{
+		MinVersion:         tls.VersionTLS13,
+		InsecureSkipVerify: true,
+		ServerName:         currentSNI,
+	}
+
+	if cfg.Server.CertPin != "" {
 		tlsConfig.VerifyPeerCertificate = func(rawCerts [][]byte, _ [][]*x509.Certificate) error {
 			if len(rawCerts) == 0 {
 				return fmt.Errorf("no certificate")
 			}
 			hash := sha256.Sum256(rawCerts[0])
-			if hex.EncodeToString(hash[:]) != cfg.CertPin {
-				return fmt.Errorf("PIN mismatch")
+			actualPin := hex.EncodeToString(hash[:])
+			if actualPin != cfg.Server.CertPin {
+				return fmt.Errorf("certificate PIN mismatch")
 			}
 			return nil
 		}
-		e.log("Certificate PIN enabled")
+		e.logInfo("Certificate pinning enabled")
 	}
 
 	if coverMgr != nil {
 		coverMgr.SendOne()
 	}
 
-	tlsConn, err := tls.DialWithDialer(&net.Dialer{Timeout: 15 * time.Second}, "tcp", serverAddr, tlsConfig)
+	dialer := &net.Dialer{Timeout: ConnectionTimeout}
+	tlsConn, err := tls.DialWithDialer(dialer, "tcp", serverAddr, tlsConfig)
 	if err != nil {
-		e.log("TLS failed: " + err.Error())
-		e.setStatus("disconnected")
-		return
+		return fmt.Errorf("TLS dial failed: %w", err)
 	}
 
-	tlsConn.SetDeadline(time.Now().Add(30 * time.Second))
-	sc, err := transport.Handshake(tlsConn, false, &transport.HandshakeConfig{PSK: []byte(cfg.PSK)})
-	if err != nil {
-		e.log("Handshake failed: " + err.Error())
-		tlsConn.Close()
-		e.setStatus("disconnected")
-		return
+	tlsConn.SetDeadline(time.Now().Add(HandshakeTimeout))
+
+	handshakeCfg := &transport.HandshakeConfig{
+		PSK: []byte(cfg.Server.PSK),
 	}
+
+	sc, err := transport.Handshake(tlsConn, false, handshakeCfg)
+	if err != nil {
+		tlsConn.Close()
+		return fmt.Errorf("handshake failed: %w", err)
+	}
+
 	tlsConn.SetDeadline(time.Time{})
 
 	if coverMgr != nil {
@@ -243,47 +449,33 @@ func (e *Engine) connectGuarch(ctx context.Context, cfg connectConfig, coverMgr 
 	}
 
 	m := mux.NewMux(sc, true)
+
 	e.mu.Lock()
 	e.muxConn = m
+	e.stats.connectTime = time.Now()
 	e.mu.Unlock()
 
-	openStream := func() (io.ReadWriteCloser, error) {
-		s, err := m.OpenStream()
-		if err != nil {
-			return nil, err
-		}
-		return s, nil
-	}
-
-	e.startSOCKS(ctx, cfg, "Guarch", openStream)
+	return e.startSOCKS5(func() (io.ReadWriteCloser, error) {
+		return m.OpenStream()
+	})
 }
 
-// ═══════════════════════════════════════
-// Protocol: Grouk (Raw UDP)
-// ═══════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════
+// Protocol: Grouk
+// ═══════════════════════════════════════════════════════════════
 
-func (e *Engine) connectGrouk(ctx context.Context, cfg connectConfig, coverMgr *cover.Manager) {
-	defer func() {
-		if r := recover(); r != nil {
-			e.log(fmt.Sprintf("PANIC in connectGrouk: %v\n%s", r, debug.Stack()))
-			e.setStatus("disconnected")
-		}
-	}()
-
-	serverAddr := fmt.Sprintf("%s:%d", cfg.ServerAddr, cfg.ServerPort)
+func (e *Engine) connectGrouk(cfg *config.ServerConfig, coverMgr *cover.Manager) error {
+	serverAddr := cfg.Server.Address
 	udpAddr, err := net.ResolveUDPAddr("udp", serverAddr)
 	if err != nil {
-		e.log("Resolve failed: " + err.Error())
-		e.setStatus("disconnected")
-		return
+		return fmt.Errorf("resolve failed: %w", err)
 	}
 
 	udpConn, err := net.ListenUDP("udp", nil)
 	if err != nil {
-		e.log("UDP failed: " + err.Error())
-		e.setStatus("disconnected")
-		return
+		return fmt.Errorf("UDP listen failed: %w", err)
 	}
+
 	udpConn.SetReadBuffer(4 * 1024 * 1024)
 	udpConn.SetWriteBuffer(4 * 1024 * 1024)
 
@@ -291,98 +483,79 @@ func (e *Engine) connectGrouk(ctx context.Context, cfg connectConfig, coverMgr *
 		coverMgr.SendOne()
 	}
 
-	e.log("Grouk handshake...")
-	session, err := transport.GroukClientHandshake(udpConn, udpAddr, []byte(cfg.PSK))
+	session, err := transport.GroukClientHandshake(udpConn, udpAddr, []byte(cfg.Server.PSK))
 	if err != nil {
-		e.log("Grouk handshake failed: " + err.Error())
 		udpConn.Close()
-		e.setStatus("disconnected")
-		return
+		return fmt.Errorf("Grouk handshake failed: %w", err)
 	}
 
 	e.mu.Lock()
 	e.groukSession = session
 	e.groukUDP = udpConn
+	e.stats.connectTime = time.Now()
 	e.mu.Unlock()
 
-	go e.groukReadLoop(ctx, session, udpConn, udpAddr)
+	go e.groukReadLoop(session, udpConn, udpAddr)
 
-	openStream := func() (io.ReadWriteCloser, error) {
-		s, err := session.OpenStream()
-		if err != nil {
-			return nil, err
-		}
-		return s, nil
-	}
-
-	e.startSOCKS(ctx, cfg, "Grouk", openStream)
+	return e.startSOCKS5(func() (io.ReadWriteCloser, error) {
+		return session.OpenStream()
+	})
 }
 
-func (e *Engine) groukReadLoop(ctx context.Context, session *transport.GroukSession, udpConn *net.UDPConn, serverAddr *net.UDPAddr) {
-	defer func() {
-		if r := recover(); r != nil {
-			e.log(fmt.Sprintf("PANIC in groukReadLoop: %v", r))
-		}
-	}()
+func (e *Engine) groukReadLoop(session *transport.GroukSession, udpConn *net.UDPConn, serverAddr *net.UDPAddr) {
+	defer e.recoverPanic("groukReadLoop")
 
 	buf := make([]byte, 2048)
 	for {
 		select {
-		case <-ctx.Done():
+		case <-e.ctx.Done():
 			return
 		default:
 		}
+
 		udpConn.SetReadDeadline(time.Now().Add(1 * time.Second))
 		n, addr, err := udpConn.ReadFromUDP(buf)
 		if err != nil {
 			continue
 		}
+
 		if !addr.IP.Equal(serverAddr.IP) || addr.Port != serverAddr.Port {
 			continue
 		}
+
 		data := make([]byte, n)
 		copy(data, buf[:n])
+
 		pkt, err := transport.UnmarshalGroukPacket(data)
 		if err != nil {
 			continue
 		}
+
 		if pkt.SessionID == session.ID {
 			session.HandlePacketFromClient(pkt)
 		}
 	}
 }
 
-// ═══════════════════════════════════════
-// Protocol: Zhip (QUIC)
-// ═══════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════
+// Protocol: Zhip
+// ═══════════════════════════════════════════════════════════════
 
-func (e *Engine) connectZhip(ctx context.Context, cfg connectConfig, coverMgr *cover.Manager) {
-	defer func() {
-		if r := recover(); r != nil {
-			e.log(fmt.Sprintf("PANIC in connectZhip: %v\n%s", r, debug.Stack()))
-			e.setStatus("disconnected")
-		}
-	}()
-
-	serverAddr := fmt.Sprintf("%s:%d", cfg.ServerAddr, cfg.ServerPort)
+func (e *Engine) connectZhip(cfg *config.ServerConfig, coverMgr *cover.Manager) error {
+	serverAddr := cfg.Server.Address
 
 	if coverMgr != nil {
 		coverMgr.SendOne()
 	}
 
-	e.log("Zhip QUIC dial...")
-	conn, err := transport.ZhipDial(ctx, serverAddr, cfg.CertPin, nil)
+	conn, err := transport.ZhipDial(e.ctx, serverAddr, cfg.Server.CertPin, nil)
 	if err != nil {
-		e.log("Zhip dial failed: " + err.Error())
-		e.setStatus("disconnected")
-		return
+		return fmt.Errorf("QUIC dial failed: %w", err)
 	}
 
-	if err := transport.ZhipClientAuth(conn, []byte(cfg.PSK)); err != nil {
-		e.log("Zhip auth failed: " + err.Error())
+	if err := transport.ZhipClientAuth(conn, []byte(cfg.Server.PSK)); err != nil {
 		conn.CloseWithError(0, "auth failed")
-		e.setStatus("disconnected")
-		return
+		return fmt.Errorf("Zhip auth failed: %w", err)
 	}
 
 	if coverMgr != nil {
@@ -391,75 +564,101 @@ func (e *Engine) connectZhip(ctx context.Context, cfg connectConfig, coverMgr *c
 
 	e.mu.Lock()
 	e.zhipConn = conn
+	e.stats.connectTime = time.Now()
 	e.mu.Unlock()
 
-	openStream := func() (io.ReadWriteCloser, error) {
-		s, err := conn.OpenStreamSync(ctx)
-		if err != nil {
-			return nil, err
-		}
-		return s, nil
-	}
-
-	e.startSOCKS(ctx, cfg, "Zhip", openStream)
+	return e.startSOCKS5(func() (io.ReadWriteCloser, error) {
+		return conn.OpenStreamSync(e.ctx)
+	})
 }
 
-// ═══════════════════════════════════════
-// Generic SOCKS5 + Relay
-// ═══════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════
+// DNS Fallback (NEW in v1.0.1)
+// ═══════════════════════════════════════════════════════════════
 
-func (e *Engine) startSOCKS(ctx context.Context, cfg connectConfig, protoName string, openStream func() (io.ReadWriteCloser, error)) {
-	defer func() {
-		if r := recover(); r != nil {
-			e.log(fmt.Sprintf("PANIC in startSOCKS: %v\n%s", r, debug.Stack()))
-			e.setStatus("disconnected")
-		}
-	}()
+func (e *Engine) enableDNSFallback() error {
+	e.mu.RLock()
+	dnsCfg := e.config.DNSFallback
+	e.mu.RUnlock()
 
-	listenAddr := fmt.Sprintf("%s:%d", cfg.ListenAddr, cfg.ListenPort)
+	if !dnsCfg.Enabled {
+		return fmt.Errorf("DNS fallback not enabled in config")
+	}
+
+	dnsClient := dns.NewClient(dnsCfg.Servers, dnsCfg.Domain)
+	dnsClient.SetTimeout(dnsCfg.QueryTimeout.Duration)
+	dnsClient.SetMaxRetries(dnsCfg.MaxRetries)
+
+	if err := dnsClient.Start(); err != nil {
+		return fmt.Errorf("DNS client start failed: %w", err)
+	}
+
+	e.mu.Lock()
+	e.dnsClient = dnsClient
+	e.mu.Unlock()
+
+	e.usingDNSFallback.Store(true)
+
+	if e.callback != nil {
+		e.callback.OnDNSFallback(true)
+	}
+
+	e.logWarn("⚠ DNS Fallback Mode Active (Reduced Speed)")
+
+	return e.startSOCKS5(func() (io.ReadWriteCloser, error) {
+		return nil, fmt.Errorf("DNS tunnel stream not implemented")
+	})
+}
+
+// ═══════════════════════════════════════════════════════════════
+// SOCKS5 Server
+// ═══════════════════════════════════════════════════════════════
+
+func (e *Engine) startSOCKS5(openStream func() (io.ReadWriteCloser, error)) error {
+	listenAddr := "127.0.0.1:1080"
+
 	ln, err := net.Listen("tcp", listenAddr)
 	if err != nil {
-		e.log("SOCKS5 listen failed: " + err.Error())
-		e.setStatus("disconnected")
-		return
+		return fmt.Errorf("SOCKS5 listen failed: %w", err)
 	}
 
 	e.mu.Lock()
 	e.listener = ln
-	e.stats = &engineStats{startTime: time.Now()}
 	e.mu.Unlock()
 
-	e.setStatus("connected")
-	e.log(fmt.Sprintf("Connected via %s! SOCKS5 on %s", protoName, listenAddr))
+	e.logInfo(fmt.Sprintf("SOCKS5 server listening on %s", listenAddr))
 
-	go e.statsReporter(ctx)
+	go e.statsReporter()
+	go e.sniRotator()
 
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		default:
+	go func() {
+		defer e.recoverPanic("SOCKS5 accept loop")
+
+		for {
 			conn, err := ln.Accept()
 			if err != nil {
 				select {
-				case <-ctx.Done():
+				case <-e.ctx.Done():
 					return
 				default:
 					continue
 				}
 			}
-			go e.handleSOCKS(conn, openStream)
-		}
-	}
-}
 
-func (e *Engine) handleSOCKS(socksConn net.Conn, openStream func() (io.ReadWriteCloser, error)) {
-	defer func() {
-		if r := recover(); r != nil {
-			e.log(fmt.Sprintf("PANIC in handleSOCKS: %v", r))
+			atomic.AddInt64(&e.stats.totalConnections, 1)
+			go e.handleSOCKS5(conn, openStream)
 		}
 	}()
+
+	return nil
+}
+
+func (e *Engine) handleSOCKS5(socksConn net.Conn, openStream func() (io.ReadWriteCloser, error)) {
+	defer e.recoverPanic("handleSOCKS5")
 	defer socksConn.Close()
+
+	atomic.AddInt32(&e.stats.activeStreams, 1)
+	defer atomic.AddInt32(&e.stats.activeStreams, -1)
 
 	target, err := socks5.Handshake(socksConn)
 	if err != nil {
@@ -471,9 +670,9 @@ func (e *Engine) handleSOCKS(socksConn net.Conn, openStream func() (io.ReadWrite
 		socks5.SendReply(socksConn, 0x01)
 		return
 	}
+	defer stream.Close()
 
 	if err := e.sendConnectRequest(stream, target); err != nil {
-		stream.Close()
 		socks5.SendReply(socksConn, 0x01)
 		return
 	}
@@ -495,7 +694,12 @@ func (e *Engine) sendConnectRequest(stream io.ReadWriter, target string) error {
 		}
 	}
 
-	req := &protocol.ConnectRequest{AddrType: addrType, Addr: host, Port: port}
+	req := &protocol.ConnectRequest{
+		AddrType: addrType,
+		Addr:     host,
+		Port:     port,
+	}
+
 	reqData, err := req.Marshal()
 	if err != nil {
 		return err
@@ -515,9 +719,11 @@ func (e *Engine) sendConnectRequest(stream io.ReadWriter, target string) error {
 	if _, err := io.ReadFull(stream, statusBuf); err != nil {
 		return err
 	}
+
 	if statusBuf[0] != protocol.ConnectSuccess {
 		return fmt.Errorf("connect rejected")
 	}
+
 	return nil
 }
 
@@ -525,11 +731,7 @@ func (e *Engine) relayWithStats(stream io.ReadWriteCloser, conn net.Conn) {
 	done := make(chan struct{}, 2)
 
 	go func() {
-		defer func() {
-			if r := recover(); r != nil {
-				e.log(fmt.Sprintf("PANIC in relay upload: %v", r))
-			}
-		}()
+		defer e.recoverPanic("relay upload")
 		buf := make([]byte, 32768)
 		for {
 			n, err := conn.Read(buf)
@@ -547,11 +749,7 @@ func (e *Engine) relayWithStats(stream io.ReadWriteCloser, conn net.Conn) {
 	}()
 
 	go func() {
-		defer func() {
-			if r := recover(); r != nil {
-				e.log(fmt.Sprintf("PANIC in relay download: %v", r))
-			}
-		}()
+		defer e.recoverPanic("relay download")
 		buf := make([]byte, 32768)
 		for {
 			n, err := stream.Read(buf)
@@ -574,40 +772,55 @@ func (e *Engine) relayWithStats(stream io.ReadWriteCloser, conn net.Conn) {
 	<-done
 }
 
-// ═══════════════════════════════════════
-// Stats + Helpers
-// ═══════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════
+// Background Tasks
+// ═══════════════════════════════════════════════════════════════
 
-func (e *Engine) statsReporter(ctx context.Context) {
-	defer func() {
-		if r := recover(); r != nil {
-			e.log(fmt.Sprintf("PANIC in statsReporter: %v", r))
-		}
-	}()
+func (e *Engine) statsReporter() {
+	defer e.recoverPanic("statsReporter")
 
 	ticker := time.NewTicker(1 * time.Second)
 	defer ticker.Stop()
+
 	var lastUp, lastDown int64
 
 	for {
 		select {
-		case <-ctx.Done():
+		case <-e.ctx.Done():
 			return
 		case <-ticker.C:
 			e.stats.mu.Lock()
+
 			upSpeed := e.stats.totalUpload - lastUp
 			downSpeed := e.stats.totalDownload - lastDown
 			lastUp = e.stats.totalUpload
 			lastDown = e.stats.totalDownload
-			data := map[string]interface{}{
-				"upload_speed":     upSpeed,
-				"download_speed":   downSpeed,
-				"total_upload":     e.stats.totalUpload,
-				"total_download":   e.stats.totalDownload,
-				"cover_requests":   e.stats.coverRequests,
-				"duration_seconds": int(time.Since(e.stats.startTime).Seconds()),
+
+			e.stats.lastSpeedUp = upSpeed
+			e.stats.lastSpeedDown = downSpeed
+
+			if e.adaptiveCover != nil {
+				bytesPerMin := (upSpeed + downSpeed) * 60
+				e.adaptiveCover.RecordTraffic(bytesPerMin)
+				e.stats.activityLevel = e.adaptiveCover.GetCurrentLevel()
 			}
+
+			data := map[string]interface{}{
+				"upload_speed":      upSpeed,
+				"download_speed":    downSpeed,
+				"total_upload":      e.stats.totalUpload,
+				"total_download":    e.stats.totalDownload,
+				"active_streams":    atomic.LoadInt32(&e.stats.activeStreams),
+				"total_connections": e.stats.totalConnections,
+				"duration_seconds":  int(time.Since(e.stats.startTime).Seconds()),
+				"current_sni":       e.stats.currentSNI,
+				"sni_switches":      e.stats.sniSwitches,
+				"activity_level":    e.stats.activityLevel,
+				"dns_fallback":      e.usingDNSFallback.Load(),
+			}
+
 			e.stats.mu.Unlock()
+
 			jsonData, _ := json.Marshal(data)
 			if e.callback != nil {
 				e.callback.OnStatsUpdate(string(jsonData))
@@ -616,17 +829,175 @@ func (e *Engine) statsReporter(ctx context.Context) {
 	}
 }
 
-func (e *Engine) GetStatus() string { return e.status }
+func (e *Engine) sniRotator() {
+	defer e.recoverPanic("sniRotator")
+
+	if e.sniManager == nil {
+		return
+	}
+
+	e.mu.RLock()
+	interval := e.config.SNI.RotationInterval.Duration
+	e.mu.RUnlock()
+
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-e.ctx.Done():
+			return
+		case <-ticker.C:
+			newSNI := e.sniManager.Get()
+
+			e.stats.mu.Lock()
+			if newSNI != e.stats.currentSNI {
+				oldSNI := e.stats.currentSNI
+				e.stats.currentSNI = newSNI
+				e.stats.sniSwitches++
+				e.stats.mu.Unlock()
+
+				e.logInfo(fmt.Sprintf("SNI rotated: %s → %s", oldSNI, newSNI))
+
+				if e.callback != nil {
+					e.callback.OnSNIRotation(newSNI)
+				}
+			} else {
+				e.stats.mu.Unlock()
+			}
+		}
+	}
+}
+
+// ═══════════════════════════════════════════════════════════════
+// Disconnect
+// ═══════════════════════════════════════════════════════════════
+
+func (e *Engine) Disconnect() bool {
+	defer e.recoverPanic("Disconnect")
+
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
+	e.setStatus("disconnecting")
+
+	e.StopTun()
+
+	if e.cancel != nil {
+		e.cancel()
+	}
+
+	if e.listener != nil {
+		e.listener.Close()
+		e.listener = nil
+	}
+
+	if e.muxConn != nil {
+		e.muxConn.Close()
+		e.muxConn = nil
+	}
+
+	if e.groukSession != nil {
+		e.groukSession.Close()
+		e.groukSession = nil
+	}
+
+	if e.groukUDP != nil {
+		e.groukUDP.Close()
+		e.groukUDP = nil
+	}
+
+	if e.zhipConn != nil {
+		e.zhipConn.CloseWithError(0, "disconnect")
+		e.zhipConn = nil
+	}
+
+	if e.sniManager != nil {
+		e.sniManager.Stop()
+		e.sniManager = nil
+	}
+
+	if e.coverManager != nil {
+		e.coverManager.Stop()
+		e.coverManager = nil
+	}
+
+	if e.dnsClient != nil {
+		e.dnsClient.Stop()
+		e.dnsClient = nil
+	}
+
+	e.usingDNSFallback.Store(false)
+	e.setStatus("disconnected")
+	e.logInfo("✓ Disconnected")
+
+	return true
+}
+
+// ═══════════════════════════════════════════════════════════════
+// Public API
+// ═══════════════════════════════════════════════════════════════
+
+func (e *Engine) GetStatus() string {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+	return e.status
+}
 
 func (e *Engine) GetStats() string {
-	e.stats.mu.Lock()
-	defer e.stats.mu.Unlock()
+	e.stats.mu.RLock()
+	defer e.stats.mu.RUnlock()
+
 	data := map[string]interface{}{
-		"total_upload": e.stats.totalUpload, "total_download": e.stats.totalDownload,
-		"cover_requests": e.stats.coverRequests, "duration_seconds": int(time.Since(e.stats.startTime).Seconds()),
+		"total_upload":      e.stats.totalUpload,
+		"total_download":    e.stats.totalDownload,
+		"upload_speed":      e.stats.lastSpeedUp,
+		"download_speed":    e.stats.lastSpeedDown,
+		"active_streams":    atomic.LoadInt32(&e.stats.activeStreams),
+		"total_connections": e.stats.totalConnections,
+		"duration_seconds":  int(time.Since(e.stats.startTime).Seconds()),
+		"current_sni":       e.stats.currentSNI,
+		"sni_switches":      e.stats.sniSwitches,
+		"activity_level":    e.stats.activityLevel,
+		"dns_fallback":      e.usingDNSFallback.Load(),
 	}
-	j, _ := json.Marshal(data)
-	return string(j)
+
+	jsonData, _ := json.Marshal(data)
+	return string(jsonData)
+}
+
+func (e *Engine) IsConnected() bool {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+	return e.status == "connected"
+}
+
+func GetVersion() string {
+	return fmt.Sprintf("Guarch Mobile Engine v%s", Version)
+}
+
+// ═══════════════════════════════════════════════════════════════
+// Helpers
+// ═══════════════════════════════════════════════════════════════
+
+func (e *Engine) buildCoverConfig(cfg config.CoverTrafficConfig) *cover.Config {
+	coverCfg := &cover.Config{
+		Enabled: cfg.Enabled,
+		Domains: make([]cover.DomainConfig, len(cfg.Domains)),
+	}
+
+	for i, d := range cfg.Domains {
+		coverCfg.Domains[i] = cover.DomainConfig{
+			Domain:      d.Domain,
+			Paths:       d.Paths,
+			Weight:      d.Weight,
+			MinInterval: d.MinInterval.Duration,
+			MaxInterval: d.MaxInterval.Duration,
+			Enabled:     d.Enabled,
+		}
+	}
+
+	return coverCfg
 }
 
 func (e *Engine) setStatus(s string) {
@@ -636,10 +1007,40 @@ func (e *Engine) setStatus(s string) {
 	}
 }
 
-func (e *Engine) log(msg string) {
-	log.Println("[guarch]", msg)
+func (e *Engine) logDebug(msg string) {
+	log.Println("[DEBUG]", msg)
 	if e.callback != nil {
-		e.callback.OnLog(msg)
+		e.callback.OnLog("debug", msg)
+	}
+}
+
+func (e *Engine) logInfo(msg string) {
+	log.Println("[INFO]", msg)
+	if e.callback != nil {
+		e.callback.OnLog("info", msg)
+	}
+}
+
+func (e *Engine) logWarn(msg string) {
+	log.Println("[WARN]", msg)
+	if e.callback != nil {
+		e.callback.OnLog("warn", msg)
+	}
+}
+
+func (e *Engine) logError(msg string) {
+	log.Println("[ERROR]", msg)
+	if e.callback != nil {
+		e.callback.OnLog("error", msg)
+		e.callback.OnError(msg)
+	}
+}
+
+func (e *Engine) recoverPanic(funcName string) {
+	if r := recover(); r != nil {
+		msg := fmt.Sprintf("PANIC in %s: %v\n%s", funcName, r, debug.Stack())
+		e.logError(msg)
+		e.setStatus("disconnected")
 	}
 }
 
