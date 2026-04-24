@@ -23,7 +23,12 @@ class ServerConfig {
   
   String shapingPattern;
   int maxPadding;
-  int? ping;
+  
+  // Ping & Delay Testing
+  int? ping;              // TCPing (socket connection time)
+  int? realDelay;         // Real delay (full handshake + packet round-trip)
+  DateTime? lastTested;   // Last test timestamp
+  
   bool isActive;
   DateTime createdAt;
 
@@ -48,6 +53,8 @@ class ServerConfig {
     this.shapingPattern = 'web_browsing',
     this.maxPadding = 1024,
     this.ping,
+    this.realDelay,
+    this.lastTested,
     this.isActive = false,
     DateTime? createdAt,
   })  : coverDomains = coverDomains ?? defaultCoverDomains(),
@@ -62,12 +69,37 @@ class ServerConfig {
     return '${ping}ms';
   }
 
+  String get realDelayText {
+    if (realDelay == null) return 'not tested';
+    if (realDelay! < 0) return 'timeout';
+    return '${realDelay}ms';
+  }
+
   String get pingEmoji {
     if (ping == null) return '⏳';
     if (ping! < 0) return '🔴';
     if (ping! < 100) return '🟢';
     if (ping! < 300) return '🟡';
     return '🟠';
+  }
+
+  String get realDelayEmoji {
+    if (realDelay == null) return '⏳';
+    if (realDelay! < 0) return '🔴';
+    if (realDelay! < 200) return '🟢';
+    if (realDelay! < 500) return '🟡';
+    return '🟠';
+  }
+
+  String get lastTestedText {
+    if (lastTested == null) return 'Never';
+    final now = DateTime.now();
+    final diff = now.difference(lastTested!);
+    
+    if (diff.inSeconds < 60) return '${diff.inSeconds}s ago';
+    if (diff.inMinutes < 60) return '${diff.inMinutes}m ago';
+    if (diff.inHours < 24) return '${diff.inHours}h ago';
+    return '${diff.inDays}d ago';
   }
 
   String get protocolEmoji {
@@ -134,6 +166,9 @@ class ServerConfig {
       },
       'listen_port': listenPort,
       'is_active': isActive,
+      'ping': ping,
+      'real_delay': realDelay,
+      'last_tested': lastTested?.toIso8601String(),
       'created_at': createdAt.toIso8601String(),
     };
   }
@@ -165,6 +200,11 @@ class ServerConfig {
       dataSaverEnabled: cover['data_saver']?['enabled'] ?? false,
       shapingPattern: cover['mode'] ?? json['shaping_pattern'] ?? 'web_browsing',
       maxPadding: json['max_padding'] ?? 1024,
+      ping: json['ping'],
+      realDelay: json['real_delay'],
+      lastTested: json['last_tested'] != null
+          ? DateTime.parse(json['last_tested'])
+          : null,
       isActive: json['is_active'] ?? false,
       createdAt: json['created_at'] != null
           ? DateTime.parse(json['created_at'])
@@ -235,6 +275,8 @@ class ServerConfig {
     bool? dataSaverEnabled,
     bool? isActive,
     int? ping,
+    int? realDelay,
+    DateTime? lastTested,
   }) {
     return ServerConfig(
       id: id,
@@ -257,6 +299,8 @@ class ServerConfig {
       shapingPattern: shapingPattern,
       maxPadding: maxPadding,
       ping: ping ?? this.ping,
+      realDelay: realDelay ?? this.realDelay,
+      lastTested: lastTested ?? this.lastTested,
       isActive: isActive ?? this.isActive,
       createdAt: createdAt,
     );
