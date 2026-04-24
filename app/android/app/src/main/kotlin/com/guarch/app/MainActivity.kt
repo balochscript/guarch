@@ -71,6 +71,8 @@ class MainActivity : FlutterActivity() {
                     "addSplitTunnelDomain" -> handleAddSplitTunnelDomain(call.arguments, result)
                     "getTUNStats" -> handleGetTUNStats(result)
                     "requestVpnPermission" -> requestVpnPermission(result)
+                    "testRealDelay" -> handleTestRealDelay(call.arguments, result)
+                    "testConnection" -> handleTestConnection(call.arguments, result)
                     else -> result.notImplemented()
                 }
             } catch (e: Throwable) {
@@ -667,6 +669,113 @@ class MainActivity : FlutterActivity() {
         } catch (_: Throwable) {
             result.success("{}")
         }
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // Ping & Delay Testing (v1.0.1)
+    // ═══════════════════════════════════════════════════════════════
+
+    private fun handleTestRealDelay(arguments: Any?, result: MethodChannel.Result) {
+        CrashLogger.d(TAG, "=== testRealDelay ===")
+        
+        val configJson = arguments as? String
+        if (configJson == null) {
+            CrashLogger.w(TAG, "  Config is null")
+            result.success(false)
+            return
+        }
+
+        if (goEngine == null) {
+            CrashLogger.w(TAG, "  Go engine not available")
+            result.success(false)
+            return
+        }
+
+        Thread {
+            try {
+                CrashLogger.d(TAG, "  Loading test config...")
+                
+                // Load config
+                goEngine!!.javaClass.getMethod("loadConfigJSON", String::class.java)
+                    .invoke(goEngine, configJson)
+                
+                CrashLogger.d(TAG, "  Config loaded, connecting...")
+                
+                // Connect (without starting VPN service)
+                val connectMethod = goEngine!!.javaClass.getMethod("connect")
+                val success = connectMethod.invoke(goEngine) as? Boolean ?: false
+                
+                CrashLogger.d(TAG, "  Connection result: $success")
+                
+                // Disconnect immediately after handshake
+                if (success) {
+                    Thread.sleep(100) // Wait for handshake to complete
+                    
+                    try {
+                        goEngine!!.javaClass.getMethod("disconnect").invoke(goEngine)
+                        CrashLogger.d(TAG, "  Test connection disconnected")
+                    } catch (e: Throwable) {
+                        CrashLogger.e(TAG, "  Disconnect error", unwrapException(e))
+                    }
+                }
+                
+                runOnUiThread {
+                    result.success(success)
+                }
+                
+            } catch (e: Throwable) {
+                val real = unwrapException(e)
+                CrashLogger.e(TAG, "  Real delay test failed", real)
+                runOnUiThread {
+                    result.success(false)
+                }
+            }
+        }.start()
+    }
+
+    private fun handleTestConnection(arguments: Any?, result: MethodChannel.Result) {
+        CrashLogger.d(TAG, "=== testConnection ===")
+        
+        val configJson = arguments as? String
+        if (configJson == null) {
+            result.success(false)
+            return
+        }
+
+        if (goEngine == null) {
+            result.success(false)
+            return
+        }
+
+        Thread {
+            try {
+                // Load minimal config
+                goEngine!!.javaClass.getMethod("loadConfigJSON", String::class.java)
+                    .invoke(goEngine, configJson)
+                
+                // Try to connect
+                val connectMethod = goEngine!!.javaClass.getMethod("connect")
+                val success = connectMethod.invoke(goEngine) as? Boolean ?: false
+                
+                // Disconnect
+                if (success) {
+                    Thread.sleep(50)
+                    try {
+                        goEngine!!.javaClass.getMethod("disconnect").invoke(goEngine)
+                    } catch (_: Throwable) {}
+                }
+                
+                runOnUiThread {
+                    result.success(success)
+                }
+                
+            } catch (e: Throwable) {
+                CrashLogger.e(TAG, "testConnection failed", unwrapException(e))
+                runOnUiThread {
+                    result.success(false)
+                }
+            }
+        }.start()
     }
 
     // ═══════════════════════════════════════════════════════════════
