@@ -30,6 +30,29 @@ class AppProvider extends ChangeNotifier {
   int _batteryLevel = 100;
   bool _dataSaverEnabled = false;
 
+  // ════════════════════════════════════════════════
+  // Debug Mode (v1.0.1)
+  // ════════════════════════════════════════════════
+  bool _debugModeEnabled = false;
+  bool get debugModeEnabled => _debugModeEnabled;
+
+  // ════════════════════════════════════════════════
+  // Advanced Settings (v1.0.1)
+  // ════════════════════════════════════════════════
+  int _connectionTimeout = 15; // seconds
+  int _maxRetryAttempts = 3;
+  int _retryDelay = 5; // seconds
+  int _handshakeTimeout = 30; // seconds
+  int _keepAliveInterval = 30; // seconds
+  int _bufferSize = 32768; // bytes
+
+  int get connectionTimeout => _connectionTimeout;
+  int get maxRetryAttempts => _maxRetryAttempts;
+  int get retryDelay => _retryDelay;
+  int get handshakeTimeout => _handshakeTimeout;
+  int get keepAliveInterval => _keepAliveInterval;
+  int get bufferSize => _bufferSize;
+
   // Getters
   List<ServerConfig> get servers => _servers;
   VpnStatus get status => _status;
@@ -62,6 +85,15 @@ class AppProvider extends ChangeNotifier {
       _activeServerId = _prefs.getString('active_server');
       _batteryLevel = _prefs.getInt('battery_level') ?? 100;
       _dataSaverEnabled = _prefs.getBool('data_saver') ?? false;
+      
+      // Load advanced settings
+      _debugModeEnabled = _prefs.getBool('debug_mode') ?? false;
+      _connectionTimeout = _prefs.getInt('connection_timeout') ?? 15;
+      _maxRetryAttempts = _prefs.getInt('max_retry_attempts') ?? 3;
+      _retryDelay = _prefs.getInt('retry_delay') ?? 5;
+      _handshakeTimeout = _prefs.getInt('handshake_timeout') ?? 30;
+      _keepAliveInterval = _prefs.getInt('keep_alive_interval') ?? 30;
+      _bufferSize = _prefs.getInt('buffer_size') ?? 32768;
       
       _loadServers();
       FlutterLog.d('Provider', 'Prefs loaded. servers=${_servers.length} active=$_activeServerId');
@@ -303,6 +335,12 @@ class AppProvider extends ChangeNotifier {
     _addLog('🏹 Connecting to ${server.name}...');
     _addLog('📡 Protocol: ${server.protocolLabel}');
     
+    if (_debugModeEnabled) {
+      _addLog('🐛 Debug: Timeout=${_connectionTimeout}s, Retries=$_maxRetryAttempts');
+      _addLog('🐛 Debug: Handshake=${_handshakeTimeout}s, KeepAlive=${_keepAliveInterval}s');
+      _addLog('🐛 Debug: Buffer=${_bufferSize ~/ 1024}KB');
+    }
+    
     if (server.sniEnabled) {
       _addLog('🔄 SNI rotation: ${server.sniMode} (${server.sniDomains.length} domains)');
     }
@@ -321,13 +359,22 @@ class AppProvider extends ChangeNotifier {
       // Load config from server
       final configJson = server.toJson();
       
+      // Add advanced settings to config
+      configJson['connection_timeout'] = _connectionTimeout;
+      configJson['max_retry_attempts'] = _maxRetryAttempts;
+      configJson['retry_delay'] = _retryDelay;
+      configJson['handshake_timeout'] = _handshakeTimeout;
+      configJson['keep_alive_interval'] = _keepAliveInterval;
+      configJson['buffer_size'] = _bufferSize;
+      
       // Connect through engine
       final success = await _engine.connectWithConfig(
         jsonEncode(configJson),
       ).timeout(
-        const Duration(seconds: 15),
+        Duration(seconds: _connectionTimeout),
         onTimeout: () {
           FlutterLog.w('Provider', '  Connect timeout');
+          _addLog('⏱️ Connection timeout (${_connectionTimeout}s)');
           return false;
         },
       );
@@ -429,6 +476,59 @@ class AppProvider extends ChangeNotifier {
       _addLog('💾 Data saver: ${_dataSaverEnabled ? "ON" : "OFF"}');
     }
     
+    notifyListeners();
+  }
+
+  // ═══════════════════════════════════════════════════════════════
+  // Debug Mode & Advanced Settings
+  // ═══════════════════════════════════════════════════════════════
+
+  Future<void> toggleDebugMode() async {
+    _debugModeEnabled = !_debugModeEnabled;
+    await _prefs.setBool('debug_mode', _debugModeEnabled);
+    _addLog('🐛 Debug mode: ${_debugModeEnabled ? "ON" : "OFF"}');
+    notifyListeners();
+  }
+
+  Future<void> setConnectionTimeout(int seconds) async {
+    _connectionTimeout = seconds.clamp(5, 60);
+    await _prefs.setInt('connection_timeout', _connectionTimeout);
+    _addLog('⏱️ Connection timeout: ${_connectionTimeout}s');
+    notifyListeners();
+  }
+
+  Future<void> setMaxRetryAttempts(int attempts) async {
+    _maxRetryAttempts = attempts.clamp(1, 10);
+    await _prefs.setInt('max_retry_attempts', _maxRetryAttempts);
+    _addLog('🔄 Max retries: $_maxRetryAttempts');
+    notifyListeners();
+  }
+
+  Future<void> setRetryDelay(int seconds) async {
+    _retryDelay = seconds.clamp(1, 30);
+    await _prefs.setInt('retry_delay', _retryDelay);
+    _addLog('⏱️ Retry delay: ${_retryDelay}s');
+    notifyListeners();
+  }
+
+  Future<void> setHandshakeTimeout(int seconds) async {
+    _handshakeTimeout = seconds.clamp(10, 120);
+    await _prefs.setInt('handshake_timeout', _handshakeTimeout);
+    _addLog('🤝 Handshake timeout: ${_handshakeTimeout}s');
+    notifyListeners();
+  }
+
+  Future<void> setKeepAliveInterval(int seconds) async {
+    _keepAliveInterval = seconds.clamp(10, 300);
+    await _prefs.setInt('keep_alive_interval', _keepAliveInterval);
+    _addLog('💓 Keep-alive interval: ${_keepAliveInterval}s');
+    notifyListeners();
+  }
+
+  Future<void> setBufferSize(int bytes) async {
+    _bufferSize = [16384, 32768, 65536, 131072].contains(bytes) ? bytes : 32768;
+    await _prefs.setInt('buffer_size', _bufferSize);
+    _addLog('📦 Buffer size: ${_bufferSize ~/ 1024} KB');
     notifyListeners();
   }
 
@@ -574,5 +674,23 @@ class AppProvider extends ChangeNotifier {
     _dnsSub?.cancel();
     _engine.dispose();
     super.dispose();
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// FlutterLog Helper (if not already defined)
+// ═══════════════════════════════════════════════════════════════
+
+class FlutterLog {
+  static void d(String tag, String message) {
+    print('🟦 DEBUG [$tag] $message');
+  }
+
+  static void w(String tag, String message) {
+    print('🟨 WARN [$tag] $message');
+  }
+
+  static void e(String tag, String message, [dynamic error]) {
+    print('🟥 ERROR [$tag] $message ${error ?? ""}');
   }
 }
