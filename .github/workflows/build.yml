@@ -2,7 +2,10 @@ name: Build Guarch Debug
 
 on:
   push:
-    branches: [ Dev-1.0.1 ]
+    branches:
+      - debug
+      - Dev-1.0.1
+      - dev-*
   workflow_dispatch:
 
 jobs:
@@ -113,7 +116,7 @@ jobs:
             tail -80 /tmp/build.log
             exit 1
           fi
-          echo "✅ M APK built"
+          echo "✅ APK built"
           ls -la build/app/outputs/flutter-apk/
 
       - name: Upload APK
