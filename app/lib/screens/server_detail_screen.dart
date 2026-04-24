@@ -17,6 +17,7 @@ class ServerDetailScreen extends StatefulWidget {
 
 class _ServerDetailScreenState extends State<ServerDetailScreen> {
   bool _showPsk = false;
+  bool _isTesting = false;
 
   @override
   Widget build(BuildContext context) {
@@ -26,135 +27,619 @@ class _ServerDetailScreenState extends State<ServerDetailScreen> {
       appBar: AppBar(
         title: Text(server.name),
         actions: [
-          IconButton(icon: const Icon(Icons.edit), onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => AddServerScreen(server: server)))),
+          IconButton(
+            icon: const Icon(Icons.edit),
+            onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => AddServerScreen(server: server),
+              ),
+            ),
+          ),
         ],
       ),
       body: ListView(
         padding: const EdgeInsets.all(24),
         children: [
-          Center(child: Text(server.pingEmoji, style: const TextStyle(fontSize: 64))),
+          // Header
+          Center(
+            child: Text(server.pingEmoji, style: const TextStyle(fontSize: 64)),
+          ),
           const SizedBox(height: 16),
-          Center(child: Text(server.name, style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: textSecondary(context)))),
-          const SizedBox(height: 32),
+          Center(
+            child: Text(
+              server.name,
+              style: TextStyle(
+                fontSize: 24,
+                fontWeight: FontWeight.bold,
+                color: textSecondary(context),
+              ),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Center(
+            child: Text(
+              server.protocolLabel,
+              style: TextStyle(
+                color: textMuted(context),
+                fontSize: 14,
+              ),
+            ),
+          ),
 
+          // ═══════════════════════════════════════════════
+          // Connection Info
+          // ═══════════════════════════════════════════════
+          const SizedBox(height: 32),
           _sectionTitle(context, '🎯 Connection'),
           _infoTile(context, 'Address', server.address, Icons.dns),
           _infoTile(context, 'Port', server.port.toString(), Icons.numbers),
-          _infoTile(context, 'SOCKS5 Port', server.listenPort.toString(), Icons.settings_ethernet),
-          _infoTile(context, 'Ping', server.pingText, Icons.speed),
+          _infoTile(
+            context,
+            'SOCKS5 Port',
+            server.listenPort.toString(),
+            Icons.settings_ethernet,
+          ),
 
+          // ═══════════════════════════════════════════════
+          // Latency Tests
+          // ═══════════════════════════════════════════════
+          const SizedBox(height: 24),
+          _sectionTitle(context, '⏱️ Latency'),
+
+          Card(
+            child: Column(
+              children: [
+                ListTile(
+                  leading: Icon(Icons.bolt, size: 20, color: accentColor(context)),
+                  title: Text(
+                    'TCPing',
+                    style: TextStyle(fontSize: 13, color: textMuted(context)),
+                  ),
+                  subtitle: Text(
+                    'TCP socket connection time',
+                    style: TextStyle(fontSize: 11, color: textMuted(context)),
+                  ),
+                  trailing: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      Text(
+                        server.pingText,
+                        style: TextStyle(
+                          fontWeight: FontWeight.w600,
+                          color: _latencyColor(context, server.ping),
+                        ),
+                      ),
+                      if (server.lastTested != null)
+                        Text(
+                          _formatLastTested(server.lastTested!),
+                          style: TextStyle(
+                            fontSize: 10,
+                            color: textMuted(context),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+                Divider(
+                  height: 1,
+                  color: accentColor(context).withOpacity(0.1),
+                ),
+                ListTile(
+                  leading: Icon(
+                    Icons.auto_graph,
+                    size: 20,
+                    color: accentColor(context),
+                  ),
+                  title: Text(
+                    'Real Delay',
+                    style: TextStyle(fontSize: 13, color: textMuted(context)),
+                  ),
+                  subtitle: Text(
+                    'Full handshake + packet round-trip',
+                    style: TextStyle(fontSize: 11, color: textMuted(context)),
+                  ),
+                  trailing: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      Text(
+                        server.realDelayText,
+                        style: TextStyle(
+                          fontWeight: FontWeight.w600,
+                          color: _latencyColor(context, server.realDelay),
+                        ),
+                      ),
+                      if (server.lastTested != null)
+                        Text(
+                          _formatLastTested(server.lastTested!),
+                          style: TextStyle(
+                            fontSize: 10,
+                            color: textMuted(context),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          // Test buttons
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: _isTesting ? null : () => _runTCPing(context),
+                  icon: _isTesting
+                      ? const SizedBox(
+                          width: 14,
+                          height: 14,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.bolt, size: 18),
+                  label: const Text('TCPing'),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: FilledButton.icon(
+                  onPressed: _isTesting ? null : () => _runRealDelay(context),
+                  icon: _isTesting
+                      ? const SizedBox(
+                          width: 14,
+                          height: 14,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
+                        )
+                      : const Icon(Icons.auto_graph, size: 18),
+                  label: const Text('Real Delay'),
+                ),
+              ),
+            ],
+          ),
+
+          // ═══════════════════════════════════════════════
+          // Security
+          // ═══════════════════════════════════════════════
           const SizedBox(height: 24),
           _sectionTitle(context, '🔐 Security'),
+
           Card(
             child: ListTile(
               leading: Icon(Icons.key, size: 20, color: accentColor(context)),
-              title: Text('PSK', style: TextStyle(fontSize: 13, color: textMuted(context))),
-              subtitle: Text(
-                _showPsk ? (server.psk.isEmpty ? 'Not set ⚠️' : server.psk) : (server.psk.isEmpty ? 'Not set ⚠️' : '••••••••••••'),
-                style: TextStyle(fontFamily: 'monospace', fontSize: 12, color: server.psk.isEmpty ? Colors.red : textSecondary(context)),
+              title: Text(
+                'PSK',
+                style: TextStyle(fontSize: 13, color: textMuted(context)),
               ),
-              trailing: Row(mainAxisSize: MainAxisSize.min, children: [
-                IconButton(icon: Icon(_showPsk ? Icons.visibility_off : Icons.visibility, size: 18, color: textMuted(context)), onPressed: () => setState(() => _showPsk = !_showPsk)),
-                if (server.psk.isNotEmpty)
-                  IconButton(icon: Icon(Icons.copy, size: 18, color: textMuted(context)), onPressed: () {
-                    Clipboard.setData(ClipboardData(text: server.psk));
-                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('PSK copied')));
-                  }),
-              ]),
+              subtitle: Text(
+                _showPsk
+                    ? (server.psk.isEmpty ? 'Not set ⚠️' : server.psk)
+                    : (server.psk.isEmpty
+                        ? 'Not set ⚠️'
+                        : '••••••••••••'),
+                style: TextStyle(
+                  fontFamily: 'monospace',
+                  fontSize: 12,
+                  color: server.psk.isEmpty
+                      ? Colors.red
+                      : textSecondary(context),
+                ),
+              ),
+              trailing: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  IconButton(
+                    icon: Icon(
+                      _showPsk ? Icons.visibility_off : Icons.visibility,
+                      size: 18,
+                      color: textMuted(context),
+                    ),
+                    onPressed: () => setState(() => _showPsk = !_showPsk),
+                  ),
+                  if (server.psk.isNotEmpty)
+                    IconButton(
+                      icon: Icon(
+                        Icons.copy,
+                        size: 18,
+                        color: textMuted(context),
+                      ),
+                      onPressed: () {
+                        Clipboard.setData(ClipboardData(text: server.psk));
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('PSK copied')),
+                        );
+                      },
+                    ),
+                ],
+              ),
             ),
           ),
+
           Card(
             child: ListTile(
-              leading: Icon(Icons.verified_user, size: 20, color: accentColor(context)),
-              title: Text('Certificate PIN', style: TextStyle(fontSize: 13, color: textMuted(context))),
+              leading: Icon(
+                Icons.verified_user,
+                size: 20,
+                color: accentColor(context),
+              ),
+              title: Text(
+                'Certificate PIN',
+                style: TextStyle(fontSize: 13, color: textMuted(context)),
+              ),
               subtitle: Text(
-                server.certPin != null && server.certPin!.isNotEmpty ? '${server.certPin!.substring(0, 16)}...' : 'Not set (less secure)',
-                style: TextStyle(fontFamily: 'monospace', fontSize: 12, color: server.certPin != null && server.certPin!.isNotEmpty ? textSecondary(context) : Colors.orange),
+                server.certPin != null && server.certPin!.isNotEmpty
+                    ? '${server.certPin!.substring(0, 16)}...'
+                    : 'Not set (less secure)',
+                style: TextStyle(
+                  fontFamily: 'monospace',
+                  fontSize: 12,
+                  color: server.certPin != null && server.certPin!.isNotEmpty
+                      ? textSecondary(context)
+                      : Colors.orange,
+                ),
               ),
             ),
           ),
 
+          // ═══════════════════════════════════════════════
+          // Advanced Features (v1.0.1)
+          // ═══════════════════════════════════════════════
           const SizedBox(height: 24),
-          _sectionTitle(context, '🎭 Cover Traffic'),
-          _infoTile(context, 'Status', server.coverEnabled ? 'Enabled' : 'Disabled', Icons.masks),
-          _infoTile(context, 'Pattern', server.shapingPattern, Icons.pattern),
-          _infoTile(context, 'Created', server.createdAt.toString().substring(0, 16), Icons.calendar_today),
+          _sectionTitle(context, '🎯 Advanced Features'),
 
-          if (server.coverEnabled) ...[
-            const SizedBox(height: 12),
-            ...server.coverDomains.map((d) => Card(
-              child: ListTile(
-                leading: Icon(Icons.public, size: 20, color: accentColor(context)),
-                title: Text(d.domain, style: TextStyle(color: textSecondary(context))),
-                trailing: Text('${d.weight}%', style: TextStyle(color: textMuted(context))),
-              ),
-            )),
-          ],
-
-          const SizedBox(height: 32),
-          Row(children: [
-            Expanded(child: OutlinedButton.icon(
-              onPressed: () async {
-                final provider = context.read<AppProvider>();
-                final ping = await provider.pingServer(server);
-                if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(ping > 0 ? 'Ping: ${ping}ms' : 'Ping: timeout')));
-              },
-              icon: const Icon(Icons.speed), label: const Text('Ping'),
-            )),
-            const SizedBox(width: 12),
-            Expanded(child: FilledButton.icon(
-              onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => ExportScreen(server: server))),
-              icon: const Icon(Icons.share), label: const Text('Export'),
-            )),
-          ]),
-          const SizedBox(height: 12),
-          OutlinedButton.icon(
-            onPressed: () {
-              final provider = context.read<AppProvider>();
-              provider.setActiveServer(server.id);
-              ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('${server.name} set as active')));
-            },
-            icon: const Icon(Icons.check_circle_outline), label: const Text('Set as Active Server'),
+          Card(
+            child: Column(
+              children: [
+                _featureTile(
+                  context,
+                  '🔄',
+                  'SNI Rotation',
+                  server.sniEnabled
+                      ? 'Enabled (${server.sniMode}, ${server.sniDomains.length} domains)'
+                      : 'Disabled',
+                  server.sniEnabled,
+                ),
+                Divider(
+                  height: 1,
+                  color: accentColor(context).withOpacity(0.1),
+                ),
+                _featureTile(
+                  context,
+                  '🎭',
+                  'Cover Traffic',
+                  server.coverEnabled
+                      ? 'Enabled (${server.coverDomains.length} domains)'
+                      : 'Disabled',
+                  server.coverEnabled,
+                ),
+                Divider(
+                  height: 1,
+                  color: accentColor(context).withOpacity(0.1),
+                ),
+                _featureTile(
+                  context,
+                  '🔌',
+                  'DNS Fallback',
+                  server.dnsFallbackEnabled
+                      ? 'Enabled (${server.dnsFallbackMode})'
+                      : 'Disabled',
+                  server.dnsFallbackEnabled,
+                ),
+                Divider(
+                  height: 1,
+                  color: accentColor(context).withOpacity(0.1),
+                ),
+                _featureTile(
+                  context,
+                  '🔋',
+                  'Battery-Aware',
+                  server.batteryAwareEnabled ? 'Enabled' : 'Disabled',
+                  server.batteryAwareEnabled,
+                ),
+                Divider(
+                  height: 1,
+                  color: accentColor(context).withOpacity(0.1),
+                ),
+                _featureTile(
+                  context,
+                  '💾',
+                  'Data Saver',
+                  server.dataSaverEnabled ? 'Enabled' : 'Disabled',
+                  server.dataSaverEnabled,
+                ),
+              ],
+            ),
           ),
 
+          // ═══════════════════════════════════════════════
+          // Cover Domains
+          // ═══════════════════════════════════════════════
+          if (server.coverEnabled) ...[
+            const SizedBox(height: 24),
+            _sectionTitle(context, '🎭 Cover Domains'),
+            ...server.coverDomains.map(
+              (d) => Card(
+                child: ListTile(
+                  leading: Icon(
+                    Icons.public,
+                    size: 20,
+                    color: accentColor(context),
+                  ),
+                  title: Text(
+                    d.domain,
+                    style: TextStyle(color: textSecondary(context)),
+                  ),
+                  trailing: Text(
+                    '${d.weight}%',
+                    style: TextStyle(color: textMuted(context)),
+                  ),
+                ),
+              ),
+            ),
+          ],
+
+          // ═══════════════════════════════════════════════
+          // SNI Domains
+          // ═══════════════════════════════════════════════
+          if (server.sniEnabled) ...[
+            const SizedBox(height: 24),
+            _sectionTitle(context, '🔄 SNI Domains'),
+            ...server.sniDomains.where((d) => d.enabled).map(
+                  (d) => Card(
+                    child: ListTile(
+                      leading: Icon(
+                        Icons.language,
+                        size: 20,
+                        color: accentColor(context),
+                      ),
+                      title: Text(
+                        d.domain,
+                        style: TextStyle(color: textSecondary(context)),
+                      ),
+                      trailing: server.sniMode == 'weighted'
+                          ? Text(
+                              '${d.weight}%',
+                              style: TextStyle(color: textMuted(context)),
+                            )
+                          : null,
+                    ),
+                  ),
+                ),
+          ],
+
+          // ═══════════════════════════════════════════════
+          // Actions
+          // ═══════════════════════════════════════════════
+          const SizedBox(height: 32),
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => ExportScreen(server: server),
+                    ),
+                  ),
+                  icon: const Icon(Icons.share),
+                  label: const Text('Export'),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: FilledButton.icon(
+                  onPressed: () {
+                    final provider = context.read<AppProvider>();
+                    provider.setActiveServer(server.id);
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text('${server.name} set as active'),
+                      ),
+                    );
+                  },
+                  icon: const Icon(Icons.check_circle_outline),
+                  label: const Text('Set Active'),
+                ),
+              ),
+            ],
+          ),
+
+          // ═══════════════════════════════════════════════
+          // Warnings
+          // ═══════════════════════════════════════════════
           if (server.psk.isEmpty) ...[
             const SizedBox(height: 24),
             Card(
               color: Colors.red.withOpacity(0.1),
               child: Padding(
                 padding: const EdgeInsets.all(16),
-                child: Row(children: [
-                  const Icon(Icons.warning, color: Colors.red),
-                  const SizedBox(width: 12),
-                  Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    const Text('Security Warning', style: TextStyle(fontWeight: FontWeight.w600, color: Colors.red)),
-                    const SizedBox(height: 4),
-                    Text('PSK is not set. Edit this server and add a PSK.', style: TextStyle(color: Colors.red.withOpacity(0.7), fontSize: 12)),
-                  ])),
-                ]),
+                child: Row(
+                  children: [
+                    const Icon(Icons.warning, color: Colors.red),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'Security Warning',
+                            style: TextStyle(
+                              fontWeight: FontWeight.w600,
+                              color: Colors.red,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            'PSK is not set. Edit this server and add a PSK.',
+                            style: TextStyle(
+                              color: Colors.red.withOpacity(0.7),
+                              fontSize: 12,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
           ],
+
           const SizedBox(height: 32),
         ],
       ),
     );
   }
 
+  // ═══════════════════════════════════════════════════════════════
+  // Helper Widgets
+  // ═══════════════════════════════════════════════════════════════
+
   Widget _sectionTitle(BuildContext context, String title) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
-      child: Text(title, style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600, color: textPrimary(context))),
+      child: Text(
+        title,
+        style: TextStyle(
+          fontSize: 18,
+          fontWeight: FontWeight.w600,
+          color: textPrimary(context),
+        ),
+      ),
     );
   }
 
-  Widget _infoTile(BuildContext context, String label, String value, IconData icon) {
+  Widget _infoTile(
+    BuildContext context,
+    String label,
+    String value,
+    IconData icon,
+  ) {
     return Card(
       child: ListTile(
         leading: Icon(icon, size: 20, color: accentColor(context)),
-        title: Text(label, style: TextStyle(fontSize: 13, color: textMuted(context))),
-        trailing: Text(value, style: TextStyle(fontWeight: FontWeight.w600, color: textSecondary(context))),
+        title: Text(
+          label,
+          style: TextStyle(fontSize: 13, color: textMuted(context)),
+        ),
+        trailing: Text(
+          value,
+          style: TextStyle(
+            fontWeight: FontWeight.w600,
+            color: textSecondary(context),
+          ),
+        ),
       ),
     );
+  }
+
+  Widget _featureTile(
+    BuildContext context,
+    String emoji,
+    String title,
+    String subtitle,
+    bool enabled,
+  ) {
+    return ListTile(
+      leading: Text(emoji, style: const TextStyle(fontSize: 20)),
+      title: Text(
+        title,
+        style: TextStyle(
+          fontSize: 14,
+          color: textSecondary(context),
+        ),
+      ),
+      subtitle: Text(
+        subtitle,
+        style: TextStyle(
+          fontSize: 12,
+          color: textMuted(context),
+        ),
+      ),
+      trailing: Icon(
+        enabled ? Icons.check_circle : Icons.cancel,
+        color: enabled ? Colors.green : Colors.grey,
+        size: 20,
+      ),
+    );
+  }
+
+  Color _latencyColor(BuildContext context, int? latency) {
+    if (latency == null) return textMuted(context);
+    if (latency < 0) return Colors.red;
+    if (latency < 100) return Colors.green;
+    if (latency < 300) return Colors.orange;
+    return Colors.red;
+  }
+
+  String _formatLastTested(DateTime time) {
+    final diff = DateTime.now().difference(time);
+    if (diff.inMinutes < 1) return 'just now';
+    if (diff.inMinutes < 60) return '${diff.inMinutes}m ago';
+    if (diff.inHours < 24) return '${diff.inHours}h ago';
+    return '${diff.inDays}d ago';
+  }
+
+  // ═══════════════════════════════════════════════════════════════
+  // Test Actions
+  // ═══════════════════════════════════════════════════════════════
+
+  Future<void> _runTCPing(BuildContext context) async {
+    setState(() => _isTesting = true);
+
+    final provider = context.read<AppProvider>();
+    final ping = await provider.pingServer(widget.server);
+
+    provider.updateServer(
+      widget.server.copyWith(
+        ping: ping,
+        lastTested: DateTime.now(),
+      ),
+    );
+
+    setState(() => _isTesting = false);
+
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            ping > 0 ? 'TCPing: ${ping}ms' : 'TCPing: timeout',
+          ),
+          backgroundColor: ping > 0 ? Colors.green : Colors.red,
+        ),
+      );
+    }
+  }
+
+  Future<void> _runRealDelay(BuildContext context) async {
+    setState(() => _isTesting = true);
+
+    final provider = context.read<AppProvider>();
+    final delay = await provider.testRealDelay(widget.server);
+
+    provider.updateServer(
+      widget.server.copyWith(
+        realDelay: delay,
+        lastTested: DateTime.now(),
+      ),
+    );
+
+    setState(() => _isTesting = false);
+
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            delay > 0 ? 'Real Delay: ${delay}ms' : 'Real Delay: timeout',
+          ),
+          backgroundColor: delay > 0 ? Colors.green : Colors.red,
+        ),
+      );
+    }
   }
 }
