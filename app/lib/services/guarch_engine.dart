@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/services.dart';
+import 'package:guarch/models/server_config.dart';
 
 // ═══════════════════════════════════════════════════════════════
 // Flutter Logger
@@ -511,18 +512,22 @@ class GuarchEngine {
   }
 
   // ═══════════════════════════════════════════════════════════════
-  // Ping
+  // Ping & Delay Testing
   // ═══════════════════════════════════════════════════════════════
 
+  /// TCP Ping: Simple socket connection time
   Future<int> ping(String address, int port) async {
-    FlutterLog.d('Engine', 'ping $address:$port');
+    FlutterLog.d('Engine', 'TCP ping $address:$port');
 
     try {
       final addrs = await InternetAddress.lookup(address).timeout(
         const Duration(seconds: 5),
       );
 
-      if (addrs.isEmpty) return -1;
+      if (addrs.isEmpty) {
+        FlutterLog.w('Engine', 'DNS lookup failed');
+        return -1;
+      }
 
       final sw = Stopwatch()..start();
       final socket = await Socket.connect(
@@ -533,10 +538,115 @@ class GuarchEngine {
       sw.stop();
 
       socket.destroy();
-      return sw.elapsedMilliseconds;
+      
+      final ms = sw.elapsedMilliseconds;
+      FlutterLog.d('Engine', 'TCP ping: ${ms}ms');
+      return ms;
     } catch (e) {
-      FlutterLog.e('Engine', 'Ping failed', e);
+      FlutterLog.e('Engine', 'TCP ping failed', e);
       return -1;
+    }
+  }
+
+  /// Real Delay Test: Full VPN handshake + packet round-trip (v1.0.1)
+  Future<int> testRealDelay(ServerConfig server) async {
+    FlutterLog.d('Engine', '=== testRealDelay ${server.address}:${server.port} ===');
+    
+    if (!_nativeAvailable) {
+      FlutterLog.w('Engine', 'Native not available');
+      return -1;
+    }
+    
+    final startTime = DateTime.now();
+    
+    try {
+      // Build minimal config for testing (no cover traffic, no SNI)
+      final testConfig = {
+        'version': 1,
+        'server': {
+          'address': server.address,
+          'port': server.port,
+          'protocol': server.protocol,
+          'psk': server.psk,
+          'cert_pin': server.certPin ?? '',
+        },
+        'sni': {
+          'enabled': false,
+        },
+        'cover_traffic': {
+          'enabled': false,
+        },
+        'dns_fallback': {
+          'enabled': false,
+        },
+        'listen_port': 1080,
+      };
+      
+      final configJson = jsonEncode(testConfig);
+      
+      FlutterLog.d('Engine', 'Calling testRealDelay with minimal config...');
+      
+      // Try to connect and measure handshake time
+      final result = await _channel.invokeMethod(
+        'testRealDelay',
+        configJson,
+      ).timeout(
+        const Duration(seconds: 10),
+        onTimeout: () {
+          FlutterLog.w('Engine', 'Real delay test timeout');
+          return false;
+        },
+      );
+      
+      if (result == true) {
+        final delay = DateTime.now().difference(startTime).inMilliseconds;
+        FlutterLog.d('Engine', 'Real delay: ${delay}ms ✅');
+        return delay;
+      } else {
+        FlutterLog.w('Engine', 'Real delay test failed (handshake failed)');
+        return -1;
+      }
+    } on PlatformException catch (e) {
+      FlutterLog.e('Engine', 'Real delay test PlatformException: ${e.message}', e);
+      return -1;
+    } catch (e) {
+      FlutterLog.e('Engine', 'Real delay test error', e);
+      return -1;
+    }
+  }
+
+  /// Test connection (used by testRealDelay in AppProvider)
+  Future<bool> testConnection(String address, int port, String psk) async {
+    FlutterLog.d('Engine', 'testConnection $address:$port');
+    
+    if (!_nativeAvailable) return false;
+    
+    try {
+      final testConfig = {
+        'version': 1,
+        'server': {
+          'address': address,
+          'port': port,
+          'protocol': 'guarch',
+          'psk': psk,
+        },
+        'sni': {'enabled': false},
+        'cover_traffic': {'enabled': false},
+        'dns_fallback': {'enabled': false},
+      };
+      
+      final result = await _channel.invokeMethod(
+        'testConnection',
+        jsonEncode(testConfig),
+      ).timeout(
+        const Duration(seconds: 8),
+        onTimeout: () => false,
+      );
+      
+      return result == true;
+    } catch (e) {
+      FlutterLog.e('Engine', 'testConnection failed', e);
+      return false;
     }
   }
 
