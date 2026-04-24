@@ -256,7 +256,10 @@ class AppProvider extends ChangeNotifier {
     pingServer(server).then((ping) {
       final index = _servers.indexWhere((s) => s.id == server.id);
       if (index >= 0) {
-        _servers[index] = _servers[index].copyWith(ping: ping);
+        _servers[index] = _servers[index].copyWith(
+          ping: ping,
+          lastTested: DateTime.now(),
+        );
         _saveServers();
         notifyListeners();
       }
@@ -533,17 +536,18 @@ class AppProvider extends ChangeNotifier {
   }
 
   // ═══════════════════════════════════════════════════════════════
-  // Ping
+  // Ping & Real Delay Testing
   // ═══════════════════════════════════════════════════════════════
 
+  /// TCP Ping: Simple socket connection test
   Future<int> pingServer(ServerConfig server) async {
-    _addLog('📡 Pinging ${server.name}...');
+    _addLog('📡 TCP Ping: ${server.name}...');
     notifyListeners();
     
     final ping = await _engine.ping(server.address, server.port);
     
     if (ping > 0) {
-      _addLog('${server.pingEmoji} ${server.name}: ${ping}ms');
+      _addLog('${server.pingEmoji} ${server.name}: ${ping}ms (TCP)');
     } else {
       _addLog('🔴 ${server.name}: unreachable');
     }
@@ -552,20 +556,90 @@ class AppProvider extends ChangeNotifier {
     return ping;
   }
 
-  Future<void> pingAllServers() async {
+  /// Real Delay Test: Full VPN handshake + packet round-trip
+  Future<int> testRealDelay(ServerConfig server) async {
+    _addLog('⏱️ Real Delay Test: ${server.name}...');
+    notifyListeners();
+    
+    final delay = await _engine.testRealDelay(server);
+    
+    if (delay > 0) {
+      _addLog('${server.realDelayEmoji} ${server.name}: ${delay}ms (real)');
+    } else {
+      _addLog('🔴 ${server.name}: handshake failed');
+    }
+    
+    notifyListeners();
+    return delay;
+  }
+
+  /// Test all servers (TCP Ping + optional Real Delay)
+  Future<void> pingAllServers({bool includeRealDelay = false}) async {
+    final testType = includeRealDelay ? 'TCP + Real Delay' : 'TCP Ping';
+    _addLog('📡 Testing ${_servers.length} servers ($testType)...');
+    notifyListeners();
+    
     for (var i = 0; i < _servers.length; i++) {
+      // Step 1: TCP Ping (fast)
       final ping = await pingServer(_servers[i]);
-      _servers[i] = _servers[i].copyWith(ping: ping);
+      
+      // Step 2: Real Delay (slow, optional)
+      int? realDelay;
+      if (includeRealDelay && ping > 0) {
+        // Only test real delay if TCP ping succeeded
+        realDelay = await testRealDelay(_servers[i]);
+      }
+      
+      // Update server with results
+      _servers[i] = _servers[i].copyWith(
+        ping: ping,
+        realDelay: realDelay,
+        lastTested: DateTime.now(),
+      );
       notifyListeners();
       
-      // Small delay between pings
+      // Small delay between tests to avoid overwhelming network
       if (i < _servers.length - 1) {
         await Future.delayed(const Duration(milliseconds: 500));
       }
     }
+    
     _saveServers();
-    _addLog('✅ Ping test complete');
+    _addLog('✅ Test complete! (${_servers.where((s) => s.ping > 0).length}/${_servers.length} reachable)');
     notifyListeners();
+  }
+
+  /// Test a single server (both TCP + Real Delay)
+  Future<void> testServer(ServerConfig server) async {
+    _addLog('🔍 Full test: ${server.name}...');
+    notifyListeners();
+    
+    // TCP Ping
+    final ping = await pingServer(server);
+    
+    // Real Delay (only if TCP succeeded)
+    int? realDelay;
+    if (ping > 0) {
+      realDelay = await testRealDelay(server);
+    }
+    
+    // Update server
+    final index = _servers.indexWhere((s) => s.id == server.id);
+    if (index >= 0) {
+      _servers[index] = _servers[index].copyWith(
+        ping: ping,
+        realDelay: realDelay,
+        lastTested: DateTime.now(),
+      );
+      _saveServers();
+      notifyListeners();
+    }
+    
+    if (ping > 0 && realDelay != null && realDelay > 0) {
+      _addLog('✅ ${server.name}: TCP=${ping}ms, Real=${realDelay}ms');
+    } else {
+      _addLog('❌ ${server.name}: Test failed');
+    }
   }
 
   // ═══════════════════════════════════════════════════════════════
@@ -678,7 +752,7 @@ class AppProvider extends ChangeNotifier {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// FlutterLog Helper (if not already defined)
+// FlutterLog Helper
 // ═══════════════════════════════════════════════════════════════
 
 class FlutterLog {
