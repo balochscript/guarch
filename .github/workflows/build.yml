@@ -113,7 +113,7 @@ jobs:
             tail -80 /tmp/build.log
             exit 1
           fi
-          echo "✅ APK built"
+          echo "✅ M APK built"
           ls -la build/app/outputs/flutter-apk/
 
       - name: Upload APK
