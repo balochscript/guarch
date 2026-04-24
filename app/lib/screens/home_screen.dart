@@ -35,10 +35,26 @@ class _HomeScreenState extends State<HomeScreen> {
         selectedIndex: _currentIndex,
         onDestinationSelected: (i) => setState(() => _currentIndex = i),
         destinations: const [
-          NavigationDestination(icon: Icon(Icons.home_outlined), selectedIcon: Icon(Icons.home), label: 'Home'),
-          NavigationDestination(icon: Icon(Icons.dns_outlined), selectedIcon: Icon(Icons.dns), label: 'Servers'),
-          NavigationDestination(icon: Icon(Icons.article_outlined), selectedIcon: Icon(Icons.article), label: 'Logs'),
-          NavigationDestination(icon: Icon(Icons.settings_outlined), selectedIcon: Icon(Icons.settings), label: 'Settings'),
+          NavigationDestination(
+            icon: Icon(Icons.home_outlined),
+            selectedIcon: Icon(Icons.home),
+            label: 'Home',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.dns_outlined),
+            selectedIcon: Icon(Icons.dns),
+            label: 'Servers',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.article_outlined),
+            selectedIcon: Icon(Icons.article),
+            label: 'Logs',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.settings_outlined),
+            selectedIcon: Icon(Icons.settings),
+            label: 'Settings',
+          ),
         ],
       ),
     );
@@ -62,16 +78,18 @@ class _HomeTab extends StatelessWidget {
             child: Column(
               children: [
                 const SizedBox(height: 20),
-                _buildHeader(context),
+                _buildHeader(context, provider),
                 const SizedBox(height: 16),
-                _buildServerInfo(context, server),
+                _buildServerInfo(context, server, provider),
                 const Spacer(),
                 ConnectionButton(
                   status: status,
                   onTap: () {
                     if (server == null) {
                       ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Please add and select a server first')),
+                        const SnackBar(
+                          content: Text('Please add and select a server first'),
+                        ),
                       );
                       return;
                     }
@@ -84,7 +102,7 @@ class _HomeTab extends StatelessWidget {
                 if (status == VpnStatus.connected) ...[
                   StatsCard(stats: stats),
                   const SizedBox(height: 16),
-                  _buildCoverInfo(context, stats),
+                  _buildEnhancedStats(context, stats, provider),
                 ] else
                   const SizedBox(height: 120),
                 const SizedBox(height: 20),
@@ -96,7 +114,7 @@ class _HomeTab extends StatelessWidget {
     );
   }
 
-  Widget _buildHeader(BuildContext context) {
+  Widget _buildHeader(BuildContext context, AppProvider provider) {
     return Row(
       children: [
         Container(
@@ -112,57 +130,160 @@ class _HomeTab extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('Guarch',
+              Text(
+                'Guarch',
                 style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                  fontWeight: FontWeight.bold,
-                  color: textPrimary(context),
-                ),
+                      fontWeight: FontWeight.bold,
+                      color: textPrimary(context),
+                    ),
               ),
-              Text('Hidden like a Balochi hunter',
+              Text(
+                'Hidden like a Balochi hunter',
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: textMuted(context),
-                ),
+                      color: textMuted(context),
+                    ),
               ),
             ],
           ),
         ),
-        // ← دکمه Debug Log
-        IconButton(
-          icon: const Icon(Icons.bug_report, color: Colors.orange, size: 28),
-          onPressed: () => Navigator.push(
-            context,
-            MaterialPageRoute(builder: (_) => const LogViewerScreen()),
+        // ══════════════════════════════════════════════
+        // 🐛 Debug Button (только если debugMode = true)
+        // ══════════════════════════════════════════════
+        if (provider.debugModeEnabled)
+          IconButton(
+            icon: const Icon(Icons.bug_report, color: Colors.orange, size: 28),
+            onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const LogViewerScreen()),
+            ),
+            tooltip: 'Debug Logs',
           ),
-          tooltip: 'Debug Logs',
-        ),
       ],
     );
   }
 
-  Widget _buildServerInfo(BuildContext context, dynamic server) {
+  Widget _buildServerInfo(
+      BuildContext context, dynamic server, AppProvider provider) {
     if (server == null) {
       return Card(
         child: ListTile(
           leading: Icon(Icons.add_circle_outline, color: accentColor(context)),
-          title: Text('No server selected', style: TextStyle(color: textSecondary(context))),
-          subtitle: Text('Go to Servers tab to add one', style: TextStyle(color: textMuted(context))),
-          trailing: Icon(Icons.arrow_forward_ios, size: 16, color: accentColor(context)),
+          title: Text(
+            'No server selected',
+            style: TextStyle(color: textSecondary(context)),
+          ),
+          subtitle: Text(
+            'Go to Servers tab to add one',
+            style: TextStyle(color: textMuted(context)),
+          ),
+          trailing:
+              Icon(Icons.arrow_forward_ios, size: 16, color: accentColor(context)),
         ),
       );
     }
 
     return Card(
-      child: ListTile(
-        leading: Text(server.pingEmoji, style: const TextStyle(fontSize: 24)),
-        title: Text(server.name, style: TextStyle(fontWeight: FontWeight.w600, color: textSecondary(context))),
-        subtitle: Text(server.fullAddress, style: TextStyle(color: textMuted(context))),
-        trailing: Text(
-          server.pingText,
-          style: TextStyle(
-            color: server.ping != null && server.ping! > 0 && server.ping! < 100 ? Colors.green : textMuted(context),
-            fontWeight: FontWeight.w600,
+      child: Column(
+        children: [
+          ListTile(
+            leading: Text(server.pingEmoji, style: const TextStyle(fontSize: 24)),
+            title: Text(
+              server.name,
+              style: TextStyle(
+                fontWeight: FontWeight.w600,
+                color: textSecondary(context),
+              ),
+            ),
+            subtitle: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  server.fullAddress,
+                  style: TextStyle(color: textMuted(context)),
+                ),
+                const SizedBox(height: 4),
+                Row(
+                  children: [
+                    Text(
+                      server.protocolEmoji,
+                      style: const TextStyle(fontSize: 14),
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      server.protocol.toUpperCase(),
+                      style: TextStyle(
+                        color: textMuted(context),
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    if (server.sniEnabled) ...[
+                      const SizedBox(width: 8),
+                      const Text('🔄', style: TextStyle(fontSize: 12)),
+                      const SizedBox(width: 2),
+                      Text(
+                        'SNI',
+                        style: TextStyle(
+                          color: textMuted(context),
+                          fontSize: 11,
+                        ),
+                      ),
+                    ],
+                    if (server.coverEnabled) ...[
+                      const SizedBox(width: 8),
+                      const Text('🎭', style: TextStyle(fontSize: 12)),
+                      const SizedBox(width: 2),
+                      Text(
+                        'Cover',
+                        style: TextStyle(
+                          color: textMuted(context),
+                          fontSize: 11,
+                        ),
+                      ),
+                    ],
+                    if (server.dnsFallbackEnabled) ...[
+                      const SizedBox(width: 8),
+                      const Text('🔌', style: TextStyle(fontSize: 12)),
+                      const SizedBox(width: 2),
+                      Text(
+                        'DNS',
+                        style: TextStyle(
+                          color: textMuted(context),
+                          fontSize: 11,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ],
+            ),
+            trailing: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Text(
+                  server.pingText,
+                  style: TextStyle(
+                    color: server.ping != null &&
+                            server.ping! > 0 &&
+                            server.ping! < 100
+                        ? Colors.green
+                        : textMuted(context),
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                if (provider.isConnected &&
+                    server.batteryAwareEnabled &&
+                    provider.batteryLevel < 30)
+                  const Text(
+                    '🔋 Low',
+                    style: TextStyle(fontSize: 10, color: Colors.orange),
+                  ),
+              ],
+            ),
+            isThreeLine: true,
           ),
-        ),
+        ],
       ),
     );
   }
@@ -192,27 +313,156 @@ class _HomeTab extends StatelessWidget {
         color = Colors.red;
         break;
     }
-    return Text(text, style: TextStyle(color: color, fontSize: 16, fontWeight: FontWeight.w600));
+    return Text(
+      text,
+      style: TextStyle(
+        color: color,
+        fontSize: 16,
+        fontWeight: FontWeight.w600,
+      ),
+    );
   }
 
-  Widget _buildCoverInfo(BuildContext context, ConnectionStats stats) {
+  Widget _buildEnhancedStats(
+      BuildContext context, ConnectionStats stats, AppProvider provider) {
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16),
-        child: Row(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('🎭', style: TextStyle(fontSize: 20)),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+            // Cover Traffic
+            Row(
+              children: [
+                const Text('🎭', style: TextStyle(fontSize: 20)),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Cover Traffic Active',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w600,
+                          color: textSecondary(context),
+                        ),
+                      ),
+                      Text(
+                        '${stats.coverRequests} requests • ${stats.activityEmoji} ${stats.activityText}',
+                        style: TextStyle(
+                          color: textMuted(context),
+                          fontSize: 12,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Container(
+                  width: 8,
+                  height: 8,
+                  decoration: const BoxDecoration(
+                    color: Colors.green,
+                    shape: BoxShape.circle,
+                  ),
+                ),
+              ],
+            ),
+
+            // SNI Rotation
+            if (stats.currentSNI.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              Divider(color: accentColor(context).withOpacity(0.1)),
+              const SizedBox(height: 12),
+              Row(
                 children: [
-                  Text('Cover Traffic Active', style: TextStyle(fontWeight: FontWeight.w600, color: textSecondary(context))),
-                  Text('${stats.coverRequests} cover requests sent', style: TextStyle(color: textMuted(context), fontSize: 12)),
+                  const Text('🔄', style: TextStyle(fontSize: 20)),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Current SNI',
+                          style: TextStyle(
+                            fontWeight: FontWeight.w600,
+                            color: textSecondary(context),
+                          ),
+                        ),
+                        Text(
+                          '${stats.currentSNI} • ${stats.sniSwitches} switches',
+                          style: TextStyle(
+                            color: textMuted(context),
+                            fontSize: 12,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
                 ],
               ),
-            ),
-            Container(width: 8, height: 8, decoration: const BoxDecoration(color: Colors.green, shape: BoxShape.circle)),
+            ],
+
+            // DNS Fallback Warning
+            if (stats.dnsFallbackUsed) ...[
+              const SizedBox(height: 12),
+              Divider(color: accentColor(context).withOpacity(0.1)),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  const Text('🔌', style: TextStyle(fontSize: 20)),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'DNS Fallback Mode',
+                          style: TextStyle(
+                            fontWeight: FontWeight.w600,
+                            color: Colors.orange,
+                          ),
+                        ),
+                        Text(
+                          'Reduced speed — TLS blocked',
+                          style: TextStyle(
+                            color: textMuted(context),
+                            fontSize: 12,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ],
+
+            // Battery & Data Saver
+            if (provider.batteryLevel < 30 ||
+                provider.dataSaverEnabled) ...[
+              const SizedBox(height: 12),
+              Divider(color: accentColor(context).withOpacity(0.1)),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Text(
+                    provider.batteryLevel < 30 ? '🔋' : '💾',
+                    style: const TextStyle(fontSize: 20),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      provider.batteryLevel < 30
+                          ? 'Low Battery Mode (${provider.batteryLevel}%)'
+                          : 'Data Saver Active',
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: textMuted(context),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
           ],
         ),
       ),
