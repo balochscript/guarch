@@ -9,169 +9,356 @@ import android.net.VpnService
 import android.os.Build
 import android.os.ParcelFileDescriptor
 import androidx.core.app.NotificationCompat
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 
 class GuarchService : VpnService() {
 
     companion object {
-        const val CHANNEL_ID = "guarch_service"
-        const val NOTIFICATION_ID = 1
-        const val ACTION_START = "START"
-        const val ACTION_STOP = "STOP"
+        const val CHANNEL_ID = "guarch_vpn_service"
+        const val NOTIFICATION_ID = 1001
+        const val ACTION_START = "com.guarch.app.START"
+        const val ACTION_STOP = "com.guarch.app.STOP"
+        const val ACTION_UPDATE_NOTIFICATION = "com.guarch.app.UPDATE_NOTIFICATION"
 
-        @Volatile var isRunning = false
-            private set
-        @Volatile var tunFd: Int = -1
-            private set
+        private val _isRunning = AtomicBoolean(false)
+        private val _tunFd = AtomicInteger(-1)
+        
+        @Volatile
+        private var _instance: GuarchService? = null
 
-        // ← reference به instance فعلی
-        @Volatile var instance: GuarchService? = null
-            private set
+        val isRunning: Boolean
+            get() = _isRunning.get()
+
+        val tunFd: Int
+            get() = _tunFd.get()
+
+        val instance: GuarchService?
+            get() = _instance
+
+        fun updateNotification(text: String) {
+            _instance?.updateNotificationText(text)
+        }
     }
 
     private var vpnInterface: ParcelFileDescriptor? = null
+    private var lastNotificationText = "Initializing..."
+    private var bytesUploaded = 0L
+    private var bytesDownloaded = 0L
+    private var connectedTime = 0L
+
+    // ═══════════════════════════════════════════════════════════════
+    // Lifecycle
+    // ═══════════════════════════════════════════════════════════════
 
     override fun onCreate() {
         super.onCreate()
-        CrashLogger.d("Service", "=== onCreate ===")
-        instance = this
+        CrashLogger.d("Service", "=== onCreate (v1.0.1) ===")
+        _instance = this
         createNotificationChannel()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        CrashLogger.d("Service", "=== onStartCommand === action=${intent?.action}")
+        val action = intent?.action ?: ""
+        CrashLogger.d("Service", "=== onStartCommand === action=$action")
+
         try {
-            when (intent?.action) {
-                ACTION_STOP -> { stopVpn(); return START_NOT_STICKY }
+            when (action) {
+                ACTION_STOP -> {
+                    stopVpn()
+                    return START_NOT_STICKY
+                }
+
                 ACTION_START -> {
-                    val port = intent.getIntExtra("socks_port", 1080)
-                    CrashLogger.d("Service", "  port=$port isRunning=$isRunning")
+                    val socksPort = intent.getIntExtra("socks_port", 1080)
+                    CrashLogger.d("Service", "  socksPort=$socksPort isRunning=$isRunning")
 
                     if (isRunning) {
-                        CrashLogger.d("Service", "  Restarting...")
+                        CrashLogger.d("Service", "  Already running — restarting...")
                         cleanupTun()
                     }
-                    startVpn(port)
+
+                    startVpn(socksPort)
+                }
+
+                ACTION_UPDATE_NOTIFICATION -> {
+                    val text = intent.getStringExtra("text") ?: "Connected"
+                    updateNotificationText(text)
+                }
+
+                else -> {
+                    CrashLogger.w("Service", "  Unknown action: $action")
                 }
             }
         } catch (e: Throwable) {
             CrashLogger.e("Service", "onStartCommand CRASHED", e)
         }
+
         return START_STICKY
     }
 
+    // ═══════════════════════════════════════════════════════════════
+    // VPN Setup
+    // ═══════════════════════════════════════════════════════════════
+
     private fun startVpn(socksPort: Int) {
+        CrashLogger.d("Service", "--- startVpn ---")
+
+        // Start foreground service
         try {
-            CrashLogger.d("Service", "  S1: Foreground...")
+            CrashLogger.d("Service", "  S1: Starting foreground service...")
             startForeground(NOTIFICATION_ID, createNotification("Connecting..."))
-            CrashLogger.d("Service", "  S1: Done ✅")
+            CrashLogger.d("Service", "  S1: Foreground started ✅")
         } catch (e: Throwable) {
-            CrashLogger.e("Service", "  S1: FAILED", e)
+            CrashLogger.e("Service", "  S1: Foreground FAILED", e)
             stopSelf()
             return
         }
 
+        // Build VPN interface
         try {
-            CrashLogger.d("Service", "  S2: Building TUN...")
+            CrashLogger.d("Service", "  S2: Building VPN interface...")
+            
             val builder = Builder()
-                .setSession("Guarch VPN")
+                .setSession("Guarch VPN v1.0.1")
                 .addAddress("10.10.10.2", 32)
                 .addRoute("0.0.0.0", 0)
-                .addDnsServer("8.8.8.8")
-                .addDnsServer("1.1.1.1")
                 .setMtu(1500)
                 .setBlocking(false)
 
-            try { builder.addDisallowedApplication(packageName) }
-            catch (_: Throwable) {}
+            // DNS servers
+            builder.addDnsServer("8.8.8.8")      // Google DNS
+            builder.addDnsServer("8.8.4.4")
+            builder.addDnsServer("1.1.1.1")      // Cloudflare DNS
+            builder.addDnsServer("1.0.0.1")
 
-            CrashLogger.d("Service", "  S2: establish()...")
+            // Exclude this app from VPN (prevent loop)
+            try {
+                builder.addDisallowedApplication(packageName)
+                CrashLogger.d("Service", "  S2: Excluded self from VPN ✅")
+            } catch (e: Throwable) {
+                CrashLogger.w("Service", "  S2: Could not exclude self (OK on older Android)")
+            }
+
+            // Optional: IPv6 support
+            try {
+                builder.addAddress("fd00::2", 64)
+                builder.addRoute("::", 0)
+                CrashLogger.d("Service", "  S2: IPv6 enabled ✅")
+            } catch (e: Throwable) {
+                CrashLogger.w("Service", "  S2: IPv6 not supported on this device")
+            }
+
+            // Establish VPN
+            CrashLogger.d("Service", "  S2: Calling establish()...")
             vpnInterface = builder.establish()
 
             if (vpnInterface == null) {
-                CrashLogger.e("Service", "  S2: establish NULL!")
-                tunFd = -1; isRunning = false; stopSelf()
+                CrashLogger.e("Service", "  S2: establish() returned NULL!")
+                _tunFd.set(-1)
+                _isRunning.set(false)
+                stopSelf()
                 return
             }
 
-            // ← fd رو بگیر بدون detach — VPN key میمونه
-            tunFd = vpnInterface!!.fd
-            isRunning = true
-            CrashLogger.d("Service", "  S2: Done fd=$tunFd ✅")
+            // Get file descriptor WITHOUT detaching
+            // (detach() would close the interface — we need to keep it alive)
+            val fd = vpnInterface!!.fd
+            _tunFd.set(fd)
+            _isRunning.set(true)
+            connectedTime = System.currentTimeMillis()
 
-            // notification آپدیت
-            updateNotification("Connected ✅")
+            CrashLogger.d("Service", "  S2: VPN interface established ✅")
+            CrashLogger.d("Service", "  S2: TUN fd = $fd")
+            CrashLogger.d("Service", "  S2: Address = 10.10.10.2/32")
+            CrashLogger.d("Service", "  S2: Route = 0.0.0.0/0")
+            CrashLogger.d("Service", "  S2: DNS = 8.8.8.8, 1.1.1.1")
+            CrashLogger.d("Service", "  S2: MTU = 1500")
+
+            // Update notification
+            updateNotificationText("Connected ✅")
+
+            CrashLogger.d("Service", "=== VPN STARTED ===")
 
         } catch (e: Throwable) {
-            CrashLogger.e("Service", "  S2: CRASHED", e)
-            tunFd = -1; isRunning = false; stopSelf()
+            CrashLogger.e("Service", "  S2: VPN setup CRASHED", e)
+            _tunFd.set(-1)
+            _isRunning.set(false)
+            stopSelf()
         }
     }
 
-    // فقط TUN رو پاک کن بدون stop سرویس
+    // ═══════════════════════════════════════════════════════════════
+    // Cleanup
+    // ═══════════════════════════════════════════════════════════════
+
     private fun cleanupTun() {
         CrashLogger.d("Service", "  cleanupTun")
-        tunFd = -1
+        _tunFd.set(-1)
+        
         try {
             vpnInterface?.close()
             vpnInterface = null
-        } catch (_: Throwable) {}
+        } catch (e: Throwable) {
+            CrashLogger.e("Service", "  cleanupTun error", e)
+        }
     }
 
     private fun stopVpn() {
         CrashLogger.d("Service", "--- stopVpn ---")
-        isRunning = false
-        tunFd = -1
-        instance = null
+        
+        _isRunning.set(false)
+        _tunFd.set(-1)
+        _instance = null
+
         try {
             vpnInterface?.close()
             vpnInterface = null
-        } catch (_: Throwable) {}
-        stopForeground(STOP_FOREGROUND_REMOVE)
+        } catch (e: Throwable) {
+            CrashLogger.e("Service", "  vpnInterface.close() error", e)
+        }
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+            stopForeground(STOP_FOREGROUND_REMOVE)
+        } else {
+            @Suppress("DEPRECATION")
+            stopForeground(true)
+        }
+
         stopSelf()
+        CrashLogger.d("Service", "  VPN stopped ✅")
     }
 
-    fun updateNotification(text: String) {
+    // ═══════════════════════════════════════════════════════════════
+    // Notifications
+    // ═══════════════════════════════════════════════════════════════
+
+    private fun createNotificationChannel() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val channel = NotificationChannel(
+                CHANNEL_ID,
+                "Guarch VPN Service",
+                NotificationManager.IMPORTANCE_LOW
+            ).apply {
+                description = "Persistent notification for Guarch VPN connection"
+                setShowBadge(false)
+                lockscreenVisibility = Notification.VISIBILITY_PUBLIC
+            }
+
+            val manager = getSystemService(NotificationManager::class.java)
+            manager?.createNotificationChannel(channel)
+            CrashLogger.d("Service", "Notification channel created")
+        }
+    }
+
+    private fun createNotification(text: String): Notification {
+        val pendingIntent = PendingIntent.getActivity(
+            this,
+            0,
+            Intent(this, MainActivity::class.java).apply {
+                flags = Intent.FLAG_ACTIVITY_SINGLE_TOP
+            },
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            } else {
+                PendingIntent.FLAG_UPDATE_CURRENT
+            }
+        )
+
+        val disconnectIntent = PendingIntent.getService(
+            this,
+            1,
+            Intent(this, GuarchService::class.java).apply {
+                action = ACTION_STOP
+            },
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            } else {
+                PendingIntent.FLAG_UPDATE_CURRENT
+            }
+        )
+
+        return NotificationCompat.Builder(this, CHANNEL_ID)
+            .setContentTitle("🏹 Guarch VPN")
+            .setContentText(text)
+            .setSmallIcon(android.R.drawable.ic_lock_lock)
+            .setContentIntent(pendingIntent)
+            .setOngoing(true)
+            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .setCategory(NotificationCompat.CATEGORY_SERVICE)
+            .addAction(
+                android.R.drawable.ic_menu_close_clear_cancel,
+                "Disconnect",
+                disconnectIntent
+            )
+            .build()
+    }
+
+    fun updateNotificationText(text: String) {
+        if (text == lastNotificationText) return
+        
+        lastNotificationText = text
+        
         try {
             val manager = getSystemService(NotificationManager::class.java)
             manager?.notify(NOTIFICATION_ID, createNotification(text))
-        } catch (_: Throwable) {}
+        } catch (e: Throwable) {
+            CrashLogger.e("Service", "updateNotification failed", e)
+        }
     }
 
+    // ═══════════════════════════════════════════════════════════════
+    // Statistics (for future use)
+    // ═══════════════════════════════════════════════════════════════
+
+    fun updateStats(upload: Long, download: Long) {
+        bytesUploaded = upload
+        bytesDownloaded = download
+
+        // Update notification with stats (optional)
+        val uploadMB = upload / (1024.0 * 1024.0)
+        val downloadMB = download / (1024.0 * 1024.0)
+        
+        val uptime = if (connectedTime > 0) {
+            (System.currentTimeMillis() - connectedTime) / 1000
+        } else {
+            0
+        }
+
+        val statsText = String.format(
+            "↑ %.2f MB ↓ %.2f MB • %dm%ds",
+            uploadMB,
+            downloadMB,
+            uptime / 60,
+            uptime % 60
+        )
+
+        updateNotificationText(statsText)
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // VPN Revocation
+    // ═══════════════════════════════════════════════════════════════
+
     override fun onRevoke() {
-        CrashLogger.d("Service", "onRevoke")
+        CrashLogger.d("Service", "=== onRevoke (user revoked VPN permission) ===")
         stopVpn()
         super.onRevoke()
     }
 
     override fun onDestroy() {
-        CrashLogger.d("Service", "onDestroy")
-        isRunning = false
-        tunFd = -1
-        instance = null
-        try { vpnInterface?.close() } catch (_: Throwable) {}
+        CrashLogger.d("Service", "=== onDestroy ===")
+        
+        _isRunning.set(false)
+        _tunFd.set(-1)
+        _instance = null
+
+        try {
+            vpnInterface?.close()
+        } catch (_: Throwable) {}
+        
         vpnInterface = null
+        
         super.onDestroy()
-    }
-
-    private fun createNotificationChannel() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = NotificationChannel(
-                CHANNEL_ID, "Guarch VPN", NotificationManager.IMPORTANCE_LOW
-            ).apply { setShowBadge(false) }
-            getSystemService(NotificationManager::class.java)?.createNotificationChannel(channel)
-        }
-    }
-
-    private fun createNotification(text: String): Notification {
-        val pi = PendingIntent.getActivity(this, 0,
-            Intent(this, MainActivity::class.java),
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
-        return NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle("🏹 Guarch")
-            .setContentText(text)
-            .setSmallIcon(android.R.drawable.ic_lock_lock)
-            .setContentIntent(pi)
-            .setOngoing(true)
-            .build()
     }
 }
