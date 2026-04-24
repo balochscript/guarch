@@ -1,28 +1,59 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
     package="com.guarch.app">
 
-    <!-- Network permissions -->
+    <!-- ═══════════════════════════════════════════════════════════════ -->
+    <!-- Network Permissions -->
+    <!-- ═══════════════════════════════════════════════════════════════ -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+    <uses-permission android:name="android.permission.CHANGE_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.CHANGE_WIFI_STATE" />
 
-    <!-- Foreground service for VPN -->
+    <!-- ═══════════════════════════════════════════════════════════════ -->
+    <!-- VPN Service Permissions -->
+    <!-- ═══════════════════════════════════════════════════════════════ -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
 
-    <!-- Notification -->
+    <!-- ═══════════════════════════════════════════════════════════════ -->
+    <!-- Notification Permission (Android 13+) -->
+    <!-- ═══════════════════════════════════════════════════════════════ -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
-    <!-- Boot -->
+    <!-- ═══════════════════════════════════════════════════════════════ -->
+    <!-- Boot & Battery (for auto-reconnect and battery monitoring) -->
+    <!-- ═══════════════════════════════════════════════════════════════ -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <uses-permission android:name="android.permission.BATTERY_STATS"
+        tools:ignore="ProtectedPermissions" />
+
+    <!-- ═══════════════════════════════════════════════════════════════ -->
+    <!-- Wake Lock (for persistent connection) -->
+    <!-- ═══════════════════════════════════════════════════════════════ -->
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+
+    <!-- ═══════════════════════════════════════════════════════════════ -->
+    <!-- Query All Packages (for split tunneling per-app selection) -->
+    <!-- ═══════════════════════════════════════════════════════════════ -->
+    <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES"
+        tools:ignore="QueryAllPackagesPermission" />
 
     <application
         android:label="Guarch"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher"
-        android:usesCleartextTraffic="true"
-        android:networkSecurityConfig="@xml/network_security_config">
+        android:usesCleartextTraffic="false"
+        android:allowBackup="false"
+        android:networkSecurityConfig="@xml/network_security_config"
+        android:requestLegacyExternalStorage="false"
+        android:preserveLegacyExternalStorage="false"
+        tools:targetApi="31">
 
+        <!-- ═══════════════════════════════════════════════════════════════ -->
+        <!-- Main Activity -->
+        <!-- ═══════════════════════════════════════════════════════════════ -->
         <activity
             android:name=".MainActivity"
             android:exported="true"
@@ -31,27 +62,40 @@
             android:theme="@style/LaunchTheme"
             android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
             android:hardwareAccelerated="true"
-            android:windowSoftInputMode="adjustResize">
+            android:windowSoftInputMode="adjustResize"
+            android:screenOrientation="unspecified">
 
             <meta-data
                 android:name="io.flutter.embedding.android.NormalTheme"
                 android:resource="@style/NormalTheme" />
 
+            <!-- Launcher intent -->
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
 
-            <!-- Deep link for guarch:// -->
+            <!-- Deep links: guarch://, grouk://, zhip:// -->
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="guarch" />
+                <data android:scheme="grouk" />
+                <data android:scheme="zhip" />
+            </intent-filter>
+
+            <!-- Share target (for importing configs via share) -->
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="text/plain" />
             </intent-filter>
         </activity>
 
-                <!-- File Provider for sharing logs -->
+        <!-- ═══════════════════════════════════════════════════════════════ -->
+        <!-- File Provider (for sharing logs and configs) -->
+        <!-- ═══════════════════════════════════════════════════════════════ -->
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"
@@ -62,26 +106,76 @@
                 android:resource="@xml/file_paths" />
         </provider>
 
+        <!-- ═══════════════════════════════════════════════════════════════ -->
         <!-- VPN Service -->
+        <!-- ═══════════════════════════════════════════════════════════════ -->
         <service
             android:name=".GuarchService"
             android:exported="false"
             android:foregroundServiceType="specialUse"
-            android:permission="android.permission.BIND_VPN_SERVICE">
+            android:permission="android.permission.BIND_VPN_SERVICE"
+            android:stopWithTask="false">
             <intent-filter>
                 <action android:name="android.net.VpnService" />
             </intent-filter>
+            <meta-data
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="VPN connection for censorship circumvention" />
         </service>
 
+        <!-- ═══════════════════════════════════════════════════════════════ -->
+        <!-- Boot Receiver (for auto-reconnect) -->
+        <!-- ═══════════════════════════════════════════════════════════════ -->
+        <receiver
+            android:name=".BootReceiver"
+            android:enabled="true"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.QUICKBOOT_POWERON" />
+            </intent-filter>
+        </receiver>
+
+        <!-- ═══════════════════════════════════════════════════════════════ -->
+        <!-- Flutter Embedding -->
+        <!-- ═══════════════════════════════════════════════════════════════ -->
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />
     </application>
 
+    <!-- ═══════════════════════════════════════════════════════════════ -->
+    <!-- Package Visibility Queries -->
+    <!-- ═══════════════════════════════════════════════════════════════ -->
     <queries>
+        <!-- For opening URLs in browser -->
         <intent>
             <action android:name="android.intent.action.VIEW" />
             <data android:scheme="https" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="http" />
+        </intent>
+
+        <!-- For sharing -->
+        <intent>
+            <action android:name="android.intent.action.SEND" />
+            <data android:mimeType="*/*" />
+        </intent>
+
+        <!-- For deep links -->
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="guarch" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="grouk" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="zhip" />
         </intent>
     </queries>
 </manifest>
