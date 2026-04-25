@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 💬 GitHub Discussions
+    url: https://github.com/balochscript/guarch/discussions
+    about: For general questions, ideas, and community discussions
+  - name: 📖 Documentation
+    url: https://github.com/balochscript/guarch#readme
+    about: Read the comprehensive README and configuration guides
+  - name: 🔒 Security Issue
+    url: https://github.com/balochscript/guarch/security/advisories/new
+    about: Report security vulnerabilities privately
