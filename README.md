@@ -181,22 +181,55 @@ Result: ✅ PASSES — indistinguishable from browsing
 - 🍎 **Cross-Platform** — Android released, iOS coming soon
 - 🔌 **Multi-Protocol** — Switch between Guarch, Grouk, and Zhip from the app
 - 🌐 **System-wide VPN** — Routes ALL device traffic through tunnel via VpnService (Android) / NEPacketTunnelProvider (iOS)
-- 🎯 **Real Ping** — TCP socket-based server latency testing
+- 🎯 **Dual Ping Testing** — Both TCPing (fast) and Real Delay (accurate handshake test)
 - 📋 **Import/Export** — Share configs via `guarch://`, `grouk://`, `zhip://` URI scheme or JSON
 - 🎭 **Cover Config** — Per-server customizable cover traffic domains
 - 📊 **Live Stats** — Real-time upload/download speed and traffic counters
-- 📝 **Connection Logs** — Timestamped log viewer with auto-scroll
+- 📝 **Connection Logs** — Timestamped log viewer with auto-scroll and filtering
 - 🔔 **Background Service** — Persistent VPN connections
+- 🐛 **Debug Mode** — Advanced logging (Flutter/Go/Native) for troubleshooting
+- ⚙️ **Advanced Settings** — Fine-tune timeouts, retries, buffer sizes
+- 🔋 **Battery/Data Saver** — Reduce cover traffic on low battery or metered connections
+
+## Server Latency Testing
+
+Guarch provides two types of latency measurements:
+
+### TCPing (Fast Test)
+- **What it measures:** TCP socket connection time only
+- **Speed:** ~100ms test duration
+- **Use case:** Quick server availability check
+- **Method:** `Socket.connect()` with timeout
+
+### Real Delay (Accurate Test)
+- **What it measures:** Full VPN handshake + packet round-trip
+- **Includes:** TLS handshake + X25519 key exchange + HMAC auth + mux setup
+- **Speed:** ~2-5s test duration
+- **Use case:** Accurate representation of actual connection latency
+- **Method:** Complete protocol handshake then immediate disconnect
+
+Example comparison:
+```
+Server A:
+  TCPing:     45ms  ← Network latency only
+  Real Delay: 280ms ← Actual VPN handshake time
+
+Server B:
+  TCPing:     38ms  ← Appears faster
+  Real Delay: 520ms ← Actually slower due to CPU/bandwidth
+```
+
+**Recommendation:** Use **Real Delay** to choose the best server for daily use.
 
 ## Quick Start
 
 ### 1. Build
 
-````bash
+```bash
 git clone https://github.com/balochscript/guarch.git
 cd guarch
 make build
-````
+```
 
 This builds all three protocol pairs:
 
@@ -210,7 +243,7 @@ bin/zhip-client      bin/zhip-server
 
 **Guarch (TLS/TCP — recommended for censored networks):**
 
-````bash
+```bash
 # Using config file (recommended)
 ./guarch-server -config configs/iran_stealth.json
 
@@ -220,11 +253,11 @@ bin/zhip-client      bin/zhip-server
   -psk "your-strong-secret-key-here" \
   -mode stealth \
   -cover=true
-````
+```
 
 **Using preset configurations:**
 
-````bash
+```bash
 # Iran networks (heavy censorship)
 ./guarch-server -config configs/iran_stealth.json    # Maximum stealth
 ./guarch-server -config configs/iran_balanced.json   # Balanced mode
@@ -234,24 +267,24 @@ bin/zhip-client      bin/zhip-server
 
 # Unrestricted networks (no censorship)
 ./guarch-server -config configs/global_minimal.json
-````
+```
 
 **Grouk (Raw UDP — fastest):**
 
-````bash
+```bash
 ./grouk-server \
   -addr :8443 \
   -psk "your-strong-secret-key-here"
-````
+```
 
 **Zhip (QUIC — balanced):**
 
-````bash
+```bash
 ./zhip-server \
   -addr :8443 \
   -psk "your-strong-secret-key-here" \
   -cover=true
-````
+```
 
 Server output:
 
@@ -284,7 +317,7 @@ Built: 2024-01-21T10:30:00Z | Commit: a1b2c3d | Branch: main
 
 Create a config file `my_server.json`:
 
-````json
+```json
 {
   "version": 1,
   "server": {
@@ -328,23 +361,23 @@ Create a config file `my_server.json`:
     ]
   }
 }
-````
+```
 
 Then run:
 
-````bash
+```bash
 ./guarch-client -config my_server.json
-````
+```
 
 **Method 2: Using URI (for QR code sharing)**
 
-````bash
+```bash
 ./guarch-client -uri "guarch://BASE64_ENCODED_JSON"
-````
+```
 
 **Method 3: Using CLI Flags (Backward Compatible)**
 
-````bash
+```bash
 ./guarch-client \
   -server YOUR_VPS_IP:8443 \
   -psk "your-strong-secret-key-here" \
@@ -352,11 +385,11 @@ Then run:
   -listen 127.0.0.1:1080 \
   -mode stealth \
   -sni=true
-````
+```
 
 **Using presets:**
 
-````bash
+```bash
 # Load Iran stealth preset
 ./guarch-client -config configs/iran_stealth.json \
   -server YOUR_VPS_IP:8443 \
@@ -366,7 +399,7 @@ Then run:
 ./guarch-client -config configs/iran_balanced.json \
   -server YOUR_VPS_IP:8443 \
   -psk "your-psk"
-````
+```
 
 Client output:
 
@@ -393,22 +426,22 @@ Client starting...
 
 **Grouk:**
 
-````bash
+```bash
 ./grouk-client \
   -server YOUR_VPS_IP:8443 \
   -psk "your-strong-secret-key-here" \
   -listen 127.0.0.1:1080
-````
+```
 
 **Zhip:**
 
-````bash
+```bash
 ./zhip-client \
   -server YOUR_VPS_IP:8443 \
   -psk "your-strong-secret-key-here" \
   -pin "a1b2c3d4e5f6789...abc123def456" \
   -listen 127.0.0.1:1080
-````
+```
 
 ### 4. Configure Your Browser
 
@@ -426,15 +459,15 @@ Client starting...
 
 **System-wide (Linux):**
 
-````bash
+```bash
 export ALL_PROXY=socks5://127.0.0.1:1080
-````
+```
 
 ### 5. Android App
 
-Build the APK using GitHub Actions or locally:
+Download the APK from [Releases](https://github.com/balochscript/guarch/releases) or build locally:
 
-````bash
+```bash
 # Install gomobile
 go install golang.org/x/mobile/cmd/gomobile@latest
 go install golang.org/x/mobile/cmd/gobind@latest
@@ -450,13 +483,20 @@ gomobile bind -target=android -androidapi 21 \
 cd app
 flutter pub get
 flutter build apk --release
-````
 
-The app supports all three protocols and lets you:
-- Add multiple servers with different protocols
-- Configure cover traffic domains per server
-- Monitor connection stats in real-time
-- Import/export configs via URI scheme or clipboard
+# APK location: app/build/app/outputs/flutter-apk/app-release.apk
+```
+
+**App Features:**
+- ✅ Add multiple servers with different protocols
+- ✅ **Dual latency testing:** TCPing (fast) + Real Delay (accurate)
+- ✅ Per-server SNI and cover domain customization
+- ✅ Real-time stats with upload/download speed
+- ✅ Battery-aware and data saver modes
+- ✅ Debug mode with Flutter/Go/Native logs
+- ✅ Advanced settings (timeouts, retries, buffer sizes)
+- ✅ Import/export configs via URI or clipboard
+- ✅ Dark/light theme support
 
 ## Protocol Comparison
 
@@ -481,9 +521,9 @@ The app supports all three protocols and lets you:
 
 ### Guarch Client Flags
 
-````bash
+```bash
 ./guarch-client [flags]
-````
+```
 
 | Flag | Default | Required | Description |
 |------|---------|----------|-------------|
@@ -501,7 +541,7 @@ The app supports all three protocols and lets you:
 
 **Examples:**
 
-````bash
+```bash
 # Method 1: Config file (recommended)
 ./guarch-client -config my_server.json
 
@@ -514,13 +554,13 @@ The app supports all three protocols and lets you:
 # Show version info
 ./guarch-client -version
 # Output: Guarch v1.0.1 (commit: a1b2c3d, built: 2024-01-21T10:30:00Z)
-````
+```
 
 ### Guarch Server Flags
 
-````bash
+```bash
 ./guarch-server [flags]
-````
+```
 
 | Flag | Default | Required | Description |
 |------|---------|----------|-------------|
@@ -538,7 +578,7 @@ The app supports all three protocols and lets you:
 
 **Examples:**
 
-````bash
+```bash
 # Using config file (recommended)
 ./guarch-server -config configs/iran_stealth.json
 
@@ -547,13 +587,13 @@ The app supports all three protocols and lets you:
 
 # Show version
 ./guarch-server -version
-````
+```
 
 ### Grouk Client Flags
 
-````bash
+```bash
 ./grouk-client [flags]
-````
+```
 
 | Flag | Default | Required | Description |
 |------|---------|----------|-------------|
@@ -563,9 +603,9 @@ The app supports all three protocols and lets you:
 
 ### Grouk Server Flags
 
-````bash
+```bash
 ./grouk-server [flags]
-````
+```
 
 | Flag | Default | Required | Description |
 |------|---------|----------|-------------|
@@ -578,9 +618,9 @@ The app supports all three protocols and lets you:
 
 ### Zhip Client Flags
 
-````bash
+```bash
 ./zhip-client [flags]
-````
+```
 
 | Flag | Default | Required | Description |
 |------|---------|----------|-------------|
@@ -592,9 +632,9 @@ The app supports all three protocols and lets you:
 
 ### Zhip Server Flags
 
-````bash
+```bash
 ./zhip-server [flags]
-````
+```
 
 | Flag | Default | Required | Description |
 |------|---------|----------|-------------|
@@ -633,7 +673,7 @@ Level changes require 30 seconds of sustained activity (hysteresis) to prevent o
 
 Create a JSON file with the following structure:
 
-````json
+```json
 {
   "version": 1,
   "server": {
@@ -728,7 +768,7 @@ Create a JSON file with the following structure:
     }
   }
 }
-````
+```
 
 **Field Descriptions:**
 
@@ -756,7 +796,7 @@ Create a JSON file with the following structure:
 
 ### Server Configuration
 
-````json
+```json
 {
   "version": 1,
   "listen": ":8443",
@@ -794,13 +834,13 @@ Create a JSON file with the following structure:
     ]
   }
 }
-````
+```
 
 ### Using Presets
 
 Load a preset and override specific values:
 
-````bash
+```bash
 # Start with preset
 ./guarch-client -config configs/iran_stealth.json \
   -server YOUR_IP:8443 \
@@ -811,7 +851,7 @@ loader := config.NewLoader()
 cfg, _ := loader.LoadPreset("iran_stealth")
 cfg.Server.Address = "1.2.3.4:8443"
 cfg.Server.PSK = "your-psk"
-````
+```
 
 **Available Presets:**
 
@@ -833,18 +873,18 @@ guarch://BASE64_ENCODED_JSON
 
 **Generate URI:**
 
-````bash
+```bash
 # Using command-line tools
 cat my_server.json | base64 -w 0 | sed 's/^/guarch:\/\//'
 
 # Output: guarch://eyJ2ZXJzaW9uIjoxLCJzZXJ2ZXIiOns...
-````
+```
 
 **Import URI:**
 
-````bash
+```bash
 ./guarch-client -uri "guarch://eyJ2ZXJzaW9uIjox..."
-````
+```
 
 Or scan QR code in mobile app.
 
@@ -899,7 +939,7 @@ The SNI manager automatically monitors domain health:
 
 ### Configuration Example
 
-````json
+```json
 {
   "sni": {
     "enabled": true,
@@ -942,7 +982,7 @@ The SNI manager automatically monitors domain health:
     ]
   }
 }
-````
+```
 
 ### Runtime Behavior
 
@@ -970,13 +1010,13 @@ Client Start:
 
 Access SNI statistics via health endpoint:
 
-````bash
+```bash
 curl http://127.0.0.1:9090/health
-````
+```
 
 Response includes:
 
-````json
+```json
 {
   "sni": {
     "enabled": true,
@@ -989,7 +1029,7 @@ Response includes:
     "next_rotation": "2024-01-21T10:35:00Z"
   }
 }
-````
+```
 
 ## DNS Fallback System
 
@@ -1051,7 +1091,7 @@ Final DNS query:
 
 ### Configuration
 
-````json
+```json
 {
   "dns_fallback": {
     "enabled": true,
@@ -1067,7 +1107,7 @@ Final DNS query:
     "fallback_threshold": 3
   }
 }
-````
+```
 
 **Field Descriptions:**
 
@@ -1094,7 +1134,7 @@ ns1.yourvps.com.       IN  A   YOUR_VPS_IP
 
 **2. Start Server with DNS Support:**
 
-````json
+```json
 {
   "dns_fallback": {
     "enabled": true,
@@ -1102,20 +1142,20 @@ ns1.yourvps.com.       IN  A   YOUR_VPS_IP
     "domain": "tunnel.yourdomain.com"
   }
 }
-````
+```
 
-````bash
+```bash
 # Server listens on port 53 (UDP + TCP)
 sudo ./guarch-server -config server_with_dns.json
-````
+```
 
 **3. Firewall Rules:**
 
-````bash
+```bash
 # Allow DNS queries
 sudo iptables -I INPUT -p udp --dport 53 -j ACCEPT
 sudo iptables -I INPUT -p tcp --dport 53 -j ACCEPT
-````
+```
 
 ### Performance Characteristics
 
@@ -1169,6 +1209,48 @@ Client automatically switches between modes:
 - TLS works normally (unnecessary overhead)
 - You need high-speed transfers (use TLS mode)
 - DNS queries are also monitored/blocked (rare but possible)
+
+## Advanced Settings (v1.0.1)
+
+Fine-tune connection parameters in **Settings → Advanced Settings**:
+
+| Setting | Default | Range | Description |
+|---------|---------|-------|-------------|
+| **Connection Timeout** | 15s | 5-60s | Max time to establish connection |
+| **Handshake Timeout** | 30s | 10-120s | Max time for protocol handshake |
+| **Keep-Alive Interval** | 30s | 10-300s | Heartbeat frequency |
+| **Max Retry Attempts** | 3 | 1-10 | Number of retries before giving up |
+| **Retry Delay** | 5s | 1-30s | Wait time between retries |
+| **Buffer Size** | 32KB | 16-128KB | Network buffer allocation |
+
+**When to adjust:**
+- **Slow networks:** Increase timeouts
+- **Fast networks:** Decrease timeouts for faster failure detection
+- **Unstable networks:** Increase retry attempts
+- **Low memory devices:** Reduce buffer size
+- **NAT traversal issues:** Reduce keep-alive interval
+
+## Debug Mode
+
+Enable debug logging from **Settings → Debug Mode**.
+
+This adds a 🐛 button to the home screen with access to:
+
+- **Flutter Logs** — Dart/UI layer events
+- **Go Engine Logs** — Protocol handshakes, cover traffic, crypto operations
+- **Native Logs** — Android/Kotlin VPN service events
+
+**Use cases:**
+- ✅ Troubleshoot connection failures
+- ✅ Monitor SNI rotation and cover traffic
+- ✅ Track handshake timing and retries
+- ✅ Detect DNS fallback activation
+- ✅ Report bugs with detailed logs
+
+**Privacy note:** Debug logs contain connection metadata (server IPs, timestamps, SNI domains) but **never** include:
+- ❌ PSK or encryption keys
+- ❌ Decrypted traffic content
+- ❌ User data payloads
 
 ## Security Architecture
 
@@ -1406,13 +1488,13 @@ Max payload per packet: 1356 bytes (1400 - 5 header - 12 nonce - 16 tag - 11 str
 
 The server exposes a health endpoint (default `127.0.0.1:9090`):
 
-````bash
+```bash
 curl http://127.0.0.1:9090/health
-````
+```
 
 Response:
 
-````json
+```json
 {
   "status": "running",
   "uptime": "2h 15m",
@@ -1434,18 +1516,18 @@ Response:
     "rotation_interval": "5m"
   }
 }
-````
+```
 
-````bash
+```bash
 curl http://127.0.0.1:9090/ping
 # Response: pong
-````
+```
 
 The health server supports optional Bearer token authentication when started with an auth token.
 
 ## Building
 
-````bash
+```bash
 # Build all protocols
 make build
 
@@ -1479,11 +1561,11 @@ make docker-run-server
 
 # Show all available commands
 make help
-````
+```
 
 ### Cross-Compilation
 
-````bash
+```bash
 # Linux
 GOOS=linux GOARCH=amd64 go build -o bin/guarch-server-linux-amd64 ./cmd/guarch-server/
 GOOS=linux GOARCH=arm64 go build -o bin/guarch-server-linux-arm64 ./cmd/guarch-server/
@@ -1500,24 +1582,24 @@ go build -o bin/grouk-server ./cmd/grouk-server/
 go build -o bin/grouk-client ./cmd/grouk-client/
 go build -o bin/zhip-server ./cmd/zhip-server/
 go build -o bin/zhip-client ./cmd/zhip-client/
-````
+```
 
 ### Version Information
 
 All binaries include embedded version information:
 
-````bash
+```bash
 ./guarch-client -version
 # Output:
 # Guarch Protocol Suite v1.0.1
 # Commit: a1b2c3d4e5f6
 # Branch: main
 # Built: 2024-01-21T10:30:00Z
-````
+```
 
 This information is automatically embedded during build via Makefile:
 
-````makefile
+```makefile
 VERSION := 1.0.1
 BUILD_TIME := $(shell date -u '+%Y-%m-%dT%H:%M:%SZ')
 GIT_COMMIT := $(shell git rev-parse --short HEAD 2>/dev/null)
@@ -1527,11 +1609,11 @@ LDFLAGS := -X main.Version=$(VERSION) \
            -X main.BuildTime=$(BUILD_TIME) \
            -X main.GitCommit=$(GIT_COMMIT) \
            -X main.GitBranch=$(GIT_BRANCH)
-````
+```
 
 ### Complete Makefile
 
-````makefile
+```makefile
 .PHONY: build test clean help
 
 # Version information
@@ -1641,7 +1723,7 @@ help:
 	@echo "  docker-run-server - Run server in Docker container"
 	@echo "  clean           - Remove build artifacts"
 	@echo "  help            - Show this help message"
-````
+```
 
 ## Android App Config Sharing
 
@@ -1663,7 +1745,7 @@ Configs can also be shared as JSON and imported via clipboard.
 
 ## Project Structure
 
-````
+```
 guarch/
 ├── cmd/
 │   ├── guarch-client/          # Guarch TLS/TCP client
@@ -1790,7 +1872,7 @@ guarch/
 ├── LICENSE
 ├── README.md
 └── CHANGELOG.md                # 🆕 Complete version history (v1.0.1)
-````
+```
 
 ## Comparison with Other Tools
 
@@ -1799,25 +1881,29 @@ guarch/
 | Protocols | VLESS, VMESS | SS | Trojan | WG | Guarch, Grouk, Zhip |
 | Transports | TCP, WS, gRPC, QUIC | TCP, UDP | TLS/TCP | UDP | TLS, Raw UDP, QUIC |
 | Cover Traffic | No | No | No | No | Yes (real HTTPS) |
-| Adaptive Cover | No | No | No | No | Yes (4 activity levels) |
+| Adaptive Cover | No | No | No | No | Yes (4 levels) |
 | Smart Padding | No | No | No | No | Yes (web bucket sizes) |
 | Traffic Shaping | No | No | No | No | Yes (size + timing) |
 | DPI Resistance | Medium-High | Medium | Medium | Low | High |
 | Active Probing Defense | Reality (Xray) | No | Partial | No | Yes (multi-page decoy) |
 | Multiplexing | Yes | No | No | No | Yes |
 | 0-RTT | No | No | No | Yes | Yes (Zhip/QUIC) |
+| SNI Rotation | No | No | No | No | Yes (health-checked) |
+| DNS Fallback | No | No | No | No | Yes (survival mode) |
+| Dual Latency Test | No | No | No | No | Yes (TCPing + Real) |
 | Mobile App | Third-party | Third-party | Third-party | Official | Built-in (Flutter) |
 | Dependencies | Many | Few | Few | Kernel module | 3 (x/crypto, quic-go, tun2socks) |
-| Maturity | 5+ years | 8+ years | 3+ years | 5+ years | New |
-| Config System | Complex | Simple | Simple | Simple | JSON + Presets (v1.0.1) |
-| SNI Rotation | No | No | No | No | Yes (v1.0.1) |
-| DNS Fallback | No | No | No | No | Yes (v1.0.1) |
+| Maturity | 5+ years | 8+ years | 3+ years | 5+ years | New (v1.0.1) |
+| Config System | Complex XML | Simple args | Simple args | INI file | JSON + Presets |
+| Debug Mode | Limited | No | No | No | Yes (3-layer logs) |
+| Battery/Data Saver | No | No | No | No | Yes |
+| Advanced Settings | CLI only | CLI only | CLI only | Config file | In-app GUI |
 
 ## Deployment
 
 ### Production Deployment with systemd
 
-````bash
+```bash
 ssh ubuntu@YOUR_VPS_IP
 sudo snap install go --classic
 git clone https://github.com/balochscript/guarch.git
@@ -1854,20 +1940,20 @@ sudo iptables -I INPUT -p tcp --dport 8443 -j ACCEPT
 sudo iptables -I INPUT -p tcp --dport 8080 -j ACCEPT
 # For Grouk/Zhip (UDP):
 sudo iptables -I INPUT -p udp --dport 8443 -j ACCEPT
-````
+```
 
 ### Docker Deployment
 
-````bash
+```bash
 docker build -t guarch-server .
 docker run -d -p 8443:8443 -p 8080:8080 guarch-server -psk "YOUR_PSK" -mode stealth
-````
+```
 
 Or with docker-compose:
 
-````bash
+```bash
 docker-compose up -d
-````
+```
 
 ### Recommended VPS Providers
 
@@ -1986,7 +2072,7 @@ The sister protocols follow the same philosophy:
 
 **Optional enhancements:**
 
-````bash
+```bash
 # Create config file for easier management
 cat > my_server.json << 'EOF'
 {
@@ -2001,7 +2087,7 @@ EOF
 
 # Use config file
 ./guarch-client -config my_server.json
-````
+```
 
 **For Developers:** See [CHANGELOG.md - Migration Guide](CHANGELOG.md#-migration-guide)
 
@@ -2095,4 +2181,6 @@ Built with 🏹🌩️⚡ by the community — Hidden like a Balochi hunter
 
 **Latest Release:** [v1.0.1](https://github.com/balochscript/guarch/releases/tag/v1.0.1) (2024-01-21)  
 **Documentation:** [GitHub Wiki](https://github.com/balochscript/guarch/wiki)  
-**Changelog:** [CHANGELOG.md](CHANGELOG.md)
+**Changelog:** [CHANGELOG.md](CHANGELOG.md)  
+**Download APK:** [Releases](https://github.com/balochscript/guarch/releases/latest)
+```
