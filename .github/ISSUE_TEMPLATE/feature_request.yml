@@ -1,0 +1,88 @@
+name: 💡 Feature Request
+description: Suggest a new feature or improvement
+title: "[Feature]: "
+labels: ["enhancement", "needs-discussion"]
+assignees: []
+
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ## Thanks for your suggestion! 💡
+        
+        Help us understand your idea by filling out the information below.
+
+  - type: dropdown
+    id: category
+    attributes:
+      label: "📦 Category"
+      description: "What type of feature is this?"
+      options:
+        - New Protocol Feature
+        - Mobile App Enhancement
+        - Configuration System
+        - Performance Improvement
+        - Security Enhancement
+        - Documentation
+        - Developer Tools
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: "❓ Problem / Use Case"
+      description: "What problem does this feature solve? Why do you need it?"
+      placeholder: |
+        I'm trying to use Guarch in a scenario where...
+        Currently, I have to manually...
+        This would help users who...
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: "💭 Proposed Solution"
+      description: "How do you think this feature should work?"
+      placeholder: |
+        Add a new config option called "auto_retry" that...
+        When enabled, the client would...
+        
+        Example config:
+        {
+          "auto_retry": {
+            "enabled": true,
+            "max_attempts": 5
+          }
+        }
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: "🔄 Alternatives Considered"
+      description: "What other solutions or workarounds have you thought about?"
+      placeholder: |
+        - I tried using X, but it doesn't work because...
+        - Another approach could be Y, but...
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: "ℹ️ Additional Context"
+      description: "Any other information, screenshots, or references?"
+      placeholder: |
+        Similar feature in V2Ray: https://...
+        Screenshot: [attach here]
+
+  - type: checkboxes
+    id: contribution
+    attributes:
+      label: "🤝 Contribution"
+      description: "Are you willing to help implement this?"
+      options:
+        - label: "I'm willing to contribute code for this feature"
+        - label: "I can help with testing"
+        - label: "I can help with documentation"
+        - label: "I can provide additional details if needed"
