@@ -1,0 +1,157 @@
+name: 🐛 Bug Report
+description: Report a bug or unexpected behavior
+title: "[Bug]: "
+labels: ["bug", "needs-triage"]
+assignees: []
+
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ## Thanks for reporting a bug! 🐛
+        
+        Please fill out the information below to help us diagnose the issue.
+        **Important:** Remove any sensitive data (PSK, certificate pins, passwords) from your config!
+
+  - type: input
+    id: version
+    attributes:
+      label: "📌 Guarch Version"
+      description: "Run: `./guarch-client -version` or check app settings"
+      placeholder: "e.g., v1.0.1 (commit: a1b2c3d, built: 2024-01-21)"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: protocol
+    attributes:
+      label: "🔌 Protocol"
+      description: "Which protocol are you using?"
+      options:
+        - Guarch (TLS/TCP)
+        - Grouk (Raw UDP)
+        - Zhip (QUIC)
+        - Not sure / Other
+    validations:
+      required: true
+
+  - type: dropdown
+    id: platform
+    attributes:
+      label: "💻 Platform"
+      description: "Which operating system?"
+      options:
+        - Linux (x86_64)
+        - Linux (ARM64)
+        - macOS (Intel)
+        - macOS (Apple Silicon)
+        - Windows 10/11
+        - Android
+        - Other (specify in description)
+    validations:
+      required: true
+
+  - type: dropdown
+    id: component
+    attributes:
+      label: "🧩 Component"
+      description: "Which part of the system?"
+      options:
+        - Client (Desktop)
+        - Server
+        - Mobile App (Android)
+        - Configuration System
+        - SNI Rotation
+        - Cover Traffic
+        - DNS Tunneling
+        - Not sure
+      multiple: false
+
+  - type: textarea
+    id: description
+    attributes:
+      label: "📄 Bug Description"
+      description: "Clear and concise description of what the bug is."
+      placeholder: |
+        When I try to connect to the server, the client shows...
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: "✅ Expected Behavior"
+      description: "What did you expect to happen?"
+      placeholder: "The client should connect successfully and..."
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: "❌ Actual Behavior"
+      description: "What actually happened?"
+      placeholder: "Instead, I got an error message: ..."
+
+  - type: textarea
+    id: config
+    attributes:
+      label: "⚙️ Configuration"
+      description: "Paste your config file here. **REMOVE PSK, CERT_PIN, AND ANY PASSWORDS!**"
+      placeholder: |
+        {
+          "server": {
+            "address": "1.2.3.4:8443",
+            "protocol": "guarch",
+            "psk": "REDACTED",
+            "cert_pin": "REDACTED"
+          },
+          ...
+        }
+      render: json
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: "📋 Error Logs"
+      description: "Paste relevant error messages or logs here."
+      placeholder: |
+        [client] Starting connection...
+        [client] Error: connection refused
+        ...
+      render: shell
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: "🔁 Steps to Reproduce"
+      description: "How can we reproduce this bug?"
+      placeholder: |
+        1. Start server with config X
+        2. Start client with `./guarch-client -config my_server.json`
+        3. Click connect
+        4. Error appears after 5 seconds
+      value: |
+        1. 
+        2. 
+        3. 
+    validations:
+      required: true
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: "ℹ️ Additional Context"
+      description: "Any other information that might help (screenshots, network setup, etc.)"
+      placeholder: "I'm behind a corporate firewall, using proxy..."
+
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: "✔️ Checklist"
+      description: "Please confirm the following:"
+      options:
+        - label: "I have removed all sensitive data (PSK, passwords) from this issue"
+          required: true
+        - label: "I have searched existing issues and this is not a duplicate"
+          required: true
+        - label: "I am using the latest version of Guarch"
+          required: false
