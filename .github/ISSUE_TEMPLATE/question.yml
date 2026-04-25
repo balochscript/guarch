@@ -1,0 +1,61 @@
+name: ❓ Question
+description: Ask a question about Guarch
+title: "[Question]: "
+labels: ["question"]
+assignees: []
+
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ## Have a question? 🤔
+        
+        **Note:** For general discussions, please use [GitHub Discussions](https://github.com/balochscript/guarch/discussions) instead.
+        Use this template only for specific technical questions that need tracking.
+
+  - type: dropdown
+    id: topic
+    attributes:
+      label: "📚 Topic"
+      description: "What is your question about?"
+      options:
+        - Installation & Setup
+        - Configuration
+        - Protocols (Guarch/Grouk/Zhip)
+        - Mobile App Usage
+        - Server Deployment
+        - Troubleshooting
+        - Best Practices
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: question
+    attributes:
+      label: "❓ Your Question"
+      description: "Ask your question clearly and concisely."
+      placeholder: |
+        How do I configure SNI rotation to use custom domains?
+        What's the best protocol for high-latency networks?
+    validations:
+      required: true
+
+  - type: textarea
+    id: context
+    attributes:
+      label: "🔍 Context"
+      description: "What have you tried so far? What documentation have you checked?"
+      placeholder: |
+        I've read the README section on SNI rotation, but I'm not sure how to...
+        I tried setting `sni.mode` to "custom", but it doesn't work.
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: "💻 Environment (if relevant)"
+      description: "Platform, version, network setup, etc."
+      placeholder: |
+        Platform: Linux Ubuntu 22.04
+        Guarch Version: v1.0.1
+        Network: Behind corporate firewall
