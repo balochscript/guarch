@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:guarch/models/connection_state.dart';
 import 'package:guarch/app.dart';
+import 'package:guarch/models/connection_state.dart';
 
 class StatsCard extends StatelessWidget {
   final ConnectionStats stats;
@@ -14,70 +14,151 @@ class StatsCard extends StatelessWidget {
         padding: const EdgeInsets.all(20),
         child: Column(
           children: [
-            Text(
-              stats.durationText,
-              style: TextStyle(
-                fontSize: 32,
-                fontWeight: FontWeight.w300,
-                letterSpacing: 4,
-                color: textPrimary(context),
-              ),
-            ),
-            const SizedBox(height: 16),
+            // Speed indicators
             Row(
               children: [
                 Expanded(
-                  child: _buildStat(
-                    context: context,
-                    icon: Icons.arrow_upward,
-                    color: accentColor(context),
-                    speed: stats.uploadSpeedText,
-                    total: stats.totalUploadText,
+                  child: _buildSpeedIndicator(
+                    context,
+                    '↑ Upload',
+                    stats.uploadSpeedText,
+                    Colors.blue,
                   ),
                 ),
                 Container(
                   width: 1,
-                  height: 50,
+                  height: 40,
                   color: accentColor(context).withOpacity(0.2),
                 ),
                 Expanded(
-                  child: _buildStat(
-                    context: context,
-                    icon: Icons.arrow_downward,
-                    color: Colors.green,
-                    speed: stats.downloadSpeedText,
-                    total: stats.totalDownloadText,
+                  child: _buildSpeedIndicator(
+                    context,
+                    '↓ Download',
+                    stats.downloadSpeedText,
+                    Colors.green,
                   ),
                 ),
               ],
             ),
+
+            const SizedBox(height: 16),
+            Divider(color: accentColor(context).withOpacity(0.1)),
+            const SizedBox(height: 16),
+
+            // Total transferred
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceAround,
+              children: [
+                _buildStatItem(
+                  context,
+                  'Total Up',
+                  stats.totalUploadText,
+                  Icons.arrow_upward,
+                  Colors.blue,
+                ),
+                _buildStatItem(
+                  context,
+                  'Total Down',
+                  stats.totalDownloadText,
+                  Icons.arrow_downward,
+                  Colors.green,
+                ),
+                _buildStatItem(
+                  context,
+                  'Duration',
+                  stats.durationText,
+                  Icons.access_time,
+                  accentColor(context),
+                ),
+              ],
+            ),
+
+            // Advanced stats
+            if (stats.activeStreams > 0 || stats.totalConnections > 0) ...[
+              const SizedBox(height: 16),
+              Divider(color: accentColor(context).withOpacity(0.1)),
+              const SizedBox(height: 16),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceAround,
+                children: [
+                  _buildStatItem(
+                    context,
+                    'Streams',
+                    '${stats.activeStreams}',
+                    Icons.stream,
+                    Colors.purple,
+                  ),
+                  _buildStatItem(
+                    context,
+                    'Connections',
+                    '${stats.totalConnections}',
+                    Icons.link,
+                    Colors.orange,
+                  ),
+                ],
+              ),
+            ],
           ],
         ),
       ),
     );
   }
 
-  Widget _buildStat({
-    required BuildContext context,
-    required IconData icon,
-    required Color color,
-    required String speed,
-    required String total,
-  }) {
+  Widget _buildSpeedIndicator(
+    BuildContext context,
+    String label,
+    String value,
+    Color color,
+  ) {
     return Column(
       children: [
-        Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(icon, color: color, size: 16),
-            const SizedBox(width: 4),
-            Text(speed,
-                style: TextStyle(color: color, fontWeight: FontWeight.w600, fontSize: 14)),
-          ],
+        Text(
+          label,
+          style: TextStyle(
+            color: textMuted(context),
+            fontSize: 12,
+          ),
         ),
         const SizedBox(height: 4),
-        Text(total,
-            style: TextStyle(color: textMuted(context), fontSize: 11)),
+        Text(
+          value,
+          style: TextStyle(
+            color: color,
+            fontSize: 20,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildStatItem(
+    BuildContext context,
+    String label,
+    String value,
+    IconData icon,
+    Color color,
+  ) {
+    return Column(
+      children: [
+        Icon(icon, size: 20, color: color),
+        const SizedBox(height: 4),
+        Text(
+          value,
+          style: TextStyle(
+            fontWeight: FontWeight.w600,
+            fontSize: 14,
+            color: textSecondary(context),
+          ),
+        ),
+        const SizedBox(height: 2),
+        Text(
+          label,
+          style: TextStyle(
+            color: textMuted(context),
+            fontSize: 11,
+          ),
+        ),
       ],
     );
   }
