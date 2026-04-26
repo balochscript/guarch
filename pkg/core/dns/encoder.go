@@ -4,23 +4,22 @@ package dns
 import (
 	"crypto/rand"
 	"encoding/base32"
-	"encoding/binary"
 	"fmt"
 	"strings"
 )
 
 // Encoder برای تبدیل data به DNS-safe format
 type Encoder struct {
-	maxLabelLen  int
-	maxTotalLen  int
+	maxLabelLen    int
+	maxTotalLen    int
 	useCompression bool
 }
 
 // NewEncoder ساخت encoder جدید
 func NewEncoder() *Encoder {
 	return &Encoder{
-		maxLabelLen:  MaxDNSLabelLength,
-		maxTotalLen:  MaxDNSNameLength,
+		maxLabelLen:    MaxDNSLabelLength,
+		maxTotalLen:    MaxDNSNameLength,
 		useCompression: true,
 	}
 }
