@@ -5,7 +5,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
-	"math/rand"
+	mathrand "math/rand"  // ← اصلاح: alias اضافه شد
 	"sync"
 	"time"
 )
@@ -16,7 +16,7 @@ const (
 	MaxPaddingSize       = 1024
 	HeaderSize           = 18
 
-	// 🆕 NEW: تنظیمات timestamp jitter
+	// تنظیمات timestamp jitter
 	TimestampJitterSeconds = 30 // ±30 ثانیه
 )
 
@@ -69,13 +69,11 @@ type Packet struct {
 }
 
 // coarsenedTimestamp تولید timestamp با jitter برای privacy
-// 🆕 بهبود یافته: اضافه شده random jitter
 func coarsenedTimestamp() int64 {
 	now := time.Now().Unix()
 	
-	// 🆕 ADDED: افزودن jitter تصادفی (±30 ثانیه)
-	// این باعث میشه fingerprinting based on timing سخت‌تر بشه
-	jitter := rand.Int63n(2*TimestampJitterSeconds+1) - TimestampJitterSeconds
+	// افزودن jitter تصادفی (±30 ثانیه)
+	jitter := mathrand.Int63n(2*TimestampJitterSeconds+1) - TimestampJitterSeconds  // ← اصلاح: mathrand
 	
 	return now + jitter
 }
@@ -115,7 +113,7 @@ func NewPaddedDataPacket(payload []byte, seqNum uint32, totalSize int) (*Packet,
 			padSize = MaxPaddingSize
 		}
 		pkt.Padding = make([]byte, padSize)
-		if _, err := rand.Read(pkt.Padding); err != nil {
+		if _, err := rand.Read(pkt.Padding); err != nil {  // ← crypto/rand (درست)
 			return nil, fmt.Errorf("guarch: generate padding: %w", err)
 		}
 		pkt.PaddingLen = uint16(padSize)
@@ -132,7 +130,7 @@ func NewPaddingPacket(size int, seqNum uint32) (*Packet, error) {
 		size = 1
 	}
 	padding := make([]byte, size)
-	if _, err := rand.Read(padding); err != nil {
+	if _, err := rand.Read(padding); err != nil {  // ← crypto/rand (درست)
 		return nil, fmt.Errorf("guarch: generate padding: %w", err)
 	}
 	return &Packet{
@@ -297,8 +295,7 @@ func (p *Packet) String() string {
 		p.Version, p.Type, p.SeqNum, p.PayloadLen, p.PaddingLen)
 }
 
-// 🆕 NEW: Replay Protection Window
-// برای جلوگیری از replay attacks
+// ReplayWindow برای جلوگیری از replay attacks
 type ReplayWindow struct {
 	lastSeqNum uint32
 	window     map[uint32]bool
@@ -306,7 +303,7 @@ type ReplayWindow struct {
 	mu         sync.Mutex
 }
 
-// 🆕 NEW FUNCTION: ساخت replay window جدید
+// NewReplayWindow ساخت replay window جدید
 func NewReplayWindow(size uint32) *ReplayWindow {
 	if size == 0 {
 		size = 64 // default window size
@@ -318,7 +315,7 @@ func NewReplayWindow(size uint32) *ReplayWindow {
 	}
 }
 
-// 🆕 NEW FUNCTION: بررسی و ثبت sequence number
+// Check بررسی و ثبت sequence number
 func (rw *ReplayWindow) Check(seqNum uint32) error {
 	rw.mu.Lock()
 	defer rw.mu.Unlock()
@@ -352,7 +349,7 @@ func (rw *ReplayWindow) Check(seqNum uint32) error {
 	return nil
 }
 
-// 🆕 NEW FUNCTION: ریست کردن window
+// Reset ریست کردن window
 func (rw *ReplayWindow) Reset() {
 	rw.mu.Lock()
 	defer rw.mu.Unlock()
