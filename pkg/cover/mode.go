@@ -156,10 +156,7 @@ func ApplyModeToConfig(cfg *Config, mode Mode) error {
 // ModeConfig for Adaptive/Shaping
 // ═══════════════════════════════════════════════════════════
 
-// ModeConfig تنظیمات mode برای adaptive/shaping
-type ModeConfig struct {
-	MaxPadding int
-}
+// ← حذف شد: type ModeConfig struct (چون در config.go تعریف شده)
 
 // GetModeConfigForAdaptive دریافت ModeConfig برای adaptive
 func GetModeConfigForAdaptive(mode Mode) *ModeConfig {
@@ -170,7 +167,7 @@ func GetModeConfigForAdaptive(mode Mode) *ModeConfig {
 }
 
 // GetModeConfig همان GetModeConfigForAdaptive (برای backward compatibility)
-// ← اضافه شد: این تابع در zhip-server/main.go استفاده میشه
+// این تابع در zhip-server/main.go استفاده میشه
 func GetModeConfig(mode Mode) *ModeConfig {
 	return GetModeConfigForAdaptive(mode)
 }
@@ -180,7 +177,7 @@ func GetModeConfig(mode Mode) *ModeConfig {
 // ═══════════════════════════════════════════════════════════
 
 // ConfigForMode ساخت Config کامل برای یک mode (با domain های پیش‌فرض)
-// ← اضافه شد: این تابع در zhip-server/main.go استفاده میشه
+// این تابع در zhip-server/main.go استفاده میشه
 func ConfigForMode(mode Mode) *Config {
 	settings := GetModeSettings(mode)
 	
