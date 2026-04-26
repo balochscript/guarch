@@ -16,16 +16,15 @@ const (
 	TagSize         = 16
 	EncryptOverhead = NonceSize + TagSize
 
-	// 🆕 NEW: محدودیت‌های key rotation
-	// بر اساس استاندارد NIST و توصیه‌های ChaCha20-Poly1305
-	MaxMessagesPerKey = 1 << 30  // 1 میلیارد پیام
-	MaxBytesPerKey    = 64 << 30 // 64 گیگابایت
+	// 🔧 FIX: تبدیل به int64 برای جلوگیری از overflow
+	MaxMessagesPerKey int64 = 1 << 30      // 1 میلیارد پیام
+	MaxBytesPerKey    int64 = 64 << 30     // 64 گیگابایت
 )
 
 type AEADCipher struct {
 	aead cipher.AEAD
 	
-	// 🆕 NEW: شمارنده‌ها برای key rotation
+	// شمارنده‌ها برای key rotation
 	messageCount uint64 // تعداد پیام‌های رمز شده
 	bytesCount   uint64 // تعداد بایت‌های رمز شده
 	mu           sync.RWMutex
@@ -44,8 +43,8 @@ func NewAEADCipher(key []byte) (*AEADCipher, error) {
 
 	return &AEADCipher{
 		aead:         aead,
-		messageCount: 0, // 🆕 ADDED
-		bytesCount:   0, // 🆕 ADDED
+		messageCount: 0,
+		bytesCount:   0,
 	}, nil
 }
 
@@ -55,9 +54,8 @@ func (c *AEADCipher) Seal(plaintext []byte) ([]byte, error) {
 }
 
 // SealWithAAD رمزنگاری plaintext با Additional Authenticated Data
-// 🆕 بهبود یافته: اضافه شده key exhaustion detection
 func (c *AEADCipher) SealWithAAD(plaintext, aad []byte) ([]byte, error) {
-	// 🆕 ADDED: بررسی key exhaustion قبل از رمزنگاری
+	// بررسی key exhaustion قبل از رمزنگاری
 	if err := c.checkKeyExhaustion(uint64(len(plaintext))); err != nil {
 		return nil, err
 	}
@@ -73,7 +71,7 @@ func (c *AEADCipher) SealWithAAD(plaintext, aad []byte) ([]byte, error) {
 	copy(result[:NonceSize], nonce)
 	copy(result[NonceSize:], ciphertext)
 
-	// 🆕 ADDED: به‌روزرسانی شمارنده‌ها
+	// به‌روزرسانی شمارنده‌ها
 	c.incrementCounters(uint64(len(plaintext)))
 
 	return result, nil
@@ -101,40 +99,36 @@ func (c *AEADCipher) OpenWithAAD(encrypted, aad []byte) ([]byte, error) {
 	return plaintext, nil
 }
 
-// 🆕 NEW FUNCTION: بررسی key exhaustion
-// جلوگیری از استفاده بیش از حد از یک کلید
+// 🔧 FIX: تبدیل به int64 برای مقایسه
 func (c *AEADCipher) checkKeyExhaustion(dataLen uint64) error {
-	// استفاده از atomic.LoadUint64 برای خواندن thread-safe
 	msgCount := atomic.LoadUint64(&c.messageCount)
 	byteCount := atomic.LoadUint64(&c.bytesCount)
 
 	// چک کردن محدودیت تعداد پیام‌ها
-	if msgCount >= MaxMessagesPerKey {
+	if int64(msgCount) >= MaxMessagesPerKey {
 		return fmt.Errorf("guarch/crypto: key exhausted - max messages (%d) reached", MaxMessagesPerKey)
 	}
 
 	// چک کردن محدودیت تعداد بایت‌ها
-	if byteCount+dataLen >= MaxBytesPerKey {
+	if int64(byteCount+dataLen) >= MaxBytesPerKey {
 		return fmt.Errorf("guarch/crypto: key exhausted - max bytes (%d) reached", MaxBytesPerKey)
 	}
 
 	return nil
 }
 
-// 🆕 NEW FUNCTION: افزایش شمارنده‌ها به صورت thread-safe
+// افزایش شمارنده‌ها به صورت thread-safe
 func (c *AEADCipher) incrementCounters(dataLen uint64) {
 	atomic.AddUint64(&c.messageCount, 1)
 	atomic.AddUint64(&c.bytesCount, dataLen)
 }
 
-// 🆕 NEW FUNCTION: دریافت آمار استفاده از کلید
-// برای monitoring و logging
+// دریافت آمار استفاده از کلید
 func (c *AEADCipher) Stats() (messages, bytes uint64) {
 	return atomic.LoadUint64(&c.messageCount), atomic.LoadUint64(&c.bytesCount)
 }
 
-// 🆕 NEW FUNCTION: چک کردن اینکه آیا نزدیک به key exhaustion هستیم
-// برای warning به کاربر
+// چک کردن اینکه آیا نزدیک به key exhaustion هستیم
 func (c *AEADCipher) NeedsRotation(threshold float64) bool {
 	msgCount := atomic.LoadUint64(&c.messageCount)
 	byteCount := atomic.LoadUint64(&c.bytesCount)
@@ -142,6 +136,5 @@ func (c *AEADCipher) NeedsRotation(threshold float64) bool {
 	msgRatio := float64(msgCount) / float64(MaxMessagesPerKey)
 	byteRatio := float64(byteCount) / float64(MaxBytesPerKey)
 
-	// اگه یکی از دو شمارنده بیشتر از threshold باشه
 	return msgRatio > threshold || byteRatio > threshold
 }
