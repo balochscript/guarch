@@ -2,10 +2,8 @@
 package dns
 
 import (
-	"context"
 	"fmt"
 	"log"
-	"net"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -289,24 +287,22 @@ func (s *Server) cleanupSessions() {
 	defer ticker.Stop()
 	
 	for {
-		select {
-		case <-ticker.C:
-			timeout := 5 * time.Minute
-			now := time.Now()
+		<-ticker.C
+		timeout := 5 * time.Minute
+		now := time.Now()
+		
+		s.sessions.Range(func(key, value interface{}) bool {
+			session := value.(*Session)
+			session.mu.Lock()
+			lastSeen := session.LastSeen
+			session.mu.Unlock()
 			
-			s.sessions.Range(func(key, value interface{}) bool {
-				session := value.(*Session)
-				session.mu.Lock()
-				lastSeen := session.LastSeen
-				session.mu.Unlock()
-				
-				if now.Sub(lastSeen) > timeout {
-					s.sessions.Delete(key)
-					log.Printf("[dns/server] session %d expired", session.ID)
-				}
-				return true
-			})
-		}
+			if now.Sub(lastSeen) > timeout {
+				s.sessions.Delete(key)
+				log.Printf("[dns/server] session %d expired", session.ID)
+			}
+			return true
+		})
 	}
 }
 
