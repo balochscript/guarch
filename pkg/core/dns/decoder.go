@@ -3,7 +3,6 @@ package dns
 
 import (
 	"encoding/base32"
-	"encoding/binary"
 	"fmt"
 	"strings"
 )
