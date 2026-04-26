@@ -33,6 +33,7 @@ func (c *Checker) AddBytes(n int64) { c.totalBytes.Add(n) }
 func (c *Checker) AddCoverRequest() { c.coverRequests.Add(1) }
 func (c *Checker) AddError()        { c.errors.Add(1) }
 
+// Status ساختار وضعیت سرور (برای JSON API)
 type Status struct {
 	Status        string `json:"status"`
 	Uptime        string `json:"uptime"`
@@ -42,14 +43,18 @@ type Status struct {
 	TotalBytes    int64  `json:"total_bytes"`
 	CoverRequests int64  `json:"cover_requests"`
 	Errors        int64  `json:"errors"`
+	TotalErrors   int64  `json:"total_errors"` // ← اضافه شد: alias برای Errors
 	GoRoutines    int    `json:"goroutines"`
 	MemoryMB      uint64 `json:"memory_mb"`
 }
 
+// GetStatus دریافت وضعیت فعلی سرور
 func (c *Checker) GetStatus() Status {
 	var mem runtime.MemStats
 	runtime.ReadMemStats(&mem)
 	uptime := time.Since(c.startTime)
+	
+	errCount := c.errors.Load()
 
 	return Status{
 		Status:        "running",
@@ -59,10 +64,17 @@ func (c *Checker) GetStatus() Status {
 		TotalConns:    c.totalConns.Load(),
 		TotalBytes:    c.totalBytes.Load(),
 		CoverRequests: c.coverRequests.Load(),
-		Errors:        c.errors.Load(),
+		Errors:        errCount,
+		TotalErrors:   errCount, // ← اضافه شد: همون مقدار Errors
 		GoRoutines:    runtime.NumGoroutine(),
 		MemoryMB:      mem.Alloc / 1024 / 1024,
 	}
+}
+
+// Stats همان GetStatus (برای سازگاری با cmd/guarch-server/main.go)
+// ← اضافه شد: این متد برای main.go نیاز بود
+func (c *Checker) Stats() Status {
+	return c.GetStatus()
 }
 
 func (c *Checker) ServeHTTP(w http.ResponseWriter, r *http.Request) {
