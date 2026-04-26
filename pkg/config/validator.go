@@ -131,7 +131,7 @@ func (v *Validator) validateSNI(sni *SNIConfig) error {
 	}
 	
 	totalWeight := 0
-	hasFallback := false
+	// ← حذف: hasFallback := false (استفاده نمیشد)
 	
 	for i, d := range sni.Domains {
 		if d.Domain == "" {
@@ -149,9 +149,7 @@ func (v *Validator) validateSNI(sni *SNIConfig) error {
 		
 		totalWeight += d.Weight
 		
-		if d.Fallback {
-			hasFallback = true
-		}
+		// ← حذف: if d.Fallback { hasFallback = true }
 	}
 	
 	// برای weighted mode، total weight باید > 0 باشه
