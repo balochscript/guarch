@@ -111,7 +111,7 @@ func GetModeSettings(mode Mode) *ModeSettings {
 }
 
 // ═══════════════════════════════════════════════════════════
-// 🔥 CHANGED: ApplyModeToConfig - به جای ConfigForMode
+// ApplyModeToConfig - اعمال mode به config موجود
 // ═══════════════════════════════════════════════════════════
 
 // ApplyModeToConfig اعمال mode به یک config موجود
@@ -156,10 +156,129 @@ func ApplyModeToConfig(cfg *Config, mode Mode) error {
 // ModeConfig for Adaptive/Shaping
 // ═══════════════════════════════════════════════════════════
 
+// ModeConfig تنظیمات mode برای adaptive/shaping
+type ModeConfig struct {
+	MaxPadding int
+}
+
 // GetModeConfigForAdaptive دریافت ModeConfig برای adaptive
 func GetModeConfigForAdaptive(mode Mode) *ModeConfig {
 	settings := GetModeSettings(mode)
 	return &ModeConfig{
 		MaxPadding: settings.MaxPadding,
+	}
+}
+
+// GetModeConfig همان GetModeConfigForAdaptive (برای backward compatibility)
+// ← اضافه شد: این تابع در zhip-server/main.go استفاده میشه
+func GetModeConfig(mode Mode) *ModeConfig {
+	return GetModeConfigForAdaptive(mode)
+}
+
+// ═══════════════════════════════════════════════════════════
+// ConfigForMode - ساخت Config کامل از روی mode
+// ═══════════════════════════════════════════════════════════
+
+// ConfigForMode ساخت Config کامل برای یک mode (با domain های پیش‌فرض)
+// ← اضافه شد: این تابع در zhip-server/main.go استفاده میشه
+func ConfigForMode(mode Mode) *Config {
+	settings := GetModeSettings(mode)
+	
+	cfg := NewConfig()
+	cfg.Enabled = settings.CoverEnabled
+	cfg.IdleTraffic = settings.IdleTraffic
+	cfg.MaxConcurrent = 3
+	
+	// اگه mode=fast، بدون domain برگردون
+	if mode == ModeFast {
+		return cfg
+	}
+	
+	// ساخت domain های پیش‌فرض
+	cfg.Domains = getDefaultDomainsForMode(mode)
+	
+	return cfg
+}
+
+// getDefaultDomainsForMode دریافت لیست domain های پیش‌فرض برای mode
+func getDefaultDomainsForMode(mode Mode) []DomainConfig {
+	switch mode {
+	case ModeStealth:
+		return []DomainConfig{
+			{
+				Domain:      "www.google.com",
+				Paths:       []string{"/", "/search?q=weather", "/search?q=news"},
+				Weight:      30,
+				MinInterval: 2 * time.Second,
+				MaxInterval: 8 * time.Second,
+			},
+			{
+				Domain:      "www.microsoft.com",
+				Paths:       []string{"/", "/en-us/windows"},
+				Weight:      20,
+				MinInterval: 3 * time.Second,
+				MaxInterval: 10 * time.Second,
+			},
+			{
+				Domain:      "github.com",
+				Paths:       []string{"/", "/explore"},
+				Weight:      15,
+				MinInterval: 5 * time.Second,
+				MaxInterval: 15 * time.Second,
+			},
+			{
+				Domain:      "stackoverflow.com",
+				Paths:       []string{"/", "/questions"},
+				Weight:      15,
+				MinInterval: 5 * time.Second,
+				MaxInterval: 15 * time.Second,
+			},
+			{
+				Domain:      "www.cloudflare.com",
+				Paths:       []string{"/"},
+				Weight:      10,
+				MinInterval: 10 * time.Second,
+				MaxInterval: 20 * time.Second,
+			},
+			{
+				Domain:      "learn.microsoft.com",
+				Paths:       []string{"/"},
+				Weight:      10,
+				MinInterval: 10 * time.Second,
+				MaxInterval: 20 * time.Second,
+			},
+		}
+	
+	case ModeBalanced:
+		return []DomainConfig{
+			{
+				Domain:      "www.google.com",
+				Paths:       []string{"/", "/search?q=weather"},
+				Weight:      50,
+				MinInterval: 5 * time.Second,
+				MaxInterval: 15 * time.Second,
+			},
+			{
+				Domain:      "www.cloudflare.com",
+				Paths:       []string{"/"},
+				Weight:      30,
+				MinInterval: 5 * time.Second,
+				MaxInterval: 15 * time.Second,
+			},
+			{
+				Domain:      "github.com",
+				Paths:       []string{"/"},
+				Weight:      20,
+				MinInterval: 10 * time.Second,
+				MaxInterval: 20 * time.Second,
+			},
+		}
+	
+	case ModeFast:
+		// Fast mode بدون cover traffic
+		return []DomainConfig{}
+	
+	default:
+		return getDefaultDomainsForMode(ModeBalanced)
 	}
 }
