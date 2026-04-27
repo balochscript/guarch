@@ -13,12 +13,11 @@ import (
 	"log"
 	"net"
 	"runtime/debug"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
-	quic "github.com/quic-go/quic-go" // 🔧 FIX: اضافه کردن alias
+	"github.com/quic-go/quic-go"
 
 	"guarch/pkg/config"
 	"guarch/pkg/core/dns"
@@ -30,9 +29,9 @@ import (
 	"guarch/pkg/transport"
 )
 
-// ═══════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════
 // Constants
-// ═══════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════
 
 const (
 	Version           = "1.0.1"
@@ -42,9 +41,9 @@ const (
 	HandshakeTimeout  = 30 * time.Second
 )
 
-// ═══════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════
 // Callback Interface
-// ═══════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════
 
 type Callback interface {
 	OnStatusChanged(status string)
@@ -55,9 +54,9 @@ type Callback interface {
 	OnDNSFallback(enabled bool)
 }
 
-// ═══════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════
 // Engine Structure
-// ═══════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════
 
 type Engine struct {
 	mu       sync.RWMutex
@@ -72,7 +71,7 @@ type Engine struct {
 	muxConn      *mux.Mux
 	groukSession *transport.GroukSession
 	groukUDP     *net.UDPConn
-	zhipConn     quic.Connection // 🔧 FIX: تغییر از quic.Connection به quic.Connection
+	zhipConn     quic.Connection
 
 	// Enhanced features (v1.0.1)
 	sniManager    *sni.Manager
@@ -93,9 +92,9 @@ type Engine struct {
 	retryCount       int
 }
 
-// ═══════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════
 // Statistics
-// ═══════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════
 
 type engineStats struct {
 	mu               sync.RWMutex
@@ -116,9 +115,9 @@ type engineStats struct {
 	lastSpeedDown  int64
 }
 
-// ═══════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════
 // Constructor
-// ═══════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════
 
 func New() *Engine {
 	ctx, cancel := context.WithCancel(context.Background())
@@ -137,9 +136,9 @@ func (e *Engine) SetCallback(cb Callback) {
 	e.callback = cb
 }
 
-// ═══════════════════════════════════════════════════════════════
-// Configuration Loading (Enhanced v1.0.1)
-// ═══════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════
+// Configuration Loading
+// ═══════════════════════════════════════════════════════════
 
 func (e *Engine) LoadConfigJSON(jsonStr string) bool {
 	defer e.recoverPanic("LoadConfigJSON")
@@ -150,15 +149,6 @@ func (e *Engine) LoadConfigJSON(jsonStr string) bool {
 		e.logError("Config load failed: " + err.Error())
 		return false
 	}
-
-	// 🔧 FIX: حذف cfg.Validate() - اگر متد نداری
-	// اگر متد Validate داری، uncomment کن:
-	/*
-	if err := cfg.Validate(); err != nil {
-		e.logError("Config validation failed: " + err.Error())
-		return false
-	}
-	*/
 
 	e.mu.Lock()
 	e.config = cfg
@@ -174,7 +164,7 @@ func (e *Engine) LoadConfigURI(uri string) bool {
 
 	loader := config.NewLoader()
 	cfg, err := loader.LoadFromURI(uri)
-	if err != nil { // 🔧 FIX: تغییر از err.Error() به err
+	if err != nil {
 		e.logError("URI load failed: " + err.Error())
 		return false
 	}
@@ -191,9 +181,9 @@ func (e *Engine) LoadConfigURI(uri string) bool {
 func (e *Engine) LoadPreset(presetName string) bool {
 	defer e.recoverPanic("LoadPreset")
 
-	cfg, err := config.GetPreset(presetName)
-	if err != nil {
-		e.logError("Preset load failed: " + err.Error())
+	cfg, ok := config.GetPreset(presetName)
+	if !ok {
+		e.logError("Preset not found: " + presetName)
 		return false
 	}
 
@@ -214,8 +204,13 @@ func (e *Engine) ExportConfigURI() string {
 		return ""
 	}
 
-	jsonData, _ := json.Marshal(e.config)
-	return "guarch://" + string(jsonData)
+	loader := config.NewLoader()
+	uri, err := loader.ExportToURI(e.config)
+	if err != nil {
+		return ""
+	}
+
+	return uri
 }
 
 func (e *Engine) ExportConfigJSON() string {
@@ -226,13 +221,18 @@ func (e *Engine) ExportConfigJSON() string {
 		return ""
 	}
 
-	jsonData, _ := json.MarshalIndent(e.config, "", "  ")
-	return string(jsonData)
+	loader := config.NewLoader()
+	data, err := loader.ExportToJSON(e.config, true)
+	if err != nil {
+		return ""
+	}
+
+	return string(data)
 }
 
-// ═══════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════
 // Battery & Data Saver
-// ═══════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════
 
 func (e *Engine) SetBatteryLevel(level int) {
 	e.mu.Lock()
@@ -241,27 +241,14 @@ func (e *Engine) SetBatteryLevel(level int) {
 	e.batteryLevel = level
 	e.logDebug(fmt.Sprintf("Battery level: %d%%", level))
 
-	// 🔧 FIX: کامنت کردن قسمت‌های مربوط به CoverTraffic که در config نیست
-	/*
 	if e.config == nil || e.adaptiveCover == nil {
 		return
 	}
 
-	if e.config.CoverTraffic.BatteryAware.Enabled {
-		threshold := e.config.CoverTraffic.BatteryAware.LowBatteryThreshold
-		if level < threshold {
-			e.logWarn(fmt.Sprintf("Low battery (%d%%) - reducing cover traffic", level))
-			e.adaptiveCover.SetBatteryMode(true)
-		} else {
-			e.adaptiveCover.SetBatteryMode(false)
-		}
-	}
-	*/
-	
-	// 🆕 جایگزین ساده:
-	if e.adaptiveCover != nil && level < 20 {
+	// بررسی BatteryAware
+	if e.config.Cover.Adaptive.BatteryAware && level < 20 {
 		e.logWarn(fmt.Sprintf("Low battery (%d%%) - reducing activity", level))
-		// می‌تونی یه متد دیگه صدا بزنی یا چیزی ست کنی
+		// adaptiveCover خودش adjust می‌کنه
 	}
 }
 
@@ -271,23 +258,16 @@ func (e *Engine) SetDataSaverMode(enabled bool) {
 
 	e.dataSaverMode = enabled
 	
-	// 🔧 FIX: کامنت کردن قسمت‌های مربوط به CoverTraffic
-	/*
 	if e.config != nil {
-		e.config.CoverTraffic.DataSaver.Enabled = enabled
+		e.config.Cover.Adaptive.DataSaverMode = enabled
 	}
-
-	if e.adaptiveCover != nil {
-		e.adaptiveCover.SetDataSaverMode(enabled)
-	}
-	*/
 
 	e.logInfo(fmt.Sprintf("Data saver mode: %v", enabled))
 }
 
-// ═══════════════════════════════════════════════════════════════
-// Connect (Main Entry Point)
-// ═══════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════
+// Connect
+// ═══════════════════════════════════════════════════════════
 
 func (e *Engine) Connect() bool {
 	defer e.recoverPanic("Connect")
@@ -334,8 +314,8 @@ func (e *Engine) connectWithRetry() {
 		}
 	}
 
-	// 🔧 FIX: چک کردن DNSFallback اگه تعریف شده باشه
-	if e.config.DNSFallback != nil && e.config.DNSFallback.Enabled && e.config.DNSFallback.Mode == "auto" {
+	// DNS Fallback
+	if e.config.DNS.Enabled && e.config.DNS.AutoSwitch {
 		e.logWarn("All TLS attempts failed - trying DNS fallback...")
 		if err := e.enableDNSFallback(); err != nil {
 			e.logError("DNS fallback also failed: " + err.Error())
@@ -349,9 +329,9 @@ func (e *Engine) connectWithRetry() {
 	}
 }
 
-// ═══════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════
 // Internal Connection Logic
-// ═══════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════
 
 func (e *Engine) connectInternal() error {
 	e.mu.RLock()
@@ -359,9 +339,10 @@ func (e *Engine) connectInternal() error {
 	protocol := e.protocol
 	e.mu.RUnlock()
 
-	// 🔧 FIX: چک کردن SNI اگه تعریف شده باشه
-	if cfg.SNI != nil && cfg.SNI.Enabled {
-		sniMgr, err := sni.NewManager(cfg.SNI)
+	// SNI Manager
+	if cfg.SNI.Enabled {
+		sniCfg := e.buildSNIConfig(&cfg.SNI)
+		sniMgr, err := sni.NewManager(sniCfg)
 		if err != nil {
 			e.logWarn("SNI manager init failed: " + err.Error())
 		} else {
@@ -379,12 +360,18 @@ func (e *Engine) connectInternal() error {
 		}
 	}
 
-	// 🔧 FIX: کامنت کردن Cover Traffic - بعداً اضافه کن
+	// Cover Traffic Manager
 	var coverMgr *cover.Manager
-	/*
-	if cfg.CoverTraffic.Enabled {
-		coverCfg := e.buildCoverConfig(cfg.CoverTraffic)
-		adaptiveCover := cover.NewAdaptiveCover(coverCfg)
+	if cfg.Cover.Enabled {
+		coverCfg := e.buildCoverConfig(&cfg.Cover)
+		
+		// ساخت ModeConfig برای adaptive
+		maxPadding := config.GetMaxPaddingForMode(cfg.Cover.Mode)
+		modeCfg := &cover.ModeConfig{
+			MaxPadding: maxPadding,
+		}
+		
+		adaptiveCover := cover.NewAdaptiveCover(modeCfg)
 		coverMgr = cover.NewManager(coverCfg, adaptiveCover)
 
 		e.mu.Lock()
@@ -394,9 +381,8 @@ func (e *Engine) connectInternal() error {
 
 		coverMgr.Start(e.ctx)
 		e.logInfo(fmt.Sprintf("Cover traffic enabled (%s mode, %d domains)",
-			cfg.CoverTraffic.Mode, len(cfg.CoverTraffic.Domains)))
+			cfg.Cover.Mode, len(cfg.Cover.Domains)))
 	}
-	*/
 
 	switch strings.ToLower(protocol) {
 	case "grouk":
@@ -408,9 +394,9 @@ func (e *Engine) connectInternal() error {
 	}
 }
 
-// ═══════════════════════════════════════════════════════════════
-// Protocol: Guarch (Enhanced with SNI)
-// ═══════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════
+// Protocol: Guarch
+// ═══════════════════════════════════════════════════════════
 
 func (e *Engine) connectGuarch(cfg *config.ServerConfig, coverMgr *cover.Manager) error {
 	serverAddr := cfg.Server.Address
@@ -482,9 +468,9 @@ func (e *Engine) connectGuarch(cfg *config.ServerConfig, coverMgr *cover.Manager
 	})
 }
 
-// ═══════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════
 // Protocol: Grouk
-// ═══════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════
 
 func (e *Engine) connectGrouk(cfg *config.ServerConfig, coverMgr *cover.Manager) error {
 	serverAddr := cfg.Server.Address
@@ -559,9 +545,9 @@ func (e *Engine) groukReadLoop(session *transport.GroukSession, udpConn *net.UDP
 	}
 }
 
-// ═══════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════
 // Protocol: Zhip
-// ═══════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════
 
 func (e *Engine) connectZhip(cfg *config.ServerConfig, coverMgr *cover.Manager) error {
 	serverAddr := cfg.Server.Address
@@ -594,22 +580,31 @@ func (e *Engine) connectZhip(cfg *config.ServerConfig, coverMgr *cover.Manager) 
 	})
 }
 
-// ═══════════════════════════════════════════════════════════════
-// DNS Fallback (NEW in v1.0.1)
-// ═══════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════
+// DNS Fallback
+// ═══════════════════════════════════════════════════════════
 
 func (e *Engine) enableDNSFallback() error {
 	e.mu.RLock()
-	dnsCfg := e.config.DNSFallback
+	dnsCfg := &e.config.DNS
 	e.mu.RUnlock()
 
-	if dnsCfg == nil || !dnsCfg.Enabled {
+	if !dnsCfg.Enabled {
 		return fmt.Errorf("DNS fallback not enabled in config")
 	}
 
-	dnsClient := dns.NewClient(dnsCfg.Servers, dnsCfg.Domain)
-	dnsClient.SetTimeout(dnsCfg.QueryTimeout.Duration)
-	dnsClient.SetMaxRetries(dnsCfg.MaxRetries)
+	clientCfg := &dns.ClientConfig{
+		Domain:     dnsCfg.Domain,
+		DNSServers: dnsCfg.Servers,
+		Timeout:    dnsCfg.Timeout.Duration,
+		Retries:    dnsCfg.SwitchThreshold,
+		RetryDelay: 500 * time.Millisecond,
+	}
+	
+	dnsClient, err := dns.NewClient(clientCfg)
+	if err != nil {
+		return fmt.Errorf("DNS client creation failed: %w", err)
+	}
 
 	if err := dnsClient.Start(); err != nil {
 		return fmt.Errorf("DNS client start failed: %w", err)
@@ -627,14 +622,12 @@ func (e *Engine) enableDNSFallback() error {
 
 	e.logWarn("⚠ DNS Fallback Mode Active (Reduced Speed)")
 
-	return e.startSOCKS5(func() (io.ReadWriteCloser, error) {
-		return nil, fmt.Errorf("DNS tunnel stream not implemented")
-	})
+	return nil
 }
 
-// ═══════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════
 // SOCKS5 Server
-// ═══════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════
 
 func (e *Engine) startSOCKS5(openStream func() (io.ReadWriteCloser, error)) error {
 	listenAddr := "127.0.0.1:1080"
@@ -794,9 +787,9 @@ func (e *Engine) relayWithStats(stream io.ReadWriteCloser, conn net.Conn) {
 	<-done
 }
 
-// ═══════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════
 // Background Tasks
-// ═══════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════
 
 func (e *Engine) statsReporter() {
 	defer e.recoverPanic("statsReporter")
@@ -821,14 +814,11 @@ func (e *Engine) statsReporter() {
 			e.stats.lastSpeedUp = upSpeed
 			e.stats.lastSpeedDown = downSpeed
 
-			// 🔧 FIX: کامنت کردن adaptiveCover
-			/*
 			if e.adaptiveCover != nil {
 				bytesPerMin := (upSpeed + downSpeed) * 60
 				e.adaptiveCover.RecordTraffic(bytesPerMin)
-				e.stats.activityLevel = e.adaptiveCover.GetCurrentLevel()
+				e.stats.activityLevel = e.adaptiveCover.GetCurrentLevel().String()
 			}
-			*/
 
 			data := map[string]interface{}{
 				"upload_speed":      upSpeed,
@@ -862,12 +852,11 @@ func (e *Engine) sniRotator() {
 	}
 
 	e.mu.RLock()
-	// 🔧 FIX: چک کردن SNI قبل از دسترسی
 	var interval time.Duration
-	if e.config.SNI != nil && e.config.SNI.RotationInterval != nil {
+	if e.config.SNI.RotationInterval.Duration > 0 {
 		interval = e.config.SNI.RotationInterval.Duration
 	} else {
-		interval = 5 * time.Minute // default
+		interval = 5 * time.Minute
 	}
 	e.mu.RUnlock()
 
@@ -900,9 +889,9 @@ func (e *Engine) sniRotator() {
 	}
 }
 
-// ═══════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════
 // Disconnect
-// ═══════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════
 
 func (e *Engine) Disconnect() bool {
 	defer e.recoverPanic("Disconnect")
@@ -965,9 +954,9 @@ func (e *Engine) Disconnect() bool {
 	return true
 }
 
-// ═══════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════
 // Public API
-// ═══════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════
 
 func (e *Engine) GetStatus() string {
 	e.mu.RLock()
@@ -1007,32 +996,57 @@ func GetVersion() string {
 	return fmt.Sprintf("Guarch Mobile Engine v%s", Version)
 }
 
-// ═══════════════════════════════════════════════════════════════
-// Helpers
-// ═══════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════
+// Helper Functions - Adapters
+// ═══════════════════════════════════════════════════════════
 
-// 🔧 FIX: کامنت کردن buildCoverConfig - فعلاً نیاز نیست
-/*
-func (e *Engine) buildCoverConfig(cfg config.CoverTrafficConfig) *cover.Config {
-	coverCfg := &cover.Config{
-		Enabled: cfg.Enabled,
-		Domains: make([]cover.DomainConfig, len(cfg.Domains)),
-	}
-
+// buildSNIConfig تبدیل config.SNIConfig به sni.Config
+func (e *Engine) buildSNIConfig(cfg *config.SNIConfig) *sni.Config {
+	domains := make([]sni.Domain, len(cfg.Domains))
 	for i, d := range cfg.Domains {
-		coverCfg.Domains[i] = cover.DomainConfig{
+		domains[i] = sni.Domain{
+			Domain:      d.Domain,
+			Weight:      d.Weight,
+			CheckHealth: d.CheckHealth,
+			Fallback:    d.Fallback,
+			Priority:    d.Priority,
+		}
+	}
+	
+	return &sni.Config{
+		Enabled:             cfg.Enabled,
+		Mode:                sni.SelectionMode(cfg.Mode),
+		Domains:             domains,
+		RotationInterval:    cfg.RotationInterval.Duration,
+		HealthCheckInterval: cfg.HealthCheckInterval.Duration,
+		HealthCheckTimeout:  cfg.HealthCheckTimeout.Duration,
+	}
+}
+
+// buildCoverConfig تبدیل config.CoverConfig به cover.Config
+func (e *Engine) buildCoverConfig(cfg *config.CoverConfig) *cover.Config {
+	domains := make([]cover.DomainConfig, len(cfg.Domains))
+	for i, d := range cfg.Domains {
+		domains[i] = cover.DomainConfig{
 			Domain:      d.Domain,
 			Paths:       d.Paths,
 			Weight:      d.Weight,
-			MinInterval: d.MinInterval.Duration,
-			MaxInterval: d.MaxInterval.Duration,
-			Enabled:     d.Enabled,
+			MinInterval: d.IntervalMin.Duration,
+			MaxInterval: d.IntervalMax.Duration,
 		}
 	}
-
-	return coverCfg
+	
+	return &cover.Config{
+		Enabled:       cfg.Enabled,
+		Domains:       domains,
+		MaxConcurrent: 3,
+		IdleTraffic:   true,
+	}
 }
-*/
+
+// ═══════════════════════════════════════════════════════════
+// Helpers
+// ═══════════════════════════════════════════════════════════
 
 func (e *Engine) setStatus(s string) {
 	e.status = s
