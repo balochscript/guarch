@@ -121,7 +121,7 @@ class GuarchEngine {
         FlutterLog.d('Engine', 'Native engine version: $version');
         _nativeAvailable = true;
       } catch (e) {
-        FlutterLog.w('Engine', 'Native engine not available', e);
+        FlutterLog.e('Engine', 'Native engine not available', e);
         _nativeAvailable = false;
       }
     } catch (e) {
