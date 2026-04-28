@@ -605,7 +605,7 @@ class AppProvider extends ChangeNotifier {
     }
     
     _saveServers();
-    _addLog('✅ Test complete! (${_servers.where((s) => s.ping > 0).length}/${_servers.length} reachable)');
+    _addLog('✅ Test complete! (${_servers.where((s) => (s.ping ?? 0) > 0).length}/${_servers.length} reachable)');
     notifyListeners();
   }
 
