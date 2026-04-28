@@ -75,8 +75,7 @@ type Engine struct {
 	muxConn      *mux.Mux
 	groukSession *transport.GroukSession
 	groukUDP     *net.UDPConn
-	zhipConn     interface{}
-
+	zhipConn     ZhipConnection
 	// Enhanced features (v1.0.1)
 	sniManager    *sni.Manager
 	coverManager  *cover.Manager
