@@ -18,8 +18,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/quic-go/quic-go"
-
 	"guarch/pkg/config"
 	"guarch/pkg/core/dns"
 	"guarch/pkg/core/sni"
@@ -29,6 +27,12 @@ import (
 	"guarch/pkg/socks5"
 	"guarch/pkg/transport"
 )
+
+type ZhipConnection interface {
+	OpenStreamSync(ctx context.Context) (io.ReadWriteCloser, error)
+	CloseWithError(code uint64, msg string) error
+}
+
 // ═══════════════════════════════════════════════════════════
 // Constants
 // ═══════════════════════════════════════════════════════════
