@@ -28,6 +28,13 @@ import (
 	"guarch/pkg/transport"
 )
 
+// ═══════════════════════════════════════════════════════════
+// Local Interfaces (gomobile compatible)
+// ═══════════════════════════════════════════════════════════
+
+// ZhipConnection interface برای QUIC connection
+// این interface فقط متدهای مورد نیاز را تعریف می‌کند
+// و از وابستگی مستقیم به quic-go جلوگیری می‌کند
 type ZhipConnection interface {
 	OpenStreamSync(ctx context.Context) (io.ReadWriteCloser, error)
 	CloseWithError(code uint64, msg string) error
@@ -76,6 +83,7 @@ type Engine struct {
 	groukSession *transport.GroukSession
 	groukUDP     *net.UDPConn
 	zhipConn     ZhipConnection
+
 	// Enhanced features (v1.0.1)
 	sniManager    *sni.Manager
 	coverManager  *cover.Manager
@@ -248,10 +256,8 @@ func (e *Engine) SetBatteryLevel(level int) {
 		return
 	}
 
-	// بررسی BatteryAware
 	if e.config.Cover.Adaptive.BatteryAware && level < 20 {
 		e.logWarn(fmt.Sprintf("Low battery (%d%%) - reducing activity", level))
-		// adaptiveCover خودش adjust می‌کنه
 	}
 }
 
@@ -317,7 +323,6 @@ func (e *Engine) connectWithRetry() {
 		}
 	}
 
-	// DNS Fallback
 	if e.config.DNS.Enabled && e.config.DNS.AutoSwitch {
 		e.logWarn("All TLS attempts failed - trying DNS fallback...")
 		if err := e.enableDNSFallback(); err != nil {
@@ -342,7 +347,6 @@ func (e *Engine) connectInternal() error {
 	protocol := e.protocol
 	e.mu.RUnlock()
 
-	// SNI Manager
 	if cfg.SNI.Enabled {
 		sniCfg := e.buildSNIConfig(&cfg.SNI)
 		sniMgr, err := sni.NewManager(sniCfg)
@@ -363,12 +367,10 @@ func (e *Engine) connectInternal() error {
 		}
 	}
 
-	// Cover Traffic Manager
 	var coverMgr *cover.Manager
 	if cfg.Cover.Enabled {
 		coverCfg := e.buildCoverConfig(&cfg.Cover)
 		
-		// ساخت ModeConfig برای adaptive
 		maxPadding := config.GetMaxPaddingForMode(cfg.Cover.Mode)
 		modeCfg := &cover.ModeConfig{
 			MaxPadding: maxPadding,
@@ -574,7 +576,7 @@ func (e *Engine) connectZhip(cfg *config.ServerConfig, coverMgr *cover.Manager) 
 	}
 
 	e.mu.Lock()
-	e.zhipConn = interface{}(conn)    // ← type assertion
+	e.zhipConn = conn
 	e.stats.connectTime = time.Now()
 	e.mu.Unlock()
 
@@ -596,7 +598,7 @@ func (e *Engine) enableDNSFallback() error {
 		return fmt.Errorf("DNS fallback not enabled in config")
 	}
 
-		clientCfg := &dns.ClientConfig{
+	clientCfg := &dns.ClientConfig{
 		Domain:     dnsCfg.Domain,
 		DNSServers: dnsCfg.Servers,
 		Timeout:    dnsCfg.Timeout.Duration,
@@ -927,9 +929,7 @@ func (e *Engine) Disconnect() bool {
 	}
 
 	if e.zhipConn != nil {
-		if conn, ok := e.zhipConn.(quic.Connection); ok {
-			conn.CloseWithError(0, "disconnect")
-		}
+		e.zhipConn.CloseWithError(0, "disconnect")
 		e.zhipConn = nil
 	}
 
@@ -1001,7 +1001,6 @@ func GetVersion() string {
 // Helper Functions - Adapters
 // ═══════════════════════════════════════════════════════════
 
-// buildSNIConfig تبدیل config.SNIConfig به sni.Config
 func (e *Engine) buildSNIConfig(cfg *config.SNIConfig) *sni.Config {
 	domains := make([]sni.Domain, len(cfg.Domains))
 	for i, d := range cfg.Domains {
@@ -1024,7 +1023,6 @@ func (e *Engine) buildSNIConfig(cfg *config.SNIConfig) *sni.Config {
 	}
 }
 
-// buildCoverConfig تبدیل config.CoverConfig به cover.Config
 func (e *Engine) buildCoverConfig(cfg *config.CoverConfig) *cover.Config {
 	domains := make([]cover.DomainConfig, len(cfg.Domains))
 	for i, d := range cfg.Domains {
