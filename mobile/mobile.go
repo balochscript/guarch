@@ -593,7 +593,7 @@ func (e *Engine) enableDNSFallback() error {
 		return fmt.Errorf("DNS fallback not enabled in config")
 	}
 
-	clientCfg := &dns.ClientConfig{
+		clientCfg := &dns.ClientConfig{
 		Domain:     dnsCfg.Domain,
 		DNSServers: dnsCfg.Servers,
 		Timeout:    dnsCfg.Timeout.Duration,
@@ -604,10 +604,6 @@ func (e *Engine) enableDNSFallback() error {
 	dnsClient, err := dns.NewClient(clientCfg)
 	if err != nil {
 		return fmt.Errorf("DNS client creation failed: %w", err)
-	}
-
-	if err := dnsClient.Start(); err != nil {
-		return fmt.Errorf("DNS client start failed: %w", err)
 	}
 
 	e.mu.Lock()
