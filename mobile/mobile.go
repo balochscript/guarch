@@ -924,7 +924,9 @@ func (e *Engine) Disconnect() bool {
 	}
 
 	if e.zhipConn != nil {
-		e.zhipConn.CloseWithError(0, "disconnect")
+		if conn, ok := e.zhipConn.(quic.Connection); ok {
+			conn.CloseWithError(0, "disconnect")
+		}
 		e.zhipConn = nil
 	}
 
