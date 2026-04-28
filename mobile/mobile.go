@@ -13,6 +13,7 @@ import (
 	"log"
 	"net"
 	"runtime/debug"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -28,7 +29,6 @@ import (
 	"guarch/pkg/socks5"
 	"guarch/pkg/transport"
 )
-
 // ═══════════════════════════════════════════════════════════
 // Constants
 // ═══════════════════════════════════════════════════════════
