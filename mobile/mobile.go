@@ -571,7 +571,7 @@ func (e *Engine) connectZhip(cfg *config.ServerConfig, coverMgr *cover.Manager) 
 	}
 
 	e.mu.Lock()
-	e.zhipConn = conn
+	e.zhipConn = interface{}(conn)    // ← type assertion
 	e.stats.connectTime = time.Now()
 	e.mu.Unlock()
 
