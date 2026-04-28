@@ -26,7 +26,7 @@ type GroukClient struct {
 
 	mu             sync.Mutex
 	session        *transport.GroukSession
-	connectBackoff time.Duration // ✅ M26
+	connectBackoff time.Duration
 }
 
 func main() {
@@ -78,6 +78,9 @@ func main() {
 	log.Printf("[grouk] 🌩️ client ready on socks5://%s", *listenAddr)
 	log.Printf("[grouk] server: %s (Raw UDP)", *serverAddr)
 
+	// ✅ FIX: فقط یک globalReadLoop برای همیشه
+	go client.globalReadLoop()
+
 	go func() {
 		for {
 			conn, err := ln.Accept()
@@ -103,7 +106,37 @@ func main() {
 	client.close()
 }
 
-// ✅ M26: backoff
+// ✅ FIX: یک readLoop مرکزی که همیشه اجرا می‌شود
+func (c *GroukClient) globalReadLoop() {
+	buf := make([]byte, 2048)
+	for {
+		n, addr, err := c.udpConn.ReadFromUDP(buf)
+		if err != nil {
+			continue
+		}
+
+		if !addr.IP.Equal(c.serverAddr.IP) || addr.Port != c.serverAddr.Port {
+			continue
+		}
+
+		data := make([]byte, n)
+		copy(data, buf[:n])
+
+		pkt, err := transport.UnmarshalGroukPacket(data)
+		if err != nil {
+			continue
+		}
+
+		c.mu.Lock()
+		session := c.session
+		c.mu.Unlock()
+
+		if session != nil && pkt.SessionID == session.ID {
+			session.HandlePacketFromClient(pkt)
+		}
+	}
+}
+
 func (c *GroukClient) getOrCreateSession() (*transport.GroukSession, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -136,45 +169,13 @@ func (c *GroukClient) getOrCreateSession() (*transport.GroukSession, error) {
 		return nil, fmt.Errorf("grouk handshake: %w", err)
 	}
 
-	go c.sessionReadLoop(session)
+	// ✅ FIX: دیگر sessionReadLoop اینجا اجرا نمی‌شود
+	// چون globalReadLoop در main اجرا شده است
 
 	c.session = session
 	c.connectBackoff = 0
 	log.Println("[grouk] connected ✅")
 	return session, nil
-}
-
-func (c *GroukClient) sessionReadLoop(session *transport.GroukSession) {
-	buf := make([]byte, 2048)
-	for {
-		if session.IsClosed() {
-			return
-		}
-
-		n, addr, err := c.udpConn.ReadFromUDP(buf)
-		if err != nil {
-			if session.IsClosed() {
-				return
-			}
-			continue
-		}
-
-		if !addr.IP.Equal(c.serverAddr.IP) || addr.Port != c.serverAddr.Port {
-			continue
-		}
-
-		data := make([]byte, n)
-		copy(data, buf[:n])
-
-		pkt, err := transport.UnmarshalGroukPacket(data)
-		if err != nil {
-			continue
-		}
-
-		if pkt.SessionID == session.ID {
-			session.HandlePacketFromClient(pkt)
-		}
-	}
 }
 
 func (c *GroukClient) close() {
@@ -222,7 +223,6 @@ func (c *GroukClient) handleSOCKS(socksConn net.Conn) {
 		}
 	}
 
-	// ✅ M25 + M27
 	host, port, addrType, err := cmdutil.SplitTarget(target)
 	if err != nil {
 		log.Printf("[grouk] %v", err)
@@ -280,5 +280,5 @@ func relay(stream *transport.GroukStream, conn net.Conn) {
 	<-ch
 	stream.Close()
 	conn.Close()
-	<-ch // ✅ M19
+	<-ch
 }
