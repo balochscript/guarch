@@ -4,7 +4,6 @@ package mobile
 import (
 	"context"
 	"fmt"
-	"io"
 	"net"
 	"os"
 	"runtime/debug"
