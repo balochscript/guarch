@@ -18,8 +18,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	quic "github.com/quic-go/quic-go"
-
 	"guarch/pkg/config"
 	"guarch/pkg/core/dns"
 	"guarch/pkg/core/sni"
@@ -29,18 +27,6 @@ import (
 	"guarch/pkg/socks5"
 	"guarch/pkg/transport"
 )
-
-// ═══════════════════════════════════════════════════════════
-// Local Interfaces (gomobile compatible)
-// ═══════════════════════════════════════════════════════════
-
-// ZhipConnection interface برای QUIC connection
-// این interface فقط متدهای مورد نیاز را تعریف می‌کند
-// و از وابستگی مستقیم به quic-go جلوگیری می‌کند
-type ZhipConnection interface {
-	OpenStreamSync(ctx context.Context) (io.ReadWriteCloser, error)
-	CloseWithError(code quic.ApplicationErrorCode, msg string) error
-}
 
 // ═══════════════════════════════════════════════════════════
 // Constants
@@ -84,8 +70,7 @@ type Engine struct {
 	muxConn      *mux.Mux
 	groukSession *transport.GroukSession
 	groukUDP     *net.UDPConn
-	zhipConn     ZhipConnection
-
+	
 	// Enhanced features (v1.0.1)
 	sniManager    *sni.Manager
 	coverManager  *cover.Manager
@@ -578,10 +563,12 @@ func (e *Engine) connectZhip(cfg *config.ServerConfig, coverMgr *cover.Manager) 
 	}
 
 	e.mu.Lock()
-	e.zhipConn = conn
+	// e.zhipConn = conn  ← این خط رو حذف کنید
 	e.stats.connectTime = time.Now()
 	e.mu.Unlock()
 
+	// QUIC connection در closure نگه‌داری می‌شود
+	// وقتی e.ctx.Done() شود، connection خودکار close می‌شود
 	return e.startSOCKS5(func() (io.ReadWriteCloser, error) {
 		return conn.OpenStreamSync(e.ctx)
 	})
@@ -928,11 +915,6 @@ func (e *Engine) Disconnect() bool {
 	if e.groukUDP != nil {
 		e.groukUDP.Close()
 		e.groukUDP = nil
-	}
-
-	if e.zhipConn != nil {
-		e.zhipConn.CloseWithError(0, "disconnect")
-		e.zhipConn = nil
 	}
 
 	if e.sniManager != nil {
