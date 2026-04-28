@@ -939,7 +939,7 @@ func (e *Engine) Disconnect() bool {
 	}
 
 	if e.dnsClient != nil {
-		e.dnsClient.Stop()
+		e.dnsClient.Close()
 		e.dnsClient = nil
 	}
 
