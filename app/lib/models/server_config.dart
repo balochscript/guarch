@@ -318,15 +318,45 @@ class ServerConfig {
   }
 
   static List<SNIDomain> defaultSNIDomains() {
-    return [
-      SNIDomain(domain: 'www.google.com', weight: 30),
-      SNIDomain(domain: 'www.microsoft.com', weight: 20),
-      SNIDomain(domain: 'github.com', weight: 15),
-      SNIDomain(domain: 'www.cloudflare.com', weight: 15),
-      SNIDomain(domain: 'stackoverflow.com', weight: 10),
-      SNIDomain(domain: 'learn.microsoft.com', weight: 10),
-    ];
-  }
+  return [
+    SNIDomain(
+      domain: 'www.google.com',
+      weight: 30,
+      checkHealth: true,
+      fallback: false,
+    ),
+    SNIDomain(
+      domain: 'www.microsoft.com',
+      weight: 20,
+      checkHealth: true,
+      fallback: false,
+    ),
+    SNIDomain(
+      domain: 'github.com',
+      weight: 15,
+      checkHealth: true,
+      fallback: false,
+    ),
+    SNIDomain(
+      domain: 'www.cloudflare.com',
+      weight: 15,
+      checkHealth: false,  // ← fallback ها health check نمیشن
+      fallback: true,      // ← fallback
+    ),
+    SNIDomain(
+      domain: 'stackoverflow.com',
+      weight: 10,
+      checkHealth: true,
+      fallback: false,
+    ),
+    SNIDomain(
+      domain: 'learn.microsoft.com',
+      weight: 10,
+      checkHealth: false,
+      fallback: true,  // ← fallback دوم
+    ),
+  ];
+}
 }
 
 class CoverDomain {
