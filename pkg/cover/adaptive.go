@@ -263,7 +263,17 @@ func (ac *AdaptiveCover) GetCoverInterval() (min, max time.Duration) {
 }
 
 func (ac *AdaptiveCover) GetActiveDomains() int {
-	return ac.GetCurrentConfig().ActiveDomains
+	domains := ac.GetCurrentConfig().ActiveDomains
+	
+	// 🔧 CHANGED: کاهش domains در battery-low یا data-saver
+	if ac.shouldReduceActivity() {
+		domains = (domains + 1) / 2 // نصف کردن (با گرد کردن به بالا)
+		if domains < 1 {
+			domains = 1
+		}
+	}
+	
+	return domains
 }
 
 // ═══════════════════════════════════════════════════════════
