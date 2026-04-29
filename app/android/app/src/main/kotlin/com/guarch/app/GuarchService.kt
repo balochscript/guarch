@@ -70,7 +70,7 @@ class GuarchService : VpnService() {
                 }
 
                 ACTION_START -> {
-                    val socksPort = intent.getIntExtra("socks_port", 1080)
+                    val socksPort = intent?.getIntExtra("socks_port", 1080) ?: 1080
                     CrashLogger.d("Service", "  socksPort=$socksPort isRunning=$isRunning")
 
                     if (isRunning) {
