@@ -77,6 +77,9 @@ type SecureConn struct {
 	isServer     bool
 	peerAddr     net.Addr
 	established  time.Time
+
+	maxPadding     int  //
+	paddingEnabled bool
 }
 
 // HandshakeConfig پیکربندی handshake
@@ -86,6 +89,8 @@ type HandshakeConfig struct {
 	ReadTimeout      time.Duration // 🆕 NEW
 	WriteTimeout     time.Duration // 🆕 NEW
 	ReplayWindowSize uint32        // 🆕 NEW
+	MaxPadding     int  
+	PaddingEnabled bool
 }
 
 // Handshake انجام PSK handshake و ایجاد SecureConn
@@ -206,6 +211,8 @@ func Handshake(raw net.Conn, isServer bool, cfg *HandshakeConfig) (*SecureConn, 
 		isServer:     isServer,         // 🆕 ADDED
 		peerAddr:     raw.RemoteAddr(), // 🆕 ADDED
 		established:  time.Now(),       // 🆕 ADDED
+		maxPadding:     cfg.MaxPadding,     // ← اضافه کن
+		paddingEnabled: cfg.PaddingEnabled,
 	}
 
 	// PSK authentication
@@ -342,6 +349,7 @@ func (sc *SecureConn) SendPacket(pkt *protocol.Packet) error {
 }
 
 // Send ارسال data (به عنوان DATA packet)
+// Send ارسال data با smart padding (اگر فعال باشد)
 func (sc *SecureConn) Send(data []byte) error {
 	sc.sendMu.Lock()
 	defer sc.sendMu.Unlock()
@@ -349,10 +357,22 @@ func (sc *SecureConn) Send(data []byte) error {
 	atomic.AddUint32(&sc.sendSeq, 1)
 	seq := atomic.LoadUint32(&sc.sendSeq)
 	
-	pkt, err := protocol.NewDataPacket(data, seq)
+	var pkt *protocol.Packet
+	var err error
+	
+	// 🔧 CHANGED: استفاده از smart padding
+	if sc.paddingEnabled && sc.maxPadding > 0 {
+		paddingSize := protocol.CalculateSmartPadding(len(data), sc.maxPadding)
+		targetSize := len(data) + paddingSize
+		pkt, err = protocol.NewPaddedDataPacket(data, seq, targetSize)
+	} else {
+		pkt, err = protocol.NewDataPacket(data, seq)
+	}
+	
 	if err != nil {
 		return err
 	}
+	
 	return sc.sendRaw(pkt)
 }
 
