@@ -346,73 +346,134 @@ class _AddServerScreenState extends State<AddServerScreen> {
                         ),
                       ),
                       const SizedBox(height: 8),
-                      
+
                       ..._sniDomains.asMap().entries.map((entry) {
-                        final index = entry.key;
-                        final domain = entry.value;
-                        return Padding(
-                          padding: const EdgeInsets.only(bottom: 4),
-                          child: Row(
-                            children: [
-                              Icon(
-                                domain.enabled
-                                    ? Icons.check_circle
-                                    : Icons.remove_circle,
-                                size: 16,
-                                color: domain.enabled ? Colors.green : Colors.grey,
-                              ),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                child: Text(
-                                  domain.domain,
-                                  style: TextStyle(
-                                    fontSize: 14,
-                                    color: textSecondary(context),
-                                  ),
-                                ),
-                              ),
-                              if (_sniMode == 'weighted')
-                                Text(
-                                  '${domain.weight}%',
-                                  style: TextStyle(
-                                    color: textMuted(context),
-                                    fontSize: 12,
-                                  ),
-                                ),
-                              const SizedBox(width: 8),
-                              InkWell(
-                                onTap: () => setState(() {
-                                  domain.enabled = !domain.enabled;
-                                }),
-                                child: Padding(
-                                  padding: const EdgeInsets.all(4),
-                                  child: Icon(
-                                    domain.enabled
-                                        ? Icons.visibility
-                                        : Icons.visibility_off,
-                                    size: 16,
-                                    color: textMuted(context),
-                                  ),
-                                ),
-                              ),
-                              InkWell(
-                                onTap: () => setState(() {
-                                  _sniDomains.removeAt(index);
-                                  _recalculateSNIWeights();
-                                }),
-                                child: const Padding(
-                                  padding: EdgeInsets.all(4),
-                                  child: Icon(
-                                    Icons.close,
-                                    size: 16,
-                                    color: Colors.red,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        );
-                      }),
+  final domain = entry.value;
+  
+  // ← اضافه کن: محاسبه icon و color
+  IconData icon;
+  Color color;
+  if (domain.fallback) {
+    icon = Icons.shield;  // fallback = سپر
+    color = Colors.blue;
+  } else if (domain.checkHealth) {
+    icon = Icons.check_circle;  // health check = چک
+    color = Colors.green;
+  } else {
+    icon = Icons.circle_outlined;  // نه fallback نه health
+    color = Colors.grey;
+  }
+  
+  return Padding(
+    padding: const EdgeInsets.only(bottom: 4),
+    child: Row(
+      children: [
+        Icon(icon, size: 16, color: color),  // ← تغییر
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(
+            domain.domain,
+            style: TextStyle(
+              fontSize: 14,
+              color: textSecondary(context),
+            ),
+          ),
+        ),
+        
+        // ← اضافه کن: نمایش badges
+        if (domain.fallback)
+          const Chip(
+            label: Text('Fallback', style: TextStyle(fontSize: 10)),
+            backgroundColor: Colors.blue,
+            visualDensity: VisualDensity.compact,
+            labelPadding: EdgeInsets.symmetric(horizontal: 4),
+          ),
+        const SizedBox(width: 4),
+        if (domain.checkHealth && !domain.fallback)
+          const Chip(
+            label: Text('Health', style: TextStyle(fontSize: 10)),
+            backgroundColor: Colors.green,
+            visualDensity: VisualDensity.compact,
+            labelPadding: EdgeInsets.symmetric(horizontal: 4),
+          ),
+        
+        if (_sniMode == 'weighted')
+          Text(
+            '${domain.weight}%',
+            style: TextStyle(
+              color: textMuted(context),
+              fontSize: 12,
+            ),
+          ),
+        const SizedBox(width: 8),
+        
+        // ← تغییر: 3 دکمه (health / fallback / delete)
+        PopupMenuButton<String>(
+          icon: Icon(Icons.more_vert, size: 16, color: textMuted(context)),
+          itemBuilder: (context) => [
+            PopupMenuItem(
+              value: 'health',
+              child: Row(
+                children: [
+                  Icon(
+                    domain.checkHealth ? Icons.check_box : Icons.check_box_outline_blank,
+                    size: 18,
+                  ),
+                  const SizedBox(width: 8),
+                  const Text('Health Check'),
+                ],
+              ),
+            ),
+            PopupMenuItem(
+              value: 'fallback',
+              child: Row(
+                children: [
+                  Icon(
+                    domain.fallback ? Icons.check_box : Icons.check_box_outline_blank,
+                    size: 18,
+                  ),
+                  const SizedBox(width: 8),
+                  const Text('Fallback'),
+                ],
+              ),
+            ),
+            const PopupMenuDivider(),
+            const PopupMenuItem(
+              value: 'delete',
+              child: Row(
+                children: [
+                  Icon(Icons.delete, size: 18, color: Colors.red),
+                  SizedBox(width: 8),
+                  Text('Delete', style: TextStyle(color: Colors.red)),
+                ],
+              ),
+            ),
+          ],
+          onSelected: (value) {
+            setState(() {
+              switch (value) {
+                case 'health':
+                  domain.checkHealth = !domain.checkHealth;
+                  break;
+                case 'fallback':
+                  // ← اگه fallback شد، health رو خاموش کن
+                  domain.fallback = !domain.fallback;
+                  if (domain.fallback) {
+                    domain.checkHealth = false;
+                  }
+                  break;
+                case 'delete':
+                  _sniDomains.removeAt(index);
+                  _recalculateSNIWeights();
+                  break;
+              }
+            });
+          },
+        ),
+      ],
+    ),
+  );
+});
                       
                       if (_sniDomains.isEmpty)
                         const Padding(
