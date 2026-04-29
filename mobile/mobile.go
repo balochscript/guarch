@@ -370,6 +370,14 @@ func (e *Engine) connectInternal() error {
 		}
 		
 		adaptiveCover := cover.NewAdaptiveCover(modeCfg)
+
+		if cfg.Cover.Adaptive.BatteryAware {
+			adaptiveCover.SetBatteryAware(true)
+		}
+		if cfg.Cover.Adaptive.DataSaverMode {
+			adaptiveCover.SetDataSaverMode(true)
+		}
+		
 		coverMgr = cover.NewManager(coverCfg, adaptiveCover)
 
 		e.mu.Lock()
