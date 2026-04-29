@@ -91,23 +91,39 @@ func NewManagerWithClient(cfg *Config, client *http.Client, adaptive *AdaptiveCo
 	}
 }
 
-// Start شروع cover traffic
 func (m *Manager) Start(ctx context.Context) {
-	m.mu.Lock()
-	if !m.config.Enabled {
-		m.mu.Unlock()
-		log.Println("[cover] disabled in config, not starting")
-		return
-	}
-	m.running = true
-	m.mu.Unlock()
+    m.mu.Lock()
+    
+    // ═══════════════════════════════════════════════════════════
+    // ✅ CHECK: اگه cover traffic غیرفعاله، شروع نکن
+    // ═══════════════════════════════════════════════════════════
+    if !m.config.Enabled {
+        m.mu.Unlock()
+        log.Println("[cover] disabled in config, not starting")
+        return
+    }
+    
+    // ═══════════════════════════════════════════════════════════
+    // ✅ CHECK: اگه قبلاً running هست، دوباره start نکن
+    // ═══════════════════════════════════════════════════════════
+    if m.running {
+        m.mu.Unlock()
+        log.Println("[cover] already running")
+        return
+    }
+    
+    m.running = true
+    m.mu.Unlock()
 
-	log.Printf("[cover] starting cover traffic with %d domains", len(m.config.Domains))
-
-	for i, domain := range m.config.Domains {
-		m.wg.Add(1)
-		go m.domainWorker(ctx, domain, i)
-	}
+    log.Printf("[cover] starting cover traffic with %d domains", len(m.config.Domains))
+    // ═══════════════════════════════════════════════════════════
+    // 🚀 START WORKERS: هر domain یه goroutine می‌گیره
+    // این worker ها به صورت مداوم به domain درخواست میفرستن
+    // ═══════════════════════════════════════════════════════════
+    for i, domain := range m.config.Domains {
+        m.wg.Add(1)
+        go m.domainWorker(ctx, domain, i)
+    }
 }
 
 // domainWorker worker برای هر domain
@@ -329,17 +345,28 @@ func (m *Manager) Adaptive() *AdaptiveCover {
 	return m.adaptive
 }
 
-// IsRunning چک کردن وضعیت
-func (m *Manager) IsRunning() bool {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-	return m.running
+func (m *Manager) Stop() {
+    // ═══════════════════════════════════════════════════════════
+    // 🛑 GRACEFUL SHUTDOWN:
+    // 1. منتظر میمونیم تا همه worker ها تمام بشن
+    // 2. بعد flag رو false میکنیم
+    // ═══════════════════════════════════════════════════════════
+    m.wg.Wait()
+    
+    // ═══════════════════════════════════════════════════════════
+    // 🔧 FIXED: حالا running رو false کن
+    // ═══════════════════════════════════════════════════════════
+    m.mu.Lock()
+    m.running = false
+    m.mu.Unlock()
+    
+    log.Println("[cover] stopped")
 }
 
-// Stop متوقف کردن manager
-func (m *Manager) Stop() {
-	m.wg.Wait()
-	log.Println("[cover] stopped")
+func (m *Manager) IsRunning() bool {
+    m.mu.RLock()
+    defer m.mu.RUnlock()
+    return m.running
 }
 
 // ═══════════════════════════════════════════════════════════
