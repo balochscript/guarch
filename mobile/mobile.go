@@ -239,12 +239,13 @@ func (e *Engine) SetBatteryLevel(level int) {
 	e.batteryLevel = level
 	e.logDebug(fmt.Sprintf("Battery level: %d%%", level))
 
-	if e.config == nil || e.adaptiveCover == nil {
-		return
-	}
-
-	if e.config.Cover.Adaptive.BatteryAware && level < 20 {
-		e.logWarn(fmt.Sprintf("Low battery (%d%%) - reducing activity", level))
+	// 🔧 FIXED: اعمال به adaptiveCover
+	if e.adaptiveCover != nil {
+		e.adaptiveCover.SetBatteryLevel(level)
+		
+		if e.config != nil && e.config.Cover.Adaptive.BatteryAware && level < 20 {
+			e.logWarn(fmt.Sprintf("Low battery (%d%%) - reducing cover activity", level))
+		}
 	}
 }
 
