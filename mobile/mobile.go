@@ -259,6 +259,11 @@ func (e *Engine) SetDataSaverMode(enabled bool) {
 		e.config.Cover.Adaptive.DataSaverMode = enabled
 	}
 
+	// 🔧 FIXED: اعمال به adaptiveCover
+	if e.adaptiveCover != nil {
+		e.adaptiveCover.SetDataSaverMode(enabled)
+	}
+
 	e.logInfo(fmt.Sprintf("Data saver mode: %v", enabled))
 }
 
