@@ -432,8 +432,13 @@ func (e *Engine) connectGuarch(cfg *config.ServerConfig, coverMgr *cover.Manager
 
 	tlsConn.SetDeadline(time.Now().Add(HandshakeTimeout))
 
+		// 🔧 CHANGED: اضافه کردن padding config
+	maxPadding := config.GetMaxPaddingForMode(cfg.Cover.Mode)
+	
 	handshakeCfg := &transport.HandshakeConfig{
-		PSK: []byte(cfg.Server.PSK),
+		PSK:            []byte(cfg.Server.PSK),
+		MaxPadding:     maxPadding,     // ← اضافه کن
+		PaddingEnabled: maxPadding > 0, // ← اضافه کن
 	}
 
 	sc, err := transport.Handshake(tlsConn, false, handshakeCfg)
