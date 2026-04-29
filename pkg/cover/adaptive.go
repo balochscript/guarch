@@ -239,7 +239,14 @@ func (ac *AdaptiveCover) GetCurrentConfig() LevelConfig {
 }
 
 func (ac *AdaptiveCover) GetMaxPadding() int {
-	return ac.GetCurrentConfig().MaxPadding
+	maxPad := ac.GetCurrentConfig().MaxPadding
+	
+	// 🔧 CHANGED: کاهش padding در battery-low یا data-saver
+	if ac.shouldReduceActivity() {
+		maxPad /= 2
+	}
+	
+	return maxPad
 }
 
 func (ac *AdaptiveCover) GetCoverInterval() (min, max time.Duration) {
