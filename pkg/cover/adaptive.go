@@ -114,6 +114,10 @@ func NewAdaptiveCover(modeCfg *ModeConfig) *AdaptiveCover {
 				CoverMaxInterval: 6 * time.Second,
 			},
 		},
+		batteryLevel:     100, // ← اضافه کن
+		batteryAware:     false, // ← اضافه کن
+		dataSaverMode:    false, // ← اضافه کن
+		batteryThreshold: 20, // ← اضافه کن
 	}
 
 	go ac.updateLoop()
