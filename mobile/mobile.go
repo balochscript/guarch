@@ -369,15 +369,8 @@ func (e *Engine) connectInternal() error {
         MaxPadding: maxPadding,
     }
     
-    // ═══════════════════════════════════════════════════════════
-    // ساخت AdaptiveCover
-    // ═══════════════════════════════════════════════════════════
     adaptiveCover := cover.NewAdaptiveCover(modeCfg)
 
-    // ═══════════════════════════════════════════════════════════
-    // 🔧 FIXED: مقدار فعلی battery رو بگیر و به adaptiveCover بده
-    // این قبل از اینکه Flutter اولین update رو بفرسته اتفاق میفته
-    // ═══════════════════════════════════════════════════════════
     e.mu.RLock()
     currentBattery := e.batteryLevel
     currentDataSaver := e.dataSaverMode
@@ -772,50 +765,93 @@ func (e *Engine) sendConnectRequest(stream io.ReadWriter, target string) error {
 }
 
 func (e *Engine) relayWithStats(stream io.ReadWriteCloser, conn net.Conn) {
-	done := make(chan struct{}, 2)
+    done := make(chan struct{}, 2)
 
-	go func() {
-		defer e.recoverPanic("relay upload")
-		buf := make([]byte, 32768)
-		for {
-			n, err := conn.Read(buf)
-			if n > 0 {
-				stream.Write(buf[:n])
-				e.stats.mu.Lock()
-				e.stats.totalUpload += int64(n)
-				e.stats.mu.Unlock()
-			}
-			if err != nil {
-				break
-			}
-		}
-		done <- struct{}{}
-	}()
+    // ═══════════════════════════════════════════════════════════
+    // 📤 UPLOAD: Browser/App → VPN Server
+    // ═══════════════════════════════════════════════════════════
+    go func() {
+        defer e.recoverPanic("relay upload")
+        buf := make([]byte, 32768)
+        
+        for {
+            n, err := conn.Read(buf)
+            
+            if n > 0 {
+                written, writeErr := stream.Write(buf[:n])
+                
+                if writeErr != nil {
+                    e.logError(fmt.Sprintf("Stream write failed: %v", writeErr))
+                    break 
+                }
+                
+                if written > 0 {
+                    e.stats.mu.Lock()
+                    e.stats.totalUpload += int64(written)
+                    e.stats.mu.Unlock()
+                    if e.adaptiveCover != nil {
+                        e.adaptiveCover.RecordTraffic(int64(written))
+                    }
+                }
+            }
+            
+            if err != nil {
+                if err != io.EOF {
+                    e.logError(fmt.Sprintf("Connection read error: %v", err))
+                }
+                break
+            }
+        }
+        
+        done <- struct{}{}
+    }()
 
-	go func() {
-		defer e.recoverPanic("relay download")
-		buf := make([]byte, 32768)
-		for {
-			n, err := stream.Read(buf)
-			if n > 0 {
-				conn.Write(buf[:n])
-				e.stats.mu.Lock()
-				e.stats.totalDownload += int64(n)
-				e.stats.mu.Unlock()
-			}
-			if err != nil {
-				break
-			}
-		}
-		done <- struct{}{}
-	}()
+    // ═══════════════════════════════════════════════════════════
+    // 📥 DOWNLOAD: VPN Server → Browser/App
+    // ═══════════════════════════════════════════════════════════
+    go func() {
+        defer e.recoverPanic("relay download")
+        buf := make([]byte, 32768)
+        
+        for {
+            n, err := stream.Read(buf)
+            
+            if n > 0 {
+                written, writeErr := conn.Write(buf[:n])
+                
+                if writeErr != nil {
+                    e.logError(fmt.Sprintf("Connection write failed: %v", writeErr))
+                    break
+                }
+                
+                if written > 0 {
+                    e.stats.mu.Lock()
+                    e.stats.totalDownload += int64(written)
+                    e.stats.mu.Unlock()
+                    
+                    if e.adaptiveCover != nil {
+                        e.adaptiveCover.RecordTraffic(int64(written))
+                    }
+                }
+            }
+            
+            if err != nil {
+                if err != io.EOF {
+                    e.logError(fmt.Sprintf("Stream read error: %v", err))
+                }
+                break
+            }
+        }
+        
+        done <- struct{}{}
+    }()
 
-	<-done
-	stream.Close()
-	conn.Close()
-	<-done
+    <-done
+    
+    stream.Close()
+    conn.Close()
+    <-done
 }
-
 // ═══════════════════════════════════════════════════════════
 // Background Tasks
 // ═══════════════════════════════════════════════════════════
