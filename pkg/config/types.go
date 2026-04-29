@@ -248,3 +248,21 @@ type ServerStats struct {
 	SuccessRate   float64 `json:"success_rate"` // 0.0 - 1.0
 	TotalConnections int `json:"total_connections"`
 }
+
+// ═══════════════════════════════════════════════════════════
+// Helper Functions
+// ═══════════════════════════════════════════════════════════
+
+// GetMaxPaddingForMode برگرداندن حداکثر padding بر اساس mode
+func GetMaxPaddingForMode(mode string) int {
+	switch mode {
+	case "stealth":
+		return 1024
+	case "balanced":
+		return 256
+	case "fast", "off":
+		return 0
+	default:
+		return 256 // default = balanced
+	}
+}
