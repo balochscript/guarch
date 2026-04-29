@@ -362,33 +362,53 @@ func (e *Engine) connectInternal() error {
 
 	var coverMgr *cover.Manager
 	if cfg.Cover.Enabled {
-		coverCfg := e.buildCoverConfig(&cfg.Cover)
-		
-		maxPadding := config.GetMaxPaddingForMode(cfg.Cover.Mode)
-		modeCfg := &cover.ModeConfig{
-			MaxPadding: maxPadding,
-		}
-		
-		adaptiveCover := cover.NewAdaptiveCover(modeCfg)
+    coverCfg := e.buildCoverConfig(&cfg.Cover)
+    
+    maxPadding := config.GetMaxPaddingForMode(cfg.Cover.Mode)
+    modeCfg := &cover.ModeConfig{
+        MaxPadding: maxPadding,
+    }
+    
+    // ═══════════════════════════════════════════════════════════
+    // ساخت AdaptiveCover
+    // ═══════════════════════════════════════════════════════════
+    adaptiveCover := cover.NewAdaptiveCover(modeCfg)
 
-		if cfg.Cover.Adaptive.BatteryAware {
-			adaptiveCover.SetBatteryAware(true)
-		}
-		if cfg.Cover.Adaptive.DataSaverMode {
-			adaptiveCover.SetDataSaverMode(true)
-		}
-		
-		coverMgr = cover.NewManager(coverCfg, adaptiveCover)
+    // ═══════════════════════════════════════════════════════════
+    // 🔧 FIXED: مقدار فعلی battery رو بگیر و به adaptiveCover بده
+    // این قبل از اینکه Flutter اولین update رو بفرسته اتفاق میفته
+    // ═══════════════════════════════════════════════════════════
+    e.mu.RLock()
+    currentBattery := e.batteryLevel
+    currentDataSaver := e.dataSaverMode
+    e.mu.RUnlock()
+    
+    adaptiveCover.SetBatteryLevel(currentBattery)
+    log.Printf("[cover] Initial battery level: %d%%", currentBattery)
 
-		e.mu.Lock()
-		e.coverManager = coverMgr
-		e.adaptiveCover = adaptiveCover
-		e.mu.Unlock()
+    if cfg.Cover.Adaptive.BatteryAware {
+        adaptiveCover.SetBatteryAware(true)
+        if currentBattery < 20 {
+            log.Println("[cover] Low battery detected - reducing cover activity")
+        }
+    }
+    
+    if cfg.Cover.Adaptive.DataSaverMode || currentDataSaver {
+        adaptiveCover.SetDataSaverMode(true)
+        log.Println("[cover] Data saver mode enabled")
+    }
+    
+    coverMgr = cover.NewManager(coverCfg, adaptiveCover)
+    
+    e.mu.Lock()
+    e.coverManager = coverMgr
+    e.adaptiveCover = adaptiveCover
+    e.mu.Unlock()
 
-		coverMgr.Start(e.ctx)
-		e.logInfo(fmt.Sprintf("Cover traffic enabled (%s mode, %d domains)",
-			cfg.Cover.Mode, len(cfg.Cover.Domains)))
-	}
+    coverMgr.Start(e.ctx)
+    log.Printf("[cover] Cover traffic enabled (%s mode, %d domains)",
+        cfg.Cover.Mode, len(cfg.Cover.Domains))
+}
 
 	switch strings.ToLower(protocol) {
 	case "grouk":
