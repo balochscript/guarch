@@ -304,18 +304,10 @@ func (ac *AdaptiveCover) SetDataSaverMode(enabled bool) {
 	ac.dataSaverMode = enabled
 }
 
-// isBatteryLow چک کردن باتری کم
-func (ac *AdaptiveCover) isBatteryLow() bool {
-	ac.mu.RLock()
-	defer ac.mu.RUnlock()
-	
-	return ac.batteryAware && ac.batteryLevel < ac.batteryThreshold
-}
-
 // shouldReduceActivity چک کردن نیاز به کاهش فعالیت
 func (ac *AdaptiveCover) shouldReduceActivity() bool {
-	ac.mu.RLock()
-	defer ac.mu.RUnlock()
-	
-	return ac.isBatteryLow() || ac.dataSaverMode
+    ac.mu.RLock()
+    defer ac.mu.RUnlock()
+    isBatteryLow := ac.batteryAware && ac.batteryLevel < ac.batteryThreshold
+    return isBatteryLow || ac.dataSaverMode
 }
