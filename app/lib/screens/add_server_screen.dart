@@ -896,6 +896,11 @@ class _AddServerScreenState extends State<AddServerScreen> {
 
   Widget _quickAddSNIChip(String domain) {
     final exists = _sniDomains.any((d) => d.domain == domain);
+    final isFallbackDomain = [
+      'www.google.com',
+      'www.cloudflare.com',
+      'www.microsoft.com',
+    ].contains(domain);
     return ActionChip(
       avatar: Icon(
         exists ? Icons.check : Icons.add,
@@ -906,7 +911,11 @@ class _AddServerScreenState extends State<AddServerScreen> {
       onPressed: exists
           ? null
           : () => setState(() {
-                _sniDomains.add(SNIDomain(domain: domain));
+                _sniDomains.add(SNIDomain(
+                  domain: domain,
+                  checkHealth: !isFallbackDomain,  // ← اگه fallback نیست، health check کن
+                  fallback: isFallbackDomain,
+                ));
                 _recalculateSNIWeights();
               }),
     );
