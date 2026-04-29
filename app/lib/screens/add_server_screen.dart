@@ -1010,6 +1010,23 @@ class _AddServerScreenState extends State<AddServerScreen> {
       return;
     }
 
+    if (_sniEnabled && _sniDomains.any((d) => d.checkHealth)) {
+  // اگه health check داریم، باید حداقل یک fallback هم داشته باشیم
+  final hasFallback = _sniDomains.any((d) => d.fallback);
+  if (!hasFallback) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text(
+          'At least one domain should be marked as fallback when health check is enabled',
+        ),
+        backgroundColor: Colors.orange,
+        duration: Duration(seconds: 5),
+      ),
+    );
+    return;
+  }
+}
+
     final provider = context.read<AppProvider>();
     final psk = _pskController.text.trim();
     final pin = _pinController.text.trim();
