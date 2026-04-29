@@ -251,7 +251,15 @@ func (ac *AdaptiveCover) GetMaxPadding() int {
 
 func (ac *AdaptiveCover) GetCoverInterval() (min, max time.Duration) {
 	cfg := ac.GetCurrentConfig()
-	return cfg.CoverMinInterval, cfg.CoverMaxInterval
+	min, max = cfg.CoverMinInterval, cfg.CoverMaxInterval
+	
+	// 🔧 CHANGED: افزایش interval در battery-low یا data-saver
+	if ac.shouldReduceActivity() {
+		min *= 2
+		max *= 2
+	}
+	
+	return min, max
 }
 
 func (ac *AdaptiveCover) GetActiveDomains() int {
