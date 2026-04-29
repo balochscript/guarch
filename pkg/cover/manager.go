@@ -129,12 +129,6 @@ func (m *Manager) Start(ctx context.Context) {
 // domainWorker worker برای هر domain
 func (m *Manager) domainWorker(ctx context.Context, dc DomainConfig, index int) {
 	defer m.wg.Done()
-	defer func() {
-		m.mu.Lock()
-		m.running = false
-		m.mu.Unlock()
-	}()
-
 	// تاخیر اولیه تصادفی
 	initDelay := cryptoRandDuration(0, 5*time.Second)
 	initTimer := time.NewTimer(initDelay)
