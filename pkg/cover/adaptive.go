@@ -250,3 +250,47 @@ func (ac *AdaptiveCover) GetCoverInterval() (min, max time.Duration) {
 func (ac *AdaptiveCover) GetActiveDomains() int {
 	return ac.GetCurrentConfig().ActiveDomains
 }
+
+// ═══════════════════════════════════════════════════════════
+// Battery & Data Saver API
+// ═══════════════════════════════════════════════════════════
+
+// SetBatteryLevel تنظیم سطح باتری
+func (ac *AdaptiveCover) SetBatteryLevel(level int) {
+	ac.mu.Lock()
+	defer ac.mu.Unlock()
+	
+	ac.batteryLevel = level
+}
+
+// SetBatteryAware فعال/غیرفعال کردن battery-aware mode
+func (ac *AdaptiveCover) SetBatteryAware(enabled bool) {
+	ac.mu.Lock()
+	defer ac.mu.Unlock()
+	
+	ac.batteryAware = enabled
+}
+
+// SetDataSaverMode فعال/غیرفعال کردن data saver
+func (ac *AdaptiveCover) SetDataSaverMode(enabled bool) {
+	ac.mu.Lock()
+	defer ac.mu.Unlock()
+	
+	ac.dataSaverMode = enabled
+}
+
+// isBatteryLow چک کردن باتری کم
+func (ac *AdaptiveCover) isBatteryLow() bool {
+	ac.mu.RLock()
+	defer ac.mu.RUnlock()
+	
+	return ac.batteryAware && ac.batteryLevel < ac.batteryThreshold
+}
+
+// shouldReduceActivity چک کردن نیاز به کاهش فعالیت
+func (ac *AdaptiveCover) shouldReduceActivity() bool {
+	ac.mu.RLock()
+	defer ac.mu.RUnlock()
+	
+	return ac.isBatteryLow() || ac.dataSaverMode
+}
