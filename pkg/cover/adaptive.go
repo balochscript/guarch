@@ -51,10 +51,14 @@ type AdaptiveCover struct {
 	doneCh        chan struct{}
 	doneOnce      sync.Once
 
-	// ✅ M17: hysteresis
 	pendingLevel    ActivityLevel
 	pendingSince    time.Time
 	hysteresisDelay time.Duration
+	
+	batteryLevel     int  // ← اضافه کن
+	batteryAware     bool // ← اضافه کن
+	dataSaverMode    bool // ← اضافه کن
+	batteryThreshold int  // ← اضافه کن
 }
 
 type trafficSample struct {
