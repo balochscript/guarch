@@ -483,7 +483,6 @@ func (e *Engine) connectGuarch(cfg *config.ServerConfig, coverMgr *cover.Manager
 	m := mux.NewMux(sc, true)
 
 	e.mu.Lock()
-	e.muxConn = m
 	e.stats.connectTime = time.Now()
 	e.mu.Unlock()
 
