@@ -82,7 +82,7 @@ class GuarchService : VpnService() {
                 }
 
                 ACTION_UPDATE_NOTIFICATION -> {
-                    val text = intent.getStringExtra("text") ?: "Connected"
+                    val text = intent?.getStringExtra("text") ?: "Connected"
                     updateNotificationText(text)
                 }
 
