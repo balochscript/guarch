@@ -360,25 +360,33 @@ class CoverDomain {
 class SNIDomain {
   String domain;
   int weight;
-  bool enabled;
+  bool checkHealth;  // ← تغییر از enabled
+  bool fallback;     // ← اضافه شد
+  int priority;      // ← اضافه شد
 
   SNIDomain({
     required this.domain,
     this.weight = 10,
-    this.enabled = true,
+    this.checkHealth = true,   // ← تغییر
+    this.fallback = false,     // ← اضافه شد
+    this.priority = 0,         // ← اضافه شد
   });
 
   Map<String, dynamic> toJson() => {
         'domain': domain,
         'weight': weight,
-        'enabled': enabled,
+        'check_health': checkHealth,  // ← تغییر
+        'fallback': fallback,         // ← اضافه شد
+        'priority': priority,
       };
 
   factory SNIDomain.fromJson(Map<String, dynamic> json) {
     return SNIDomain(
       domain: json['domain'] ?? '',
       weight: json['weight'] ?? 10,
-      enabled: json['enabled'] ?? true,
+      checkHealth: json['check_health'] ?? json['enabled'] ?? true,
+      fallback: json['fallback'] ?? false,
+      priority: json['priority'] ?? 0,
     );
   }
 }
