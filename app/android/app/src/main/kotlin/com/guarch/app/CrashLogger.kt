@@ -49,10 +49,17 @@ object CrashLogger {
         Log.e(tag, msg, t)
     }
 
-    fun w(tag: String, msg: String) {
-        val line = "[${dateFormat.format(Date())}] W/$tag: $msg"
-        writeLine(line)
+    fun w(tag: String, msg: String, t: Throwable? = null) {
+    val stack = t?.let {
+        "\n  >> ${it.javaClass.name}: ${it.message}"
+    } ?: ""
+    val line = "[${dateFormat.format(Date())}] W/$tag: $msg$stack"
+    writeLine(line)
+    if (t != null) {
+        Log.w(tag, msg, t)
+    } else {
         Log.w(tag, msg)
+    }
     }
 
     private fun writeLine(line: String) {
