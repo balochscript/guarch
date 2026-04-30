@@ -39,6 +39,7 @@ type Client struct {
 	sniManager     *sni.Manager
 	coverMgr       *cover.Manager
 	adaptive       *cover.AdaptiveCover
+	healthCheck    *health.Checker // 🆕 اضافه کن
 
 	mu             sync.Mutex
 	activeMux      *mux.Mux
