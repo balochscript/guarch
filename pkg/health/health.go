@@ -29,6 +29,13 @@ func New() *Checker {
 	}
 }
 
+// SetSNIManager تنظیم SNI manager برای نمایش آمار
+func (c *Checker) SetSNIManager(mgr interface{}) {
+	c.sniMu.Lock()
+	defer c.sniMu.Unlock()
+	c.sniManager = mgr
+}
+
 func (c *Checker) AddConn()         { c.activeConns.Add(1); c.totalConns.Add(1) }
 func (c *Checker) RemoveConn()      { c.activeConns.Add(-1) }
 func (c *Checker) AddBytes(n int64) { c.totalBytes.Add(n) }
