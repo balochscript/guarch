@@ -340,9 +340,9 @@ func (e *Engine) connectInternal() error {
 	protocol := e.protocol
 	e.mu.RUnlock()
 
-	if cfg.SNI.Enabled {
-		sniCfg := e.buildSNIConfig(&cfg.SNI)
-		sniMgr, err := sni.NewManager(sniCfg)
+		if cfg.SNI.Enabled {
+		// 🆕 استفاده از integration
+		sniMgr, err := sni.NewManagerFromConfig(&cfg.SNI)
 		if err != nil {
 			e.logWarn("SNI manager init failed: " + err.Error())
 		} else {
