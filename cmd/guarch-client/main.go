@@ -347,8 +347,14 @@ func (c *Client) connect() (*mux.Mux, error) {
 		return nil, fmt.Errorf("TLS: %w", err)
 	}
 
-	// Handshake
-	hsCfg := &transport.HandshakeConfig{PSK: c.psk}
+	// 🆕 Handshake با padding config
+	maxPadding := config.GetMaxPaddingForMode(c.config.Cover.Mode)
+	hsCfg := &transport.HandshakeConfig{
+		PSK:            c.psk,
+		MaxPadding:     maxPadding,
+		PaddingEnabled: c.config.Cover.Enabled,
+	}
+	
 	tlsConn.SetDeadline(time.Now().Add(30 * time.Second))
 	sc, err := transport.Handshake(tlsConn, false, hsCfg)
 	if err != nil {
