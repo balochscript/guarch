@@ -33,6 +33,18 @@ func (c *Checker) AddBytes(n int64) { c.totalBytes.Add(n) }
 func (c *Checker) AddCoverRequest() { c.coverRequests.Add(1) }
 func (c *Checker) AddError()        { c.errors.Add(1) }
 
+// SNIStats آمار SNI rotation
+type SNIStats struct {
+	Enabled        bool              `json:"enabled"`
+	CurrentDomain  string            `json:"current_domain,omitempty"`
+	Mode           string            `json:"mode,omitempty"`
+	TotalRotations uint64            `json:"total_rotations,omitempty"`
+	LastRotation   string            `json:"last_rotation,omitempty"` // RFC3339 format
+	TotalDomains   int               `json:"total_domains"`
+	HealthyDomains int               `json:"healthy_domains,omitempty"`
+	HealthStatus   map[string]bool   `json:"health_status,omitempty"`
+}
+
 // Status ساختار وضعیت سرور (برای JSON API)
 type Status struct {
 	Status        string `json:"status"`
@@ -46,6 +58,7 @@ type Status struct {
 	TotalErrors   int64  `json:"total_errors"` // ← اضافه شد: alias برای Errors
 	GoRoutines    int    `json:"goroutines"`
 	MemoryMB      uint64 `json:"memory_mb"`
+	SNI           *SNIStats `json:"sni,omitempty"`
 }
 
 // GetStatus دریافت وضعیت فعلی سرور
