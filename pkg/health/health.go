@@ -70,7 +70,6 @@ type Status struct {
 	SNI           *SNIStats `json:"sni,omitempty"`
 }
 
-// GetStatus دریافت وضعیت فعلی سرور
 func (c *Checker) GetStatus() Status {
 	var mem runtime.MemStats
 	runtime.ReadMemStats(&mem)
@@ -78,7 +77,7 @@ func (c *Checker) GetStatus() Status {
 	
 	errCount := c.errors.Load()
 
-	return Status{
+	status := Status{
 		Status:        "running",
 		Uptime:        formatDuration(uptime),
 		UptimeSeconds: int64(uptime.Seconds()),
@@ -87,14 +86,51 @@ func (c *Checker) GetStatus() Status {
 		TotalBytes:    c.totalBytes.Load(),
 		CoverRequests: c.coverRequests.Load(),
 		Errors:        errCount,
-		TotalErrors:   errCount, // ← اضافه شد: همون مقدار Errors
+		TotalErrors:   errCount,
 		GoRoutines:    runtime.NumGoroutine(),
 		MemoryMB:      mem.Alloc / 1024 / 1024,
 	}
+	
+	// 🆕 اضافه کردن SNI stats
+	c.sniMu.RLock()
+	if c.sniManager != nil {
+		// Type assertion (فقط کار می‌کنه اگه sni.Manager باشه)
+		if mgr, ok := c.sniManager.(interface {
+			Stats() interface {
+				Enabled        bool
+				CurrentSNI     string
+				TotalSwitches  uint64
+				LastSwitch     time.Time
+				Mode           string
+				TotalDomains   int
+				HealthyDomains int
+			}
+			GetHealthStatus() map[string]bool
+		}); ok {
+			stats := mgr.Stats()
+			
+			lastRotation := ""
+			if !stats.LastSwitch.IsZero() {
+				lastRotation = stats.LastSwitch.Format(time.RFC3339)
+			}
+			
+			status.SNI = &SNIStats{
+				Enabled:        stats.Enabled,
+				CurrentDomain:  stats.CurrentSNI,
+				Mode:           stats.Mode,
+				TotalRotations: stats.TotalSwitches,
+				LastRotation:   lastRotation,
+				TotalDomains:   stats.TotalDomains,
+				HealthyDomains: stats.HealthyDomains,
+				HealthStatus:   mgr.GetHealthStatus(),
+			}
+		}
+	}
+	c.sniMu.RUnlock()
+	
+	return status
 }
 
-// Stats همان GetStatus (برای سازگاری با cmd/guarch-server/main.go)
-// ← اضافه شد: این متد برای main.go نیاز بود
 func (c *Checker) Stats() Status {
 	return c.GetStatus()
 }
