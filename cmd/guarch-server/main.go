@@ -329,7 +329,14 @@ func handleConn(raw net.Conn, cfg *config.ServerConfig) {
 	// Handshake timeout
 	raw.SetDeadline(time.Now().Add(30 * time.Second))
 
-	hsCfg := &transport.HandshakeConfig{PSK: serverPSK}
+		// 🆕 Handshake با padding config
+	maxPadding := config.GetMaxPaddingForMode(cfg.Cover.Mode)
+	hsCfg := &transport.HandshakeConfig{
+		PSK:            serverPSK,
+		MaxPadding:     maxPadding,
+		PaddingEnabled: cfg.Cover.Enabled,
+	}
+	
 	sc, err := transport.Handshake(raw, true, hsCfg)
 	if err != nil {
 		log.Printf("[guarch] handshake failed %s: %v", remoteAddr, err)
