@@ -594,7 +594,6 @@ func (e *Engine) connectZhip(cfg *config.ServerConfig, coverMgr *cover.Manager) 
 	}
 
 	e.mu.Lock()
-	// e.zhipConn = conn  ← این خط رو حذف کنید
 	e.stats.connectTime = time.Now()
 	e.mu.Unlock()
 
