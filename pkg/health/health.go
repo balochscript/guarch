@@ -19,6 +19,8 @@ type Checker struct {
 	totalBytes    atomic.Int64
 	coverRequests atomic.Int64
 	errors        atomic.Int64
+	sniManager    interface{}
+	sniMu         sync.RWMutex
 }
 
 func New() *Checker {
