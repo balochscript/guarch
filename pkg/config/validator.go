@@ -131,7 +131,8 @@ func (v *Validator) validateSNI(sni *SNIConfig) error {
 	}
 	
 	totalWeight := 0
-	// ← حذف: hasFallback := false (استفاده نمیشد)
+	hasFallback := false      // 🆕 اضافه شد
+	hasHealthCheck := false   // 🆕 اضافه شد
 	
 	for i, d := range sni.Domains {
 		if d.Domain == "" {
@@ -149,12 +150,23 @@ func (v *Validator) validateSNI(sni *SNIConfig) error {
 		
 		totalWeight += d.Weight
 		
-		// ← حذف: if d.Fallback { hasFallback = true }
+		// 🆕 چک fallback و health
+		if d.Fallback {
+			hasFallback = true
+		}
+		if d.CheckHealth {
+			hasHealthCheck = true
+		}
 	}
 	
 	// برای weighted mode، total weight باید > 0 باشه
 	if sni.Mode == "weighted" && totalWeight == 0 {
 		return fmt.Errorf("weighted mode requires at least one domain with weight > 0")
+	}
+	
+	// 🆕 اگه health check فعاله، باید حداقل یک fallback داشته باشیم
+	if hasHealthCheck && !hasFallback {
+		return fmt.Errorf("health check enabled but no fallback domain defined (at least one domain should have fallback=true)")
 	}
 	
 	return nil
