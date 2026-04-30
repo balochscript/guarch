@@ -783,8 +783,13 @@ Create a JSON file with the following structure:
 | `sni.enabled` | bool | Enable SNI rotation |
 | `sni.mode` | string | Selection mode: random, weighted, sequential, single |
 | `sni.rotation_interval` | duration | How often to switch SNI (e.g., "5m") |
-| `sni.health_check_interval` | duration | How often to check domain health |
-| `sni.fallback_domain` | string | Domain to use if all fail |
+| `sni.health_check_interval` | duration | How often to check domain health (e.g., "30s") |
+| `sni.health_check_timeout` | duration | Timeout for each health check (e.g., "5s") |
+| `sni.domains[].domain` | string | Domain name for SNI (e.g., "www.google.com") |
+| `sni.domains[].weight` | int | Weight for weighted mode (higher = more likely) |
+| `sni.domains[].check_health` | bool | Periodically check if domain is reachable |
+| `sni.domains[].fallback` | bool | Use as fallback when all health-checked domains fail |
+| `sni.domains[].priority` | int | Priority level (lower number = higher priority, reserved for future use) |
 | `cover_traffic.mode` | string | Mode: stealth, balanced, fast, off |
 | `cover_traffic.adaptive.enabled` | bool | Enable adaptive cover (adjusts to traffic) |
 | `cover_traffic.battery_aware.enabled` | bool | Reduce cover when battery low |
