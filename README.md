@@ -947,41 +947,62 @@ The SNI manager automatically monitors domain health:
     "rotation_interval": "5m",
     "health_check_interval": "30s",
     "health_check_timeout": "5s",
-    "fallback_domain": "www.google.com",
     "domains": [
       {
         "domain": "www.google.com",
         "weight": 30,
-        "enabled": true
+        "check_health": true,
+        "priority": 1
       },
       {
         "domain": "www.microsoft.com",
         "weight": 20,
-        "enabled": true
+        "check_health": true,
+        "priority": 2
       },
       {
         "domain": "github.com",
         "weight": 15,
-        "enabled": true
+        "check_health": true,
+        "priority": 3
       },
       {
         "domain": "www.cloudflare.com",
         "weight": 15,
-        "enabled": true
+        "check_health": false,
+        "fallback": true
       },
       {
         "domain": "stackoverflow.com",
         "weight": 10,
-        "enabled": true
+        "check_health": true,
+        "priority": 4
       },
       {
         "domain": "learn.microsoft.com",
         "weight": 10,
-        "enabled": true
+        "check_health": false,
+        "fallback": true
       }
     ]
   }
 }
+```
+
+**Domain Field Descriptions:**
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `domain` | string | Yes | Domain name (e.g., "www.google.com") |
+| `weight` | int | No | Weight for weighted selection (default: 10) |
+| `check_health` | bool | No | Enable periodic health checks (default: false) |
+| `fallback` | bool | No | Use as fallback when all others fail (default: false) |
+| `priority` | int | No | Lower number = higher priority (reserved for future use) |
+
+**Important:** 
+- At least one domain should have `fallback: true` when `check_health` is enabled
+- Fallback domains are always available even if marked unhealthy
+- When all non-fallback domains fail, manager uses fallback pool
 ```
 
 ### Runtime Behavior
