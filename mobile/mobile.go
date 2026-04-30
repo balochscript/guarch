@@ -1055,32 +1055,6 @@ func GetVersion() string {
 	return fmt.Sprintf("Guarch Mobile Engine v%s", Version)
 }
 
-// ═══════════════════════════════════════════════════════════
-// Helper Functions - Adapters
-// ═══════════════════════════════════════════════════════════
-
-func (e *Engine) buildSNIConfig(cfg *config.SNIConfig) *sni.Config {
-	domains := make([]sni.Domain, len(cfg.Domains))
-	for i, d := range cfg.Domains {
-		domains[i] = sni.Domain{
-			Domain:      d.Domain,
-			Weight:      d.Weight,
-			CheckHealth: d.CheckHealth,
-			Fallback:    d.Fallback,
-			Priority:    d.Priority,
-		}
-	}
-	
-	return &sni.Config{
-		Enabled:             cfg.Enabled,
-		Mode:                sni.SelectionMode(cfg.Mode),
-		Domains:             domains,
-		RotationInterval:    cfg.RotationInterval.Duration,
-		HealthCheckInterval: cfg.HealthCheckInterval.Duration,
-		HealthCheckTimeout:  cfg.HealthCheckTimeout.Duration,
-	}
-}
-
 func (e *Engine) buildCoverConfig(cfg *config.CoverConfig) *cover.Config {
 	domains := make([]cover.DomainConfig, len(cfg.Domains))
 	for i, d := range cfg.Domains {
