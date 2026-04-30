@@ -234,11 +234,11 @@ func main() {
 			select {
 			case maxConns <- struct{}{}:
 				activeWg.Add(1)
-				go func() {
-					defer func() { <-maxConns }()
-					defer activeWg.Done()
-					handleConn(conn)
-				}()
+			    go func() {
+				defer func() { <-maxConns }()
+				defer activeWg.Done()
+				handleConn(conn, cfg) // 🆕 پاس دادن config
+			}()
 			default:
 				log.Printf("[guarch] connection limit reached, rejecting %s", conn.RemoteAddr())
 				conn.Close()
