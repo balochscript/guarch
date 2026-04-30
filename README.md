@@ -689,13 +689,30 @@ Create a JSON file with the following structure:
     "rotation_interval": "5m",
     "health_check_interval": "30s",
     "health_check_timeout": "5s",
-    "fallback_domain": "www.google.com",
     "domains": [
       {
         "domain": "www.google.com",
         "weight": 30,
-        "enabled": true
+        "check_health": true
       },
+      {
+        "domain": "www.microsoft.com",
+        "weight": 20,
+        "check_health": true
+      },
+      {
+        "domain": "github.com",
+        "weight": 15,
+        "check_health": true
+      },
+      {
+        "domain": "www.cloudflare.com",
+        "weight": 10,
+        "check_health": false,
+        "fallback": true
+      }
+    ]
+  },
       {
         "domain": "www.microsoft.com",
         "weight": 20,
