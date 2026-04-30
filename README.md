@@ -713,18 +713,6 @@ Create a JSON file with the following structure:
       }
     ]
   },
-      {
-        "domain": "www.microsoft.com",
-        "weight": 20,
-        "enabled": true
-      },
-      {
-        "domain": "github.com",
-        "weight": 15,
-        "enabled": true
-      }
-    ]
-  },
   "cover_traffic": {
     "enabled": true,
     "mode": "stealth",
