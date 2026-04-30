@@ -530,24 +530,6 @@ func (c *Client) relayWithTracking(stream *mux.Stream, conn net.Conn) {
 	<-ch
 }
 
-// ═══════════════════════════════════════════════════════════
-// Helper: Config Conversion
-// ═══════════════════════════════════════════════════════════
-
-func convertSNIDomains(domains []config.SNIDomain) []sni.Domain {
-	result := make([]sni.Domain, len(domains))
-	for i, d := range domains {
-		result[i] = sni.Domain{
-			Domain:      d.Domain,
-			Weight:      d.Weight,
-			CheckHealth: d.CheckHealth,
-			Fallback:    d.Fallback,
-			Priority:    d.Priority,
-		}
-	}
-	return result
-}
-
 func convertCoverDomains(domains []config.CoverDomain) []cover.DomainConfig {
 	result := make([]cover.DomainConfig, len(domains))
 	for i, d := range domains {
