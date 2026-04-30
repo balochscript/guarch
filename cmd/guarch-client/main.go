@@ -128,15 +128,29 @@ func main() {
 	defer cancel()
 
 	client := &Client{
-		config:     cfg,
-		serverAddr: cfg.Server.Address,
-		certPin:    cfg.Server.CertPin,
-		psk:        []byte(cfg.Server.PSK),
+		config:      cfg,
+		serverAddr:  cfg.Server.Address,
+		certPin:     cfg.Server.CertPin,
+		psk:         []byte(cfg.Server.PSK),
+		healthCheck: health.New(), // 🆕 اضافه کن
 	}
 
 	// Initialize modules
 	if err := client.initModules(ctx); err != nil {
 		log.Fatalf("❌ Init modules: %v", err)
+	}
+	
+	// 🆕 تنظیم SNI manager برای health
+	if client.sniManager != nil {
+		client.healthCheck.SetSNIManager(client.sniManager)
+	}
+	
+	// 🆕 شروع health server (optional)
+	healthAddr := "127.0.0.1:9091" // پورت متفاوت از server
+	if _, err := client.healthCheck.StartServer(healthAddr); err != nil {
+		log.Printf("⚠️  Health server failed: %v", err)
+	} else {
+		log.Printf("[health] client endpoint: http://%s/health", healthAddr)
 	}
 
 	// ═══════════════════════════════════════
