@@ -235,17 +235,9 @@ func buildConfigFromFlags(serverAddr, psk, certPin, mode string) (*config.Server
 func (c *Client) initModules(ctx context.Context) error {
 	// SNI Manager
 	if c.config.SNI.Enabled {
-		sniCfg := &sni.Config{
-			Enabled:             c.config.SNI.Enabled,
-			Mode:                sni.SelectionMode(c.config.SNI.Mode),
-			Domains:             convertSNIDomains(c.config.SNI.Domains),
-			RotationInterval:    c.config.SNI.RotationInterval.Duration,
-			HealthCheckInterval: c.config.SNI.HealthCheckInterval.Duration,
-			HealthCheckTimeout:  c.config.SNI.HealthCheckTimeout.Duration,
-		}
-		
+		// 🆕 استفاده از integration (به جای manual conversion)
 		var err error
-		c.sniManager, err = sni.NewManager(sniCfg)
+		c.sniManager, err = sni.NewManagerFromConfig(&c.config.SNI)
 		if err != nil {
 			return fmt.Errorf("sni manager: %w", err)
 		}
@@ -255,7 +247,7 @@ func (c *Client) initModules(ctx context.Context) error {
 		}
 		
 		log.Printf("[sni] manager started (mode: %s, domains: %d)", 
-			sniCfg.Mode, len(sniCfg.Domains))
+			c.config.SNI.Mode, len(c.config.SNI.Domains))
 	}
 	
 	// Cover Traffic Manager
