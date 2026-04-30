@@ -311,7 +311,7 @@ func buildServerConfigFromFlags(addr, psk, mode string) (*config.ServerConfig, e
 // Connection Handler
 // ═══════════════════════════════════════════════════════════
 
-func handleConn(raw net.Conn) {
+func handleConn(raw net.Conn, cfg *config.ServerConfig) {
 	defer raw.Close()
 
 	remoteAddr := raw.RemoteAddr().String()
