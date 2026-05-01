@@ -20,6 +20,11 @@ class ServerConfig {
   String dnsFallbackMode;
   bool batteryAwareEnabled;
   bool dataSaverEnabled;
+
+  String dnsFallbackDomain;
+  List<String> dnsFallbackServers;
+  int dnsFallbackTimeout;
+  int dnsFallbackSwitchThreshold;
   
   String shapingPattern;
   int maxPadding;
