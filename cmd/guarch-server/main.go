@@ -214,6 +214,93 @@ func main() {
 	log.Printf("✅ Server ready on %s", listenAddr)
 	log.Println("[guarch] ready to accept connections 🏹")
 
+	// ═══════════════════════════════════════════════════════════
+// DNS Fallback Listener (اگه enabled باشه)
+// ═══════════════════════════════════════════════════════════
+if cfg.DNS.Enabled {
+    log.Printf("[dns] Starting DNS fallback listener...")
+    
+    // ═══════════════════════════════════════════════════════════
+    // تنظیمات DNS server از config
+    // ═══════════════════════════════════════════════════════════
+    dnsListenAddr := cfg.DNS.ListenAddr
+    if dnsListenAddr == "" {
+        dnsListenAddr = ":53" // پیش‌فرض
+    }
+    
+    dnsServerCfg := &dns.ServerConfig{
+        Domain: cfg.DNS.Domain,
+        Addr:   dnsListenAddr,
+    }
+    
+    dnsServer, err := dns.NewServer(dnsServerCfg)
+    if err != nil {
+        log.Printf("⚠️  DNS server init failed: %v", err)
+    } else {
+        // ═══════════════════════════════════════════════════════════
+        // تنظیمات اضافی از config
+        // ═══════════════════════════════════════════════════════════
+        if cfg.DNS.MaxSessions > 0 {
+            dnsServer.SetMaxSessions(cfg.DNS.MaxSessions)
+        }
+        
+        if cfg.DNS.SessionTimeout.Duration > 0 {
+            dnsServer.SetSessionTimeout(cfg.DNS.SessionTimeout.Duration)
+        }
+        
+        if cfg.DNS.RateLimit > 0 {
+            dnsServer.SetRateLimit(cfg.DNS.RateLimit)
+        }
+        
+        // ═══════════════════════════════════════════════════════════
+        // Handler برای data packets
+        // ═══════════════════════════════════════════════════════════
+        dnsServer.OnData(func(sessionID uint32, data []byte) []byte {
+            log.Printf("[dns] Data received (session: %08x, len: %d)", sessionID, len(data))
+            
+            // TODO: پردازش واقعی data
+            // این باید مثل handleStream() کار کنه:
+            // 1. Parse ConnectRequest
+            // 2. Connect to target
+            // 3. Relay data
+            // 4. Return response
+            
+            return []byte("ok") // placeholder
+        })
+        
+        // ═══════════════════════════════════════════════════════════
+        // Handler برای handshake
+        // ═══════════════════════════════════════════════════════════
+        dnsServer.OnHandshake(func(sessionID, clientID uint32, publicKey []byte) error {
+            log.Printf("[dns] Handshake from client %08x → session %08x", clientID, sessionID)
+            
+            // TODO: اعتبارسنجی handshake
+            // می‌تونیم PSK verification انجام بدیم
+            
+            return nil
+        })
+        
+        // ═══════════════════════════════════════════════════════════
+        // Start DNS server
+        // ═══════════════════════════════════════════════════════════
+        if err := dnsServer.Start(); err != nil {
+            log.Printf("⚠️  DNS server start failed: %v", err)
+        } else {
+            log.Printf("[dns] ✅ Listening on %s for domain %s", dnsListenAddr, cfg.DNS.Domain)
+            
+            if cfg.DNS.MaxSessions > 0 {
+                log.Printf("[dns]    Max sessions: %d", cfg.DNS.MaxSessions)
+            }
+            if cfg.DNS.SessionTimeout.Duration > 0 {
+                log.Printf("[dns]    Session timeout: %v", cfg.DNS.SessionTimeout.Duration)
+            }
+            if cfg.DNS.RateLimit > 0 {
+                log.Printf("[dns]    Rate limit: %d queries/sec", cfg.DNS.RateLimit)
+            }
+        }
+    }
+}
+
 	// ═══════════════════════════════════════
 	// Accept Loop
 	// ═══════════════════════════════════════
