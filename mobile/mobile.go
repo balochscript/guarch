@@ -649,16 +649,40 @@ func (e *Engine) enableDNSFallback() error {
 	// 🔧 FIX: راه‌اندازی SOCKS5 با DNS tunnel
 	// ═══════════════════════════════════════════════════════════
 	return e.startSOCKS5(func() (io.ReadWriteCloser, error) {
-		// تولید session ID تصادفی
-		sessionID := uint32(time.Now().UnixNano() & 0xFFFFFFFF)
-		
-		// ساخت wrapper
-		wrapper := dns.NewStreamWrapper(e.dnsClient, sessionID)
-		
-		e.logDebug(fmt.Sprintf("DNS stream created (session: %08x)", sessionID))
-		
-		return wrapper, nil
-	})
+    sessionID := uint32(time.Now().UnixNano() & 0xFFFFFFFF)
+    
+    // ═══════════════════════════════════════════════════════════
+    // ساخت stream config از DNS config
+    // ═══════════════════════════════════════════════════════════
+    streamCfg := &dns.StreamConfig{
+        RecvBufferSize: 65536,  // 64KB
+        SendBufferSize: 32768,  // 32KB
+        ReadTimeout:    0,      // no timeout
+        WriteTimeout:   0,      // no timeout
+        IdleTimeout:    5 * time.Minute,
+        MaxRetries:     e.config.DNS.MaxRetries,
+        RetryDelay:     e.config.DNS.RetryDelay.Duration,
+        MaxPacketSize:  32768,
+        Compression:    e.config.DNS.Compression,
+    }
+    
+    // اگر user مقادیر سفارشی set کرده، استفاده کن
+    if e.config.DNS.BufferSize > 0 {
+        streamCfg.RecvBufferSize = e.config.DNS.BufferSize
+        streamCfg.SendBufferSize = e.config.DNS.BufferSize / 2
+    }
+    
+    if e.config.DNS.MaxPacketSize > 0 {
+        streamCfg.MaxPacketSize = e.config.DNS.MaxPacketSize
+    }
+    
+    wrapper := dns.NewStreamWrapperWithConfig(e.dnsClient, sessionID, streamCfg)
+    
+    e.logDebug(fmt.Sprintf("DNS stream created (session: %08x, buffer: %d)", 
+        sessionID, streamCfg.RecvBufferSize))
+    
+    return wrapper, nil
+})
 }
 
 // ═══════════════════════════════════════════════════════════
