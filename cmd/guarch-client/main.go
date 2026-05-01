@@ -502,6 +502,11 @@ func (c *Client) handleSOCKS(socksConn net.Conn, ctx context.Context) {
 		c.adaptive.RecordTraffic(1)
 	}
 
+	if c.usingDNSFallback.Load() {
+		c.handleSOCKSViaDNS(socksConn, target)
+		return
+	}
+
 	m, err := c.getOrCreateMux()
 	if err != nil {
 		log.Printf("[guarch] connection failed: %v", err)
