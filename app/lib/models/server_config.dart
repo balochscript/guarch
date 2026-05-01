@@ -171,9 +171,14 @@ class ServerConfig {
         },
       },
       'dns_fallback': {
-        'enabled': dnsFallbackEnabled,
-        'mode': dnsFallbackMode,
-      },
+      'enabled': dnsFallbackEnabled,
+      'mode': dnsFallbackMode,
+  // 🆕 اضافه کن:
+      'domain': dnsFallbackDomain,
+      'servers': dnsFallbackServers,
+      'timeout': '${dnsFallbackTimeout}s',
+      'switch_threshold': dnsFallbackSwitchThreshold,
+    },
       'listen_port': listenPort,
       'is_active': isActive,
       'ping': ping,
