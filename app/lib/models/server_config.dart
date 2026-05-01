@@ -67,8 +67,9 @@ class ServerConfig {
     this.isActive = false,
     DateTime? createdAt,
   })  : coverDomains = coverDomains ?? defaultCoverDomains(),
-        sniDomains = sniDomains ?? defaultSNIDomains(),
-        createdAt = createdAt ?? DateTime.now();
+      sniDomains = sniDomains ?? defaultSNIDomains(),
+      dnsFallbackServers = dnsFallbackServers ?? ['8.8.8.8:53', '1.1.1.1:53'],  // 🆕 اضافه کن
+      createdAt = createdAt ?? DateTime.now();
 
   String get fullAddress => '$address:$port';
 
