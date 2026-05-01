@@ -348,9 +348,10 @@ class _AddServerScreenState extends State<AddServerScreen> {
                       const SizedBox(height: 8),
 
                       ..._sniDomains.asMap().entries.map((entry) {
+  final index = entry.key;  // 🆕 اضافه شد
   final domain = entry.value;
   
-  // ← اضافه کن: محاسبه icon و color
+  // محاسبه icon و color بر اساس نوع domain
   IconData icon;
   Color color;
   if (domain.fallback) {
@@ -360,7 +361,7 @@ class _AddServerScreenState extends State<AddServerScreen> {
     icon = Icons.check_circle;  // health check = چک
     color = Colors.green;
   } else {
-    icon = Icons.circle_outlined;  // نه fallback نه health
+    icon = Icons.circle_outlined;  // معمولی
     color = Colors.grey;
   }
   
@@ -368,7 +369,7 @@ class _AddServerScreenState extends State<AddServerScreen> {
     padding: const EdgeInsets.only(bottom: 4),
     child: Row(
       children: [
-        Icon(icon, size: 16, color: color),  // ← تغییر
+        Icon(icon, size: 16, color: color),
         const SizedBox(width: 8),
         Expanded(
           child: Text(
@@ -380,34 +381,47 @@ class _AddServerScreenState extends State<AddServerScreen> {
           ),
         ),
         
-        // ← اضافه کن: نمایش badges
+        // نمایش badges
         if (domain.fallback)
-          const Chip(
-            label: Text('Fallback', style: TextStyle(fontSize: 10)),
-            backgroundColor: Colors.blue,
-            visualDensity: VisualDensity.compact,
-            labelPadding: EdgeInsets.symmetric(horizontal: 4),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+            decoration: BoxDecoration(
+              color: Colors.blue.withOpacity(0.2),
+              borderRadius: BorderRadius.circular(4),
+            ),
+            child: const Text(
+              'Fallback',
+              style: TextStyle(fontSize: 10, color: Colors.blue),
+            ),
           ),
         const SizedBox(width: 4),
         if (domain.checkHealth && !domain.fallback)
-          const Chip(
-            label: Text('Health', style: TextStyle(fontSize: 10)),
-            backgroundColor: Colors.green,
-            visualDensity: VisualDensity.compact,
-            labelPadding: EdgeInsets.symmetric(horizontal: 4),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+            decoration: BoxDecoration(
+              color: Colors.green.withOpacity(0.2),
+              borderRadius: BorderRadius.circular(4),
+            ),
+            child: const Text(
+              'Health',
+              style: TextStyle(fontSize: 10, color: Colors.green),
+            ),
           ),
         
         if (_sniMode == 'weighted')
-          Text(
-            '${domain.weight}%',
-            style: TextStyle(
-              color: textMuted(context),
-              fontSize: 12,
+          Padding(
+            padding: const EdgeInsets.only(left: 4),
+            child: Text(
+              '${domain.weight}%',
+              style: TextStyle(
+                color: textMuted(context),
+                fontSize: 12,
+              ),
             ),
           ),
         const SizedBox(width: 8),
         
-        // ← تغییر: 3 دکمه (health / fallback / delete)
+        // منوی گزینه‌ها
         PopupMenuButton<String>(
           icon: Icon(Icons.more_vert, size: 16, color: textMuted(context)),
           itemBuilder: (context) => [
@@ -453,16 +467,23 @@ class _AddServerScreenState extends State<AddServerScreen> {
             setState(() {
               switch (value) {
                 case 'health':
+                  // toggle health check
                   domain.checkHealth = !domain.checkHealth;
+                  // اگه health فعال شد، fallback رو خاموش کن
+                  if (domain.checkHealth) {
+                    domain.fallback = false;
+                  }
                   break;
                 case 'fallback':
-                  // ← اگه fallback شد، health رو خاموش کن
+                  // toggle fallback
                   domain.fallback = !domain.fallback;
+                  // اگه fallback فعال شد، health رو خاموش کن
                   if (domain.fallback) {
                     domain.checkHealth = false;
                   }
                   break;
                 case 'delete':
+                  // حذف domain
                   _sniDomains.removeAt(index);
                   _recalculateSNIWeights();
                   break;
@@ -473,7 +494,7 @@ class _AddServerScreenState extends State<AddServerScreen> {
       ],
     ),
   );
-});
+}).toList(),
                       
                       if (_sniDomains.isEmpty)
                         const Padding(
