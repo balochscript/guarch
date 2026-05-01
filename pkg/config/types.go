@@ -95,13 +95,37 @@ type AdaptiveConfig struct {
 // ═══════════════════════════════════════════════════════════
 
 // DNSConfig تنظیمات DNS tunneling fallback
+// DNSConfig تنظیمات DNS fallback
 type DNSConfig struct {
-	Enabled         bool     `json:"enabled"`
-	Domain          string   `json:"domain"`           // "tunnel.example.com"
-	Servers         []string `json:"servers"`          // ["8.8.8.8:53", "1.1.1.1:53"]
-	AutoSwitch      bool     `json:"auto_switch"`      // خودکار switch به DNS اگه TLS fail شد
-	SwitchThreshold int      `json:"switch_threshold"` // بعد از چند fail
-	Timeout         Duration `json:"timeout,omitempty"`
+    Enabled         bool     `json:"enabled"`
+    Domain          string   `json:"domain"`           // دامنه authoritative
+    
+    // ═══════════════════════════════════════════════════════════
+    // Client Settings (برای اتصال به DNS servers)
+    // ═══════════════════════════════════════════════════════════
+    Servers         []string `json:"servers"`          // لیست upstream DNS servers
+    AutoSwitch      bool     `json:"auto_switch"`      // خودکار switch به DNS اگه TLS fail شد
+    SwitchThreshold int      `json:"switch_threshold"` // بعد از چند تا TLS failure
+    Timeout         Duration `json:"timeout,omitempty"`
+    MaxRetries      int      `json:"max_retries,omitempty"`      // حداکثر تعداد retry
+    RetryDelay      Duration `json:"retry_delay,omitempty"`      // تاخیر بین retry ها
+    
+    // ═══════════════════════════════════════════════════════════
+    // Server Settings (برای اجرای DNS server authoritative)
+    // ═══════════════════════════════════════════════════════════
+    ListenAddr      string   `json:"listen_addr,omitempty"`      // آدرس listen (مثلاً ":5353" یا ":53")
+    MaxSessions     int      `json:"max_sessions,omitempty"`     // حداکثر تعداد session همزمان
+    SessionTimeout  Duration `json:"session_timeout,omitempty"`  // timeout برای session های inactive
+    RateLimit       int      `json:"rate_limit,omitempty"`       // حداکثر query در ثانیه (0 = unlimited)
+    CacheEnabled    bool     `json:"cache_enabled,omitempty"`    // فعال کردن response cache
+    CacheTTL        Duration `json:"cache_ttl,omitempty"`        // مدت زمان cache
+    
+    // ═══════════════════════════════════════════════════════════
+    // Advanced Settings
+    // ═══════════════════════════════════════════════════════════
+    BufferSize      int      `json:"buffer_size,omitempty"`      // اندازه buffer برای هر session
+    MaxPacketSize   int      `json:"max_packet_size,omitempty"`  // حداکثر اندازه packet
+    Compression     bool     `json:"compression,omitempty"`      // فشرده‌سازی data قبل از encode
 }
 
 // ═══════════════════════════════════════════════════════════
