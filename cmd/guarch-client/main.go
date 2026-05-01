@@ -410,6 +410,64 @@ func (c *Client) connect() (*mux.Mux, error) {
 	return m, nil
 }
 
+// ═══════════════════════════════════════════════════════════
+// enableDNSFallback فعال کردن DNS fallback mode
+// ═══════════════════════════════════════════════════════════
+func (c *Client) enableDNSFallback() error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if !c.config.DNS.Enabled {
+		return fmt.Errorf("DNS fallback not enabled in config")
+	}
+
+	log.Println("[dns] Initializing DNS fallback...")
+
+	// ═══════════════════════════════════════════════════════════
+	// ساخت DNS Client
+	// ═══════════════════════════════════════════════════════════
+	clientCfg := &dns.ClientConfig{
+		Domain:     c.config.DNS.Domain,
+		DNSServers: c.config.DNS.Servers,
+		Timeout:    c.config.DNS.Timeout.Duration,
+		Retries:    c.config.DNS.SwitchThreshold,
+		RetryDelay: 500 * time.Millisecond,
+	}
+	
+	if c.config.DNS.MaxRetries > 0 {
+		clientCfg.Retries = c.config.DNS.MaxRetries
+	}
+	
+	if c.config.DNS.RetryDelay.Duration > 0 {
+		clientCfg.RetryDelay = c.config.DNS.RetryDelay.Duration
+	}
+	
+	dnsClient, err := dns.NewClient(clientCfg)
+	if err != nil {
+		return fmt.Errorf("DNS client creation failed: %w", err)
+	}
+
+	c.dnsClient = dnsClient
+	c.usingDNSFallback.Store(true)
+
+	log.Println("[dns] ⚠️  DNS Fallback Mode Active (Reduced Speed ~50Kbps)")
+	log.Printf("[dns] Domain: %s", c.config.DNS.Domain)
+	log.Printf("[dns] Servers: %v", c.config.DNS.Servers)
+
+	// بستن mux فعلی (اگر وجود داره)
+	if c.activeMux != nil {
+		c.activeMux.Close()
+		c.activeMux = nil
+	}
+	
+	if c.activePM != nil {
+		c.activePM.Close()
+		c.activePM = nil
+	}
+
+	return nil
+}
+
 func (c *Client) close() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
