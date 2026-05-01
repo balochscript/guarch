@@ -584,6 +584,106 @@ func (c *Client) handleSOCKS(socksConn net.Conn, ctx context.Context) {
 	log.Printf("[guarch] ✖ %s", target)
 }
 
+// ═══════════════════════════════════════════════════════════
+// handleSOCKSViaDNS پردازش SOCKS در DNS mode
+// ═══════════════════════════════════════════════════════════
+func (c *Client) handleSOCKSViaDNS(socksConn net.Conn, target string) {
+	defer socksConn.Close()
+
+	// ساخت DNS stream
+	sessionID := uint32(time.Now().UnixNano() & 0xFFFFFFFF)
+	
+	streamCfg := &dns.StreamConfig{
+		RecvBufferSize: 65536,
+		SendBufferSize: 32768,
+		IdleTimeout:    5 * time.Minute,
+		MaxRetries:     c.config.DNS.MaxRetries,
+		RetryDelay:     c.config.DNS.RetryDelay.Duration,
+		MaxPacketSize:  32768,
+		Compression:    c.config.DNS.Compression,
+	}
+	
+	if c.config.DNS.BufferSize > 0 {
+		streamCfg.RecvBufferSize = c.config.DNS.BufferSize
+		streamCfg.SendBufferSize = c.config.DNS.BufferSize / 2
+	}
+	
+	if c.config.DNS.MaxPacketSize > 0 {
+		streamCfg.MaxPacketSize = c.config.DNS.MaxPacketSize
+	}
+	
+	dnsStream := dns.NewStreamWrapperWithConfig(c.dnsClient, sessionID, streamCfg)
+	defer dnsStream.Close()
+
+	// ارسال connect request
+	host, portStr, _ := net.SplitHostPort(target)
+	port := parsePort(portStr)
+
+	addrType := protocol.AddrTypeDomain
+	if ip := net.ParseIP(host); ip != nil {
+		if ip.To4() != nil {
+			addrType = protocol.AddrTypeIPv4
+		} else {
+			addrType = protocol.AddrTypeIPv6
+		}
+	}
+
+	req := &protocol.ConnectRequest{AddrType: addrType, Addr: host, Port: port}
+	reqData, err := req.Marshal()
+	if err != nil {
+		socks5.SendReply(socksConn, 0x01)
+		return
+	}
+
+	lenBuf := make([]byte, 2)
+	binary.BigEndian.PutUint16(lenBuf, uint16(len(reqData)))
+
+	if _, err := dnsStream.Write(lenBuf); err != nil {
+		log.Printf("[dns] write len failed: %v", err)
+		socks5.SendReply(socksConn, 0x01)
+		return
+	}
+	
+	if _, err := dnsStream.Write(reqData); err != nil {
+		log.Printf("[dns] write request failed: %v", err)
+		socks5.SendReply(socksConn, 0x01)
+		return
+	}
+
+	// خواندن status
+	statusBuf := make([]byte, 1)
+	if _, err := io.ReadFull(dnsStream, statusBuf); err != nil {
+		log.Printf("[dns] read status failed: %v", err)
+		socks5.SendReply(socksConn, 0x01)
+		return
+	}
+
+	if statusBuf[0] != protocol.ConnectSuccess {
+		socks5.SendReply(socksConn, 0x05)
+		return
+	}
+
+	socks5.SendReply(socksConn, 0x00)
+
+	log.Printf("[dns] ✅ %s (session %08x)", target, sessionID)
+	
+	// Relay
+	c.relayWithTracking(dnsStream, socksConn)
+	
+	log.Printf("[dns] ✖ %s", target)
+}
+
+// parsePort helper function
+func parsePort(s string) uint16 {
+	var p uint16
+	for _, c := range s {
+		if c >= '0' && c <= '9' {
+			p = p*10 + uint16(c-'0')
+		}
+	}
+	return p
+}
+
 func (c *Client) relayWithTracking(stream *mux.Stream, conn net.Conn) {
 	ch := make(chan error, 2)
 
