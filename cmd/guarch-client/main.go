@@ -327,19 +327,29 @@ func (c *Client) getOrCreateMux() (*mux.Mux, error) {
 }
 
 func (c *Client) connect() (*mux.Mux, error) {
-	// TLS Config
+	// ═══════════════════════════════════════════════════════════
+	// اگر DNS fallback فعال شده، از اون استفاده کن
+	// ═══════════════════════════════════════════════════════════
+	if c.usingDNSFallback.Load() {
+		log.Println("[dns] Using DNS fallback mode")
+		// DNS mode uses SOCKS5 directly, not mux
+		// این فقط برای backward compatibility است
+		return nil, fmt.Errorf("DNS mode active")
+	}
+	
+	// ═══════════════════════════════════════════════════════════
+	// TLS Connection
+	// ═══════════════════════════════════════════════════════════
+	var currentSNI string
+	if c.sniManager != nil {
+		currentSNI = c.sniManager.Get()
+		log.Printf("[sni] using: %s", currentSNI)
+	}
+
 	tlsConfig := &tls.Config{
 		MinVersion:         tls.VersionTLS13,
 		InsecureSkipVerify: true,
-	}
-	
-	// SNI
-	if c.sniManager != nil {
-		sniName := c.sniManager.Get()
-		if sniName != "" {
-			tlsConfig.ServerName = sniName
-			log.Printf("[sni] using: %s", sniName)
-		}
+		ServerName:         currentSNI,
 	}
 
 	// Certificate Pinning
@@ -364,10 +374,23 @@ func (c *Client) connect() (*mux.Mux, error) {
 		"tcp", c.serverAddr, tlsConfig,
 	)
 	if err != nil {
+		// 🆕 چک کردن آیا باید به DNS fallback switch کنیم
+		c.dnsFallbackAttempts++
+		if c.config.DNS.Enabled && c.config.DNS.AutoSwitch && 
+		   c.dnsFallbackAttempts >= c.config.DNS.SwitchThreshold {
+			log.Printf("[client] TLS failed %d times, switching to DNS fallback", c.dnsFallbackAttempts)
+			if err := c.enableDNSFallback(); err != nil {
+				return nil, fmt.Errorf("TLS failed and DNS fallback also failed: %w", err)
+			}
+			return nil, fmt.Errorf("switched to DNS mode")
+		}
 		return nil, fmt.Errorf("TLS: %w", err)
 	}
 
-	// 🆕 Handshake با padding config
+	// 🆕 TLS موفق شد، reset کردن counter
+	c.dnsFallbackAttempts = 0
+
+	// Handshake
 	maxPadding := config.GetMaxPaddingForMode(c.config.Cover.Mode)
 	hsCfg := &transport.HandshakeConfig{
 		PSK:            c.psk,
@@ -383,7 +406,6 @@ func (c *Client) connect() (*mux.Mux, error) {
 	}
 	tlsConn.SetDeadline(time.Time{})
 
-	// Mux
 	m := mux.NewMux(sc, false)
 	return m, nil
 }
