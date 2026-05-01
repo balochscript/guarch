@@ -1029,15 +1029,15 @@ class _AddServerScreenState extends State<AddServerScreen> {
       return;
     }
 
-    if (_sniEnabled && _sniDomains.where((d) => d.enabled).isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Enable at least one SNI domain'),
-          backgroundColor: Colors.orange,
-        ),
-      );
-      return;
-    }
+    if (_sniEnabled && _sniDomains.isEmpty) {
+  ScaffoldMessenger.of(context).showSnackBar(
+    const SnackBar(
+      content: Text('Add at least one SNI domain'),
+      backgroundColor: Colors.orange,
+    ),
+  );
+  return;
+}
 
     if (_sniEnabled && _sniDomains.any((d) => d.checkHealth)) {
   // اگه health check داریم، باید حداقل یک fallback هم داشته باشیم
