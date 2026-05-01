@@ -617,6 +617,9 @@ func (e *Engine) enableDNSFallback() error {
 		return fmt.Errorf("DNS fallback not enabled in config")
 	}
 
+	// ═══════════════════════════════════════════════════════════
+	// ساخت DNS Client
+	// ═══════════════════════════════════════════════════════════
 	clientCfg := &dns.ClientConfig{
 		Domain:     dnsCfg.Domain,
 		DNSServers: dnsCfg.Servers,
@@ -640,9 +643,22 @@ func (e *Engine) enableDNSFallback() error {
 		e.callback.OnDNSFallback(true)
 	}
 
-	e.logWarn("⚠ DNS Fallback Mode Active (Reduced Speed)")
+	e.logWarn("⚠️ DNS Fallback Mode Active (Reduced Speed ~50Kbps)")
 
-	return nil
+	// ═══════════════════════════════════════════════════════════
+	// 🔧 FIX: راه‌اندازی SOCKS5 با DNS tunnel
+	// ═══════════════════════════════════════════════════════════
+	return e.startSOCKS5(func() (io.ReadWriteCloser, error) {
+		// تولید session ID تصادفی
+		sessionID := uint32(time.Now().UnixNano() & 0xFFFFFFFF)
+		
+		// ساخت wrapper
+		wrapper := dns.NewStreamWrapper(e.dnsClient, sessionID)
+		
+		e.logDebug(fmt.Sprintf("DNS stream created (session: %08x)", sessionID))
+		
+		return wrapper, nil
+	})
 }
 
 // ═══════════════════════════════════════════════════════════
