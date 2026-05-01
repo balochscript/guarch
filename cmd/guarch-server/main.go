@@ -691,3 +691,113 @@ func convertCoverDomains(domains []config.CoverDomain) []cover.DomainConfig {
 	}
 	return result
 }
+
+// ═══════════════════════════════════════════════════════════
+// DNS Session Manager
+// ═══════════════════════════════════════════════════════════
+
+// DNSSessionManager مدیریت session های DNS tunnel
+type DNSSessionManager struct {
+	sessions sync.Map // sessionID -> *DNSSession
+}
+
+// DNSSession یک session DNS tunnel
+type DNSSession struct {
+	id           uint32
+	targetConn   net.Conn
+	target       string
+	recvBuffer   []byte
+	sendBuffer   []byte
+	lastActivity time.Time
+	mu           sync.Mutex
+}
+
+// getOrCreate دریافت یا ساخت session
+func (m *DNSSessionManager) getOrCreate(sessionID uint32) *DNSSession {
+	// سعی کن موجود رو بگیری
+	if val, ok := m.sessions.Load(sessionID); ok {
+		return val.(*DNSSession)
+	}
+	
+	// ساخت session جدید
+	session := &DNSSession{
+		id:           sessionID,
+		lastActivity: time.Now(),
+		recvBuffer:   make([]byte, 0, 65536),
+		sendBuffer:   make([]byte, 0, 65536),
+	}
+	
+	m.sessions.Store(sessionID, session)
+	return session
+}
+
+// cleanup پاک کردن session های قدیمی
+func (m *DNSSessionManager) cleanup(maxAge time.Duration) {
+	now := time.Now()
+	var toDelete []uint32
+	
+	m.sessions.Range(func(key, value interface{}) bool {
+		sessionID := key.(uint32)
+		session := value.(*DNSSession)
+		
+		session.mu.Lock()
+		lastActivity := session.lastActivity
+		session.mu.Unlock()
+		
+		if now.Sub(lastActivity) > maxAge {
+			toDelete = append(toDelete, sessionID)
+			session.close()
+		}
+		
+		return true
+	})
+	
+	for _, sessionID := range toDelete {
+		m.sessions.Delete(sessionID)
+		log.Printf("[dns] Session %08x expired and cleaned up", sessionID)
+	}
+}
+
+// readFromTarget خواندن از target و buffer کردن
+func (s *DNSSession) readFromTarget() {
+	buf := make([]byte, 32768)
+	
+	for {
+		if s.targetConn == nil {
+			return
+		}
+		
+		// Set read deadline
+		s.targetConn.SetReadDeadline(time.Now().Add(30 * time.Second))
+		
+		n, err := s.targetConn.Read(buf)
+		if n > 0 {
+			s.mu.Lock()
+			s.sendBuffer = append(s.sendBuffer, buf[:n]...)
+			
+			// محدود کردن buffer size
+			if len(s.sendBuffer) > 1024*1024 { // 1MB max
+				s.sendBuffer = s.sendBuffer[len(s.sendBuffer)-1024*1024:]
+			}
+			
+			s.lastActivity = time.Now()
+			s.mu.Unlock()
+		}
+		
+		if err != nil {
+			if err != io.EOF {
+				log.Printf("[dns] Read from target error: %v", err)
+			}
+			s.close()
+			return
+		}
+	}
+}
+
+// close بستن session
+func (s *DNSSession) close() {
+	if s.targetConn != nil {
+		s.targetConn.Close()
+		s.targetConn = nil
+	}
+}
