@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - debug
+      - Dev-1.0.1
   workflow_dispatch:
 
 jobs:
