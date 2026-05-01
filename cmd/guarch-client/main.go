@@ -39,12 +39,17 @@ type Client struct {
 	sniManager     *sni.Manager
 	coverMgr       *cover.Manager
 	adaptive       *cover.AdaptiveCover
-	healthCheck    *health.Checker // 🆕 اضافه کن
-
+	healthCheck    *health.Checker
+	dnsClient      *dns.Client          // 🆕 اضافه کن
+	
 	mu             sync.Mutex
 	activeMux      *mux.Mux
 	activePM       *mux.PaddedMux
 	connectBackoff time.Duration
+	
+	// 🆕 DNS Fallback state
+	usingDNSFallback atomic.Bool        // 🆕 اضافه کن
+	dnsFallbackAttempts int              // 🆕 اضافه کن
 }
 
 func main() {
