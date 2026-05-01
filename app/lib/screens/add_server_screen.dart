@@ -1006,16 +1006,15 @@ class _AddServerScreenState extends State<AddServerScreen> {
   }
 
   void _recalculateSNIWeights() {
-    if (_sniDomains.isEmpty) return;
-    final enabled = _sniDomains.where((d) => d.enabled).toList();
-    if (enabled.isEmpty) return;
-    
-    final w = 100 ~/ enabled.length;
-    final r = 100 % enabled.length;
-    for (var i = 0; i < enabled.length; i++) {
-      enabled[i].weight = w + (i < r ? 1 : 0);
-    }
+  if (_sniDomains.isEmpty) return;
+  
+  // همه domain ها را در نظر بگیر (enabled فیلد نداریم دیگه)
+  final w = 100 ~/ _sniDomains.length;
+  final r = 100 % _sniDomains.length;
+  for (var i = 0; i < _sniDomains.length; i++) {
+    _sniDomains[i].weight = w + (i < r ? 1 : 0);
   }
+}
 
   void _save() {
     if (!_formKey.currentState!.validate()) return;
