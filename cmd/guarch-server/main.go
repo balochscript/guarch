@@ -218,87 +218,182 @@ func main() {
 // DNS Fallback Listener (اگه enabled باشه)
 // ═══════════════════════════════════════════════════════════
 if cfg.DNS.Enabled {
-    log.Printf("[dns] Starting DNS fallback listener...")
-    
-    // ═══════════════════════════════════════════════════════════
-    // تنظیمات DNS server از config
-    // ═══════════════════════════════════════════════════════════
-    dnsListenAddr := cfg.DNS.ListenAddr
-    if dnsListenAddr == "" {
-        dnsListenAddr = ":53" // پیش‌فرض
-    }
-    
-    dnsServerCfg := &dns.ServerConfig{
-        Domain: cfg.DNS.Domain,
-        Addr:   dnsListenAddr,
-    }
-    
-    dnsServer, err := dns.NewServer(dnsServerCfg)
-    if err != nil {
-        log.Printf("⚠️  DNS server init failed: %v", err)
-    } else {
-        // ═══════════════════════════════════════════════════════════
-        // تنظیمات اضافی از config
-        // ═══════════════════════════════════════════════════════════
-        if cfg.DNS.MaxSessions > 0 {
-            dnsServer.SetMaxSessions(cfg.DNS.MaxSessions)
-        }
-        
-        if cfg.DNS.SessionTimeout.Duration > 0 {
-            dnsServer.SetSessionTimeout(cfg.DNS.SessionTimeout.Duration)
-        }
-        
-        if cfg.DNS.RateLimit > 0 {
-            dnsServer.SetRateLimit(cfg.DNS.RateLimit)
-        }
-        
-        // ═══════════════════════════════════════════════════════════
-        // Handler برای data packets
-        // ═══════════════════════════════════════════════════════════
-        dnsServer.OnData(func(sessionID uint32, data []byte) []byte {
-            log.Printf("[dns] Data received (session: %08x, len: %d)", sessionID, len(data))
-            
-            // TODO: پردازش واقعی data
-            // این باید مثل handleStream() کار کنه:
-            // 1. Parse ConnectRequest
-            // 2. Connect to target
-            // 3. Relay data
-            // 4. Return response
-            
-            return []byte("ok") // placeholder
-        })
-        
-        // ═══════════════════════════════════════════════════════════
-        // Handler برای handshake
-        // ═══════════════════════════════════════════════════════════
-        dnsServer.OnHandshake(func(sessionID, clientID uint32, publicKey []byte) error {
-            log.Printf("[dns] Handshake from client %08x → session %08x", clientID, sessionID)
-            
-            // TODO: اعتبارسنجی handshake
-            // می‌تونیم PSK verification انجام بدیم
-            
-            return nil
-        })
-        
-        // ═══════════════════════════════════════════════════════════
-        // Start DNS server
-        // ═══════════════════════════════════════════════════════════
-        if err := dnsServer.Start(); err != nil {
-            log.Printf("⚠️  DNS server start failed: %v", err)
-        } else {
-            log.Printf("[dns] ✅ Listening on %s for domain %s", dnsListenAddr, cfg.DNS.Domain)
-            
-            if cfg.DNS.MaxSessions > 0 {
-                log.Printf("[dns]    Max sessions: %d", cfg.DNS.MaxSessions)
-            }
-            if cfg.DNS.SessionTimeout.Duration > 0 {
-                log.Printf("[dns]    Session timeout: %v", cfg.DNS.SessionTimeout.Duration)
-            }
-            if cfg.DNS.RateLimit > 0 {
-                log.Printf("[dns]    Rate limit: %d queries/sec", cfg.DNS.RateLimit)
-            }
-        }
-    }
+	log.Printf("[dns] Starting DNS fallback listener...")
+	
+	// ═══════════════════════════════════════════════════════════
+	// تنظیمات DNS server از config
+	// ═══════════════════════════════════════════════════════════
+	dnsListenAddr := cfg.DNS.ListenAddr
+	if dnsListenAddr == "" {
+		dnsListenAddr = ":53" // پیش‌فرض
+	}
+	
+	dnsServerCfg := &dns.ServerConfig{
+		Domain: cfg.DNS.Domain,
+		Addr:   dnsListenAddr,
+	}
+	
+	dnsServer, err := dns.NewServer(dnsServerCfg)
+	if err != nil {
+		log.Printf("⚠️  DNS server init failed: %v", err)
+	} else {
+		// ═══════════════════════════════════════════════════════════
+		// تنظیمات اضافی از config
+		// ═══════════════════════════════════════════════════════════
+		if cfg.DNS.MaxSessions > 0 {
+			dnsServer.SetMaxSessions(cfg.DNS.MaxSessions)
+		}
+		
+		if cfg.DNS.SessionTimeout.Duration > 0 {
+			dnsServer.SetSessionTimeout(cfg.DNS.SessionTimeout.Duration)
+		}
+		
+		if cfg.DNS.RateLimit > 0 {
+			dnsServer.SetRateLimit(cfg.DNS.RateLimit)
+		}
+		
+		// ═══════════════════════════════════════════════════════════
+		// Session Manager برای نگهداری TCP connections
+		// ═══════════════════════════════════════════════════════════
+		sessionManager := &DNSSessionManager{
+			sessions: make(map[uint32]*DNSSession),
+		}
+		
+		// Cleanup goroutine برای session های expired
+		go func() {
+			ticker := time.NewTicker(1 * time.Minute)
+			defer ticker.Stop()
+			
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case <-ticker.C:
+					sessionManager.cleanup(5 * time.Minute)
+				}
+			}
+		}()
+		
+		// ═══════════════════════════════════════════════════════════
+		// Handler برای data packets
+		// ═══════════════════════════════════════════════════════════
+		dnsServer.OnData(func(sessionID uint32, data []byte) []byte {
+			log.Printf("[dns] Data received (session: %08x, len: %d)", sessionID, len(data))
+			
+			// دریافت یا ساخت session
+			session := sessionManager.getOrCreate(sessionID)
+			if session == nil {
+				log.Printf("[dns] Failed to create session %08x", sessionID)
+				return []byte("error")
+			}
+			
+			session.mu.Lock()
+			defer session.mu.Unlock()
+			
+			// ═══════════════════════════════════════════════════════════
+			// اولین packet: Parse ConnectRequest
+			// ═══════════════════════════════════════════════════════════
+			if session.targetConn == nil {
+				// Parse length prefix
+				if len(data) < 2 {
+					log.Printf("[dns] Invalid data (too short)")
+					return []byte("error")
+				}
+				
+				reqLen := binary.BigEndian.Uint16(data[0:2])
+				if int(reqLen) > len(data)-2 {
+					// داده ناقص - buffer کن و منتظر بمون
+					session.recvBuffer = append(session.recvBuffer, data...)
+					return []byte("ok") // ACK
+				}
+				
+				reqData := data[2 : 2+reqLen]
+				
+				// Unmarshal ConnectRequest
+				req, err := protocol.UnmarshalConnectRequest(reqData)
+				if err != nil {
+					log.Printf("[dns] Invalid ConnectRequest: %v", err)
+					return []byte("error")
+				}
+				
+				target := req.Address()
+				log.Printf("[dns] Session %08x → %s", sessionID, target)
+				
+				// Connect to target
+				targetConn, err := net.DialTimeout("tcp", target, 10*time.Second)
+				if err != nil {
+					log.Printf("[dns] Dial %s failed: %v", target, err)
+					return []byte{protocol.ConnectFailed}
+				}
+				
+				session.targetConn = targetConn
+				session.target = target
+				session.lastActivity = time.Now()
+				
+				// شروع reader goroutine برای دریافت از target
+				go session.readFromTarget()
+				
+				// ارسال ConnectSuccess
+				return []byte{protocol.ConnectSuccess}
+			}
+			
+			// ═══════════════════════════════════════════════════════════
+			// Packet های بعدی: Forward به target
+			// ═══════════════════════════════════════════════════════════
+			if session.targetConn != nil {
+				_, err := session.targetConn.Write(data)
+				if err != nil {
+					log.Printf("[dns] Write to target failed: %v", err)
+					session.close()
+					return []byte("error")
+				}
+				
+				session.lastActivity = time.Now()
+				
+				// خواندن response از target (اگه موجود باشه)
+				if len(session.sendBuffer) > 0 {
+					response := session.sendBuffer
+					session.sendBuffer = nil
+					return response
+				}
+				
+				return []byte("ok") // ACK
+			}
+			
+			return []byte("error")
+		})
+		
+		// ═══════════════════════════════════════════════════════════
+		// Handler برای handshake
+		// ═══════════════════════════════════════════════════════════
+		dnsServer.OnHandshake(func(sessionID, clientID uint32, publicKey []byte) error {
+			log.Printf("[dns] Handshake from client %08x → session %08x", clientID, sessionID)
+			
+			// TODO: اعتبارسنجی با PSK
+			// در اینجا میتونیم cryptographic handshake انجام بدیم
+			
+			return nil
+		})
+		
+		// ═══════════════════════════════════════════════════════════
+		// Start DNS server
+		// ═══════════════════════════════════════════════════════════
+		if err := dnsServer.Start(); err != nil {
+			log.Printf("⚠️  DNS server start failed: %v", err)
+		} else {
+			log.Printf("[dns] ✅ Listening on %s for domain %s", dnsListenAddr, cfg.DNS.Domain)
+			
+			if cfg.DNS.MaxSessions > 0 {
+				log.Printf("[dns]    Max sessions: %d", cfg.DNS.MaxSessions)
+			}
+			if cfg.DNS.SessionTimeout.Duration > 0 {
+				log.Printf("[dns]    Session timeout: %v", cfg.DNS.SessionTimeout.Duration)
+			}
+			if cfg.DNS.RateLimit > 0 {
+				log.Printf("[dns]    Rate limit: %d queries/sec", cfg.DNS.RateLimit)
+			}
+		}
+	}
 }
 
 	// ═══════════════════════════════════════
