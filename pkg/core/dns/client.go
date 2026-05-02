@@ -98,21 +98,23 @@ func NewClient(cfg *ClientConfig) (*Client, error) {
 	}
 	
 	c := &Client{
-		domain:     cfg.Domain,
-		dnsServers: cfg.DNSServers,
-		client: &dns.Client{
-			Net:     "udp",
-			Timeout: cfg.Timeout,
-		},
-		encoder:    NewEncoder(),
-		decoder:    NewDecoder(),
-		sessionID:  sessionID,
-		timeout:    cfg.Timeout,
-		retries:    cfg.Retries,
-		retryDelay: cfg.RetryDelay,
-	}
-	
-	return c, nil
+	domain:     cfg.Domain,
+	dnsServers: cfg.DNSServers,
+	client: &dns.Client{
+		Net:     "udp",
+		Timeout: cfg.Timeout,
+	},
+	encoder:    NewEncoder(),
+	decoder:    NewDecoder(),
+	sessionID:  sessionID,
+	timeout:    cfg.Timeout,
+	retries:    cfg.Retries,
+	retryDelay: cfg.RetryDelay,
+	recvCh:     make(chan []byte, 64),    // 🆕 اضافه کن
+	closeCh:    make(chan struct{}),       // 🆕 اضافه کن
+}
+
+return c, nil
 }
 
 // Send ارسال data از طریق DNS
