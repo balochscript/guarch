@@ -127,21 +127,3 @@ type DNSClientConfigInfo struct {
 	Timeout    time.Duration
 	MaxRetries int
 }
-
-// ═══════════════════════════════════════════════════════════
-// Helper: GetMaxPadding از Mode
-// ═══════════════════════════════════════════════════════════
-
-// GetMaxPaddingForMode دریافت max padding بر اساس mode
-func GetMaxPaddingForMode(mode string) int {
-	switch mode {
-	case "stealth":
-		return 1024
-	case "balanced":
-		return 256
-	case "fast":
-		return 0
-	default:
-		return 256
-	}
-}
