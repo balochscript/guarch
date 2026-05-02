@@ -406,3 +406,43 @@ func (br *BenchmarkResult) String() string {
 	return fmt.Sprintf("Latency: %v, Queries: %d, Size: %d bytes, Throughput: %.2f KB/s",
 		br.Latency, br.QueryCount, br.DataSize, br.Throughput/1024)
 }
+
+// ═══════════════════════════════════════════════════════════
+// Recv - دریافت streaming data
+// ═══════════════════════════════════════════════════════════
+
+// Recv دریافت data از DNS tunnel (blocking)
+func (c *Client) Recv() ([]byte, error) {
+	if c.closed.Load() {
+		return nil, fmt.Errorf("dns/client: closed")
+	}
+	
+	select {
+	case data := <-c.recvCh:
+		return data, nil
+		
+	case <-c.closeCh:
+		return nil, fmt.Errorf("dns/client: closed")
+		
+	case <-time.After(30 * time.Second):
+		return nil, fmt.Errorf("dns/client: recv timeout")
+	}
+}
+
+// RecvWithContext دریافت با context
+func (c *Client) RecvWithContext(ctx context.Context) ([]byte, error) {
+	if c.closed.Load() {
+		return nil, fmt.Errorf("dns/client: closed")
+	}
+	
+	select {
+	case data := <-c.recvCh:
+		return data, nil
+		
+	case <-c.closeCh:
+		return nil, fmt.Errorf("dns/client: closed")
+		
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+}
