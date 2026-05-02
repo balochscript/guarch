@@ -313,11 +313,13 @@ func (c *Client) SendPing(ctx context.Context) error {
 	return c.sendQuery(ctx, subdomain, seqNum)
 }
 
-// Close بستن client
 func (c *Client) Close() error {
 	if c.closed.Swap(true) {
 		return nil
 	}
+	
+	// 🆕 بستن closeCh
+	close(c.closeCh)
 	
 	// پاک کردن pending requests
 	c.pending.Range(func(key, value interface{}) bool {
@@ -326,6 +328,9 @@ func (c *Client) Close() error {
 		c.pending.Delete(key)
 		return true
 	})
+	
+	// 🆕 خالی کردن recvCh
+	close(c.recvCh)
 	
 	return nil
 }
