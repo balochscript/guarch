@@ -30,9 +30,9 @@ class ServerConfig {
   int maxPadding;
   
   // Ping & Delay Testing
-  int? ping;              // TCPing (socket connection time)
-  int? realDelay;         // Real delay (full handshake + packet round-trip)
-  DateTime? lastTested;   // Last test timestamp
+  int? ping;
+  int? realDelay;
+  DateTime? lastTested;
   
   bool isActive;
   DateTime createdAt;
@@ -67,9 +67,9 @@ class ServerConfig {
     this.isActive = false,
     DateTime? createdAt,
   })  : coverDomains = coverDomains ?? defaultCoverDomains(),
-      sniDomains = sniDomains ?? defaultSNIDomains(),
-      dnsFallbackServers = dnsFallbackServers ?? ['8.8.8.8:53', '1.1.1.1:53'],  // 🆕 اضافه کن
-      createdAt = createdAt ?? DateTime.now();
+        sniDomains = sniDomains ?? defaultSNIDomains(),
+        dnsFallbackServers = dnsFallbackServers ?? ['8.8.8.8:53', '1.1.1.1:53'],
+        createdAt = createdAt ?? DateTime.now();
 
   String get fullAddress => '$address:$port';
 
@@ -171,14 +171,13 @@ class ServerConfig {
         },
       },
       'dns_fallback': {
-      'enabled': dnsFallbackEnabled,
-      'mode': dnsFallbackMode,
-  // 🆕 اضافه کن:
-      'domain': dnsFallbackDomain,
-      'servers': dnsFallbackServers,
-      'timeout': '${dnsFallbackTimeout}s',
-      'switch_threshold': dnsFallbackSwitchThreshold,
-    },
+        'enabled': dnsFallbackEnabled,
+        'mode': dnsFallbackMode,
+        'domain': dnsFallbackDomain,
+        'servers': dnsFallbackServers,
+        'timeout': '${dnsFallbackTimeout}s',
+        'switch_threshold': dnsFallbackSwitchThreshold,
+      },
       'listen_port': listenPort,
       'is_active': isActive,
       'ping': ping,
@@ -189,7 +188,6 @@ class ServerConfig {
   }
 
   factory ServerConfig.fromJson(Map<String, dynamic> json) {
-    // Support both old and new format
     final server = json['server'] as Map<String, dynamic>? ?? json;
     final sni = json['sni'] as Map<String, dynamic>? ?? {};
     final cover = json['cover_traffic'] as Map<String, dynamic>? ?? json['cover'] ?? {};
@@ -211,6 +209,10 @@ class ServerConfig {
       sniDomains: _parseSNIDomains(sni['domains']),
       dnsFallbackEnabled: dnsFallback['enabled'] ?? false,
       dnsFallbackMode: dnsFallback['mode'] ?? 'auto',
+      dnsFallbackDomain: dnsFallback['domain'] ?? 'tunnel.example.com',
+      dnsFallbackServers: (dnsFallback['servers'] as List?)?.cast<String>() ?? ['8.8.8.8:53', '1.1.1.1:53'],
+      dnsFallbackTimeout: dnsFallback['timeout'] != null ? int.tryParse(dnsFallback['timeout'].toString().replaceAll('s', '')) ?? 5 : 5,
+      dnsFallbackSwitchThreshold: dnsFallback['switch_threshold'] ?? 3,
       batteryAwareEnabled: cover['battery_aware']?['enabled'] ?? true,
       dataSaverEnabled: cover['data_saver']?['enabled'] ?? false,
       shapingPattern: cover['mode'] ?? json['shaping_pattern'] ?? 'web_browsing',
@@ -271,67 +273,35 @@ class ServerConfig {
     return ServerConfig.fromJson(json);
   }
 
+  // ✅ فقط یک copyWith (تکرار حذف شد)
   ServerConfig copyWith({
-  String? name,
-  String? address,
-  int? port,
-  String? psk,
-  String? certPin,
-  int? listenPort,
-  String? protocol,
-  bool? coverEnabled,
-  List<CoverDomain>? coverDomains,
-  bool? sniEnabled,
-  String? sniMode,
-  List<SNIDomain>? sniDomains,
-  bool? dnsFallbackEnabled,
-  String? dnsFallbackMode,
-  // 🆕 اضافه کن:
-  String? dnsFallbackDomain,
-  List<String>? dnsFallbackServers,
-  int? dnsFallbackTimeout,
-  int? dnsFallbackSwitchThreshold,
-  // existing params...
-  bool? batteryAwareEnabled,
-  bool? dataSaverEnabled,
-  bool? isActive,
-  int? ping,
-  int? realDelay,
-  DateTime? lastTested,
-}) {
-  return ServerConfig(
-    id: id,
-    name: name ?? this.name,
-    address: address ?? this.address,
-    port: port ?? this.port,
-    psk: psk ?? this.psk,
-    certPin: certPin ?? this.certPin,
-    listenPort: listenPort ?? this.listenPort,
-    protocol: protocol ?? this.protocol,
-    coverEnabled: coverEnabled ?? this.coverEnabled,
-    coverDomains: coverDomains ?? this.coverDomains,
-    sniEnabled: sniEnabled ?? this.sniEnabled,
-    sniMode: sniMode ?? this.sniMode,
-    sniDomains: sniDomains ?? this.sniDomains,
-    dnsFallbackEnabled: dnsFallbackEnabled ?? this.dnsFallbackEnabled,
-    dnsFallbackMode: dnsFallbackMode ?? this.dnsFallbackMode,
-    // 🆕 اضافه کن:
-    dnsFallbackDomain: dnsFallbackDomain ?? this.dnsFallbackDomain,
-    dnsFallbackServers: dnsFallbackServers ?? this.dnsFallbackServers,
-    dnsFallbackTimeout: dnsFallbackTimeout ?? this.dnsFallbackTimeout,
-    dnsFallbackSwitchThreshold: dnsFallbackSwitchThreshold ?? this.dnsFallbackSwitchThreshold,
-    // rest...
-    batteryAwareEnabled: batteryAwareEnabled ?? this.batteryAwareEnabled,
-    dataSaverEnabled: dataSaverEnabled ?? this.dataSaverEnabled,
-    shapingPattern: shapingPattern,
-    maxPadding: maxPadding,
-    ping: ping ?? this.ping,
-    realDelay: realDelay ?? this.realDelay,
-    lastTested: lastTested ?? this.lastTested,
-    isActive: isActive ?? this.isActive,
-    createdAt: createdAt,
-  );
-}
+    String? name,
+    String? address,
+    int? port,
+    String? psk,
+    String? certPin,
+    int? listenPort,
+    String? protocol,
+    bool? coverEnabled,
+    List<CoverDomain>? coverDomains,
+    bool? sniEnabled,
+    String? sniMode,
+    List<SNIDomain>? sniDomains,
+    bool? dnsFallbackEnabled,
+    String? dnsFallbackMode,
+    String? dnsFallbackDomain,
+    List<String>? dnsFallbackServers,
+    int? dnsFallbackTimeout,
+    int? dnsFallbackSwitchThreshold,
+    bool? batteryAwareEnabled,
+    bool? dataSaverEnabled,
+    String? shapingPattern,
+    int? maxPadding,
+    bool? isActive,
+    int? ping,
+    int? realDelay,
+    DateTime? lastTested,
+  }) {
     return ServerConfig(
       id: id,
       name: name ?? this.name,
@@ -348,10 +318,14 @@ class ServerConfig {
       sniDomains: sniDomains ?? this.sniDomains,
       dnsFallbackEnabled: dnsFallbackEnabled ?? this.dnsFallbackEnabled,
       dnsFallbackMode: dnsFallbackMode ?? this.dnsFallbackMode,
+      dnsFallbackDomain: dnsFallbackDomain ?? this.dnsFallbackDomain,
+      dnsFallbackServers: dnsFallbackServers ?? this.dnsFallbackServers,
+      dnsFallbackTimeout: dnsFallbackTimeout ?? this.dnsFallbackTimeout,
+      dnsFallbackSwitchThreshold: dnsFallbackSwitchThreshold ?? this.dnsFallbackSwitchThreshold,
       batteryAwareEnabled: batteryAwareEnabled ?? this.batteryAwareEnabled,
       dataSaverEnabled: dataSaverEnabled ?? this.dataSaverEnabled,
-      shapingPattern: shapingPattern,
-      maxPadding: maxPadding,
+      shapingPattern: shapingPattern ?? this.shapingPattern,
+      maxPadding: maxPadding ?? this.maxPadding,
       ping: ping ?? this.ping,
       realDelay: realDelay ?? this.realDelay,
       lastTested: lastTested ?? this.lastTested,
@@ -360,6 +334,7 @@ class ServerConfig {
     );
   }
 
+  // ✅ متدهای static داخل کلاس
   static List<CoverDomain> defaultCoverDomains() {
     return [
       CoverDomain(domain: 'www.google.com', weight: 30, paths: ['/', '/search']),
@@ -372,45 +347,45 @@ class ServerConfig {
   }
 
   static List<SNIDomain> defaultSNIDomains() {
-  return [
-    SNIDomain(
-      domain: 'www.google.com',
-      weight: 30,
-      checkHealth: true,
-      fallback: false,
-    ),
-    SNIDomain(
-      domain: 'www.microsoft.com',
-      weight: 20,
-      checkHealth: true,
-      fallback: false,
-    ),
-    SNIDomain(
-      domain: 'github.com',
-      weight: 15,
-      checkHealth: true,
-      fallback: false,
-    ),
-    SNIDomain(
-      domain: 'www.cloudflare.com',
-      weight: 15,
-      checkHealth: false,  // ← fallback ها health check نمیشن
-      fallback: true,      // ← fallback
-    ),
-    SNIDomain(
-      domain: 'stackoverflow.com',
-      weight: 10,
-      checkHealth: true,
-      fallback: false,
-    ),
-    SNIDomain(
-      domain: 'learn.microsoft.com',
-      weight: 10,
-      checkHealth: false,
-      fallback: true,  // ← fallback دوم
-    ),
-  ];
-}
+    return [
+      SNIDomain(
+        domain: 'www.google.com',
+        weight: 30,
+        checkHealth: true,
+        fallback: false,
+      ),
+      SNIDomain(
+        domain: 'www.microsoft.com',
+        weight: 20,
+        checkHealth: true,
+        fallback: false,
+      ),
+      SNIDomain(
+        domain: 'github.com',
+        weight: 15,
+        checkHealth: true,
+        fallback: false,
+      ),
+      SNIDomain(
+        domain: 'www.cloudflare.com',
+        weight: 15,
+        checkHealth: false,
+        fallback: true,
+      ),
+      SNIDomain(
+        domain: 'stackoverflow.com',
+        weight: 10,
+        checkHealth: true,
+        fallback: false,
+      ),
+      SNIDomain(
+        domain: 'learn.microsoft.com',
+        weight: 10,
+        checkHealth: false,
+        fallback: true,
+      ),
+    ];
+  }
 }
 
 class CoverDomain {
@@ -444,23 +419,23 @@ class CoverDomain {
 class SNIDomain {
   String domain;
   int weight;
-  bool checkHealth;  // ← تغییر از enabled
-  bool fallback;     // ← اضافه شد
-  int priority;      // ← اضافه شد
+  bool checkHealth;
+  bool fallback;
+  int priority;
 
   SNIDomain({
     required this.domain,
     this.weight = 10,
-    this.checkHealth = true,   // ← تغییر
-    this.fallback = false,     // ← اضافه شد
-    this.priority = 0,         // ← اضافه شد
+    this.checkHealth = true,
+    this.fallback = false,
+    this.priority = 0,
   });
 
   Map<String, dynamic> toJson() => {
         'domain': domain,
         'weight': weight,
-        'check_health': checkHealth,  // ← تغییر
-        'fallback': fallback,         // ← اضافه شد
+        'check_health': checkHealth,
+        'fallback': fallback,
         'priority': priority,
       };
 
