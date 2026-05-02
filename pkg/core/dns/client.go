@@ -11,7 +11,6 @@ import (
 	"github.com/miekg/dns"
 )
 
-// Client یک DNS client برای tunnel
 type Client struct {
 	domain     string
 	dnsServers []string
@@ -25,6 +24,10 @@ type Client struct {
 	
 	// Pending requests (برای دریافت response)
 	pending    sync.Map // seqNum -> chan *Response
+	
+	// 🆕 Channels برای streaming
+	recvCh     chan []byte  // 🆕 اضافه کن
+	closeCh    chan struct{} // 🆕 اضافه کن
 	
 	// Stats
 	queriesSent   atomic.Uint64
