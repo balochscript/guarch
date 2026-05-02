@@ -199,7 +199,6 @@ func (c *Client) sendQuery(ctx context.Context, subdomain string, seqNum uint32)
 	return fmt.Errorf("dns/client: query failed after %d attempts: %w", c.retries+1, lastErr)
 }
 
-// handleResponse پردازش DNS response
 func (c *Client) handleResponse(msg *dns.Msg, seqNum uint32) {
 	c.responsesRecv.Add(1)
 	
@@ -218,6 +217,17 @@ func (c *Client) handleResponse(msg *dns.Msg, seqNum uint32) {
 				// جمع‌آوری data
 				allData = append(allData, pkt.Data...)
 			}
+		}
+	}
+	
+	// 🆕 ارسال به recvCh برای streaming
+	if len(allData) > 0 {
+		select {
+		case c.recvCh <- allData:
+		case <-c.closeCh:
+			return
+		default:
+			// recvCh پر است - skip
 		}
 	}
 	
