@@ -389,7 +389,7 @@ class _ServerDetailScreenState extends State<ServerDetailScreen> {
           if (server.sniEnabled) ...[
             const SizedBox(height: 24),
             _sectionTitle(context, '🔄 SNI Domains'),
-            ...server.sniDomains.where((d) => d.enabled).map(
+            ...server.sniDomains.where((d) => d.checkHealth).map(
                   (d) => Card(
                     child: ListTile(
                       leading: Icon(
