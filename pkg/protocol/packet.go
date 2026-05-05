@@ -5,7 +5,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
-	mathrand "math/rand"  // ← اصلاح: alias اضافه شد
+	"math/big"
 	"sync"
 	"time"
 )
@@ -16,8 +16,7 @@ const (
 	MaxPaddingSize       = 1024
 	HeaderSize           = 18
 
-	// تنظیمات timestamp jitter
-	TimestampJitterSeconds = 30 // ±30 ثانیه
+	TimestampJitterSeconds = 30 // ±30s for privacy
 )
 
 type PacketType byte
@@ -68,17 +67,20 @@ type Packet struct {
 	Padding    []byte
 }
 
-// coarsenedTimestamp تولید timestamp با jitter برای privacy
+// coarsenedTimestamp returns Unix timestamp with cryptographically secure ±30s jitter for privacy
 func coarsenedTimestamp() int64 {
 	now := time.Now().Unix()
 	
-	// افزودن jitter تصادفی (±30 ثانیه)
-	jitter := mathrand.Int63n(2*TimestampJitterSeconds+1) - TimestampJitterSeconds  // ← اصلاح: mathrand
+	maxJitter := int64(2*TimestampJitterSeconds + 1) // 0-60 range
+	jitterBig, err := rand.Int(rand.Reader, big.NewInt(maxJitter))
+	if err != nil {
+		return now // fallback to no jitter if crypto/rand fails
+	}
 	
+	jitter := jitterBig.Int64() - TimestampJitterSeconds // shift to [-30, +30]
 	return now + jitter
 }
 
-// NewDataPacket ساخت packet داده جدید
 func NewDataPacket(payload []byte, seqNum uint32) (*Packet, error) {
 	if len(payload) > MaxPayloadSize {
 		return nil, ErrPacketTooLarge
@@ -93,11 +95,11 @@ func NewDataPacket(payload []byte, seqNum uint32) (*Packet, error) {
 	}, nil
 }
 
-// NewPaddedDataPacket ساخت packet با padding تا سایز مشخص
 func NewPaddedDataPacket(payload []byte, seqNum uint32, totalSize int) (*Packet, error) {
 	if len(payload) > MaxPayloadSize {
 		return nil, ErrPacketTooLarge
 	}
+	
 	pkt := &Packet{
 		Version:    ProtocolVersion,
 		Type:       PacketTypeData,
@@ -106,22 +108,24 @@ func NewPaddedDataPacket(payload []byte, seqNum uint32, totalSize int) (*Packet,
 		PayloadLen: uint16(len(payload)),
 		Payload:    payload,
 	}
+	
 	currentSize := HeaderSize + len(payload)
 	if totalSize > currentSize {
 		padSize := totalSize - currentSize
 		if padSize > MaxPaddingSize {
 			padSize = MaxPaddingSize
 		}
+		
 		pkt.Padding = make([]byte, padSize)
-		if _, err := rand.Read(pkt.Padding); err != nil {  // ← crypto/rand (درست)
+		if _, err := rand.Read(pkt.Padding); err != nil {
 			return nil, fmt.Errorf("guarch: generate padding: %w", err)
 		}
 		pkt.PaddingLen = uint16(padSize)
 	}
+	
 	return pkt, nil
 }
 
-// NewPaddingPacket ساخت packet خالص padding
 func NewPaddingPacket(size int, seqNum uint32) (*Packet, error) {
 	if size > MaxPaddingSize {
 		size = MaxPaddingSize
@@ -129,10 +133,12 @@ func NewPaddingPacket(size int, seqNum uint32) (*Packet, error) {
 	if size <= 0 {
 		size = 1
 	}
+	
 	padding := make([]byte, size)
-	if _, err := rand.Read(padding); err != nil {  // ← crypto/rand (درست)
+	if _, err := rand.Read(padding); err != nil {
 		return nil, fmt.Errorf("guarch: generate padding: %w", err)
 	}
+	
 	return &Packet{
 		Version:    ProtocolVersion,
 		Type:       PacketTypePadding,
@@ -143,7 +149,6 @@ func NewPaddingPacket(size int, seqNum uint32) (*Packet, error) {
 	}, nil
 }
 
-// NewPingPacket ساخت packet ping
 func NewPingPacket(seqNum uint32) *Packet {
 	return &Packet{
 		Version:   ProtocolVersion,
@@ -153,7 +158,6 @@ func NewPingPacket(seqNum uint32) *Packet {
 	}
 }
 
-// NewPongPacket ساخت packet pong
 func NewPongPacket(seqNum uint32) *Packet {
 	return &Packet{
 		Version:   ProtocolVersion,
@@ -163,7 +167,6 @@ func NewPongPacket(seqNum uint32) *Packet {
 	}
 }
 
-// NewClosePacket ساخت packet بستن اتصال
 func NewClosePacket(seqNum uint32) *Packet {
 	return &Packet{
 		Version:   ProtocolVersion,
@@ -173,33 +176,36 @@ func NewClosePacket(seqNum uint32) *Packet {
 	}
 }
 
-// Marshal تبدیل packet به binary
 func (p *Packet) Marshal() ([]byte, error) {
 	if err := p.Validate(); err != nil {
 		return nil, err
 	}
+	
 	totalSize := HeaderSize + int(p.PayloadLen) + int(p.PaddingLen)
 	buf := make([]byte, totalSize)
+	
 	buf[0] = p.Version
 	buf[1] = byte(p.Type)
 	binary.BigEndian.PutUint32(buf[2:6], p.SeqNum)
 	binary.BigEndian.PutUint64(buf[6:14], uint64(p.Timestamp))
 	binary.BigEndian.PutUint16(buf[14:16], p.PayloadLen)
 	binary.BigEndian.PutUint16(buf[16:18], p.PaddingLen)
+	
 	if p.PayloadLen > 0 {
 		copy(buf[HeaderSize:], p.Payload)
 	}
 	if p.PaddingLen > 0 {
 		copy(buf[HeaderSize+int(p.PayloadLen):], p.Padding)
 	}
+	
 	return buf, nil
 }
 
-// Unmarshal تبدیل binary به packet
 func Unmarshal(data []byte) (*Packet, error) {
 	if len(data) < HeaderSize {
 		return nil, ErrPacketTooShort
 	}
+	
 	p := &Packet{
 		Version:    data[0],
 		Type:       PacketType(data[1]),
@@ -220,6 +226,7 @@ func Unmarshal(data []byte) (*Packet, error) {
 	if len(data) < expectedSize {
 		return nil, fmt.Errorf("%w: need %d got %d", ErrPacketTooShort, expectedSize, len(data))
 	}
+	
 	if p.PayloadLen > 0 {
 		p.Payload = make([]byte, p.PayloadLen)
 		copy(p.Payload, data[HeaderSize:HeaderSize+int(p.PayloadLen)])
@@ -228,18 +235,20 @@ func Unmarshal(data []byte) (*Packet, error) {
 		p.Padding = make([]byte, p.PaddingLen)
 		copy(p.Padding, data[HeaderSize+int(p.PayloadLen):expectedSize])
 	}
+	
 	if err := p.Validate(); err != nil {
 		return nil, err
 	}
+	
 	return p, nil
 }
 
-// ReadPacket خواندن packet از io.Reader
 func ReadPacket(r io.Reader) (*Packet, error) {
 	header := make([]byte, HeaderSize)
 	if _, err := io.ReadFull(r, header); err != nil {
 		return nil, fmt.Errorf("guarch: reading header: %w", err)
 	}
+	
 	payloadLen := binary.BigEndian.Uint16(header[14:16])
 	paddingLen := binary.BigEndian.Uint16(header[16:18])
 
@@ -253,15 +262,16 @@ func ReadPacket(r io.Reader) (*Packet, error) {
 	bodyLen := int(payloadLen) + int(paddingLen)
 	fullPacket := make([]byte, HeaderSize+bodyLen)
 	copy(fullPacket, header)
+	
 	if bodyLen > 0 {
 		if _, err := io.ReadFull(r, fullPacket[HeaderSize:]); err != nil {
 			return nil, fmt.Errorf("guarch: reading body: %w", err)
 		}
 	}
+	
 	return Unmarshal(fullPacket)
 }
 
-// Validate بررسی معتبر بودن packet
 func (p *Packet) Validate() error {
 	if p.Version != ProtocolVersion {
 		return fmt.Errorf("%w: got %d want %d", ErrInvalidVersion, p.Version, ProtocolVersion)
@@ -284,18 +294,15 @@ func (p *Packet) Validate() error {
 	return nil
 }
 
-// TotalSize محاسبه سایز کل packet
 func (p *Packet) TotalSize() int {
 	return HeaderSize + int(p.PayloadLen) + int(p.PaddingLen)
 }
 
-// String نمایش متنی packet
 func (p *Packet) String() string {
 	return fmt.Sprintf("Packet{v=%d type=%s seq=%d payload=%d padding=%d}",
 		p.Version, p.Type, p.SeqNum, p.PayloadLen, p.PaddingLen)
 }
 
-// ReplayWindow برای جلوگیری از replay attacks
 type ReplayWindow struct {
 	lastSeqNum uint32
 	window     map[uint32]bool
@@ -303,10 +310,9 @@ type ReplayWindow struct {
 	mu         sync.Mutex
 }
 
-// NewReplayWindow ساخت replay window جدید
 func NewReplayWindow(size uint32) *ReplayWindow {
 	if size == 0 {
-		size = 64 // default window size
+		size = 64
 	}
 	return &ReplayWindow{
 		window:     make(map[uint32]bool, size),
@@ -315,29 +321,23 @@ func NewReplayWindow(size uint32) *ReplayWindow {
 	}
 }
 
-// Check بررسی و ثبت sequence number
 func (rw *ReplayWindow) Check(seqNum uint32) error {
 	rw.mu.Lock()
 	defer rw.mu.Unlock()
 
-	// Packet خیلی قدیمی
 	if rw.lastSeqNum >= rw.windowSize && seqNum < rw.lastSeqNum-rw.windowSize {
 		return fmt.Errorf("packet too old: seq=%d (current=%d)", seqNum, rw.lastSeqNum)
 	}
 
-	// Packet تکراری
 	if rw.window[seqNum] {
 		return fmt.Errorf("duplicate packet: seq=%d", seqNum)
 	}
 
-	// پذیرفتن packet
 	rw.window[seqNum] = true
 
-	// به‌روزرسانی lastSeqNum
 	if seqNum > rw.lastSeqNum {
 		rw.lastSeqNum = seqNum
 
-		// پاک کردن ورودی‌های قدیمی
 		threshold := rw.lastSeqNum - rw.windowSize
 		for oldSeq := range rw.window {
 			if oldSeq < threshold {
@@ -349,7 +349,6 @@ func (rw *ReplayWindow) Check(seqNum uint32) error {
 	return nil
 }
 
-// Reset ریست کردن window
 func (rw *ReplayWindow) Reset() {
 	rw.mu.Lock()
 	defer rw.mu.Unlock()
