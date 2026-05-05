@@ -348,8 +348,7 @@ func (sc *SecureConn) SendPacket(pkt *protocol.Packet) error {
 	return sc.sendRaw(pkt)
 }
 
-// Send ارسال data (به عنوان DATA packet)
-// Send ارسال data با smart padding (اگر فعال باشد)
+// Send encrypts and sends data with smart padding
 func (sc *SecureConn) Send(data []byte) error {
 	sc.sendMu.Lock()
 	defer sc.sendMu.Unlock()
@@ -360,10 +359,12 @@ func (sc *SecureConn) Send(data []byte) error {
 	var pkt *protocol.Packet
 	var err error
 	
-	// 🔧 CHANGED: استفاده از smart padding
+	// Use smart padding if enabled
 	if sc.paddingEnabled && sc.maxPadding > 0 {
-		paddingSize := protocol.CalculateSmartPadding(len(data), sc.maxPadding)
-		targetSize := len(data) + paddingSize
+		// Calculate padding using SmartPadder logic
+		padder := cover.NewSmartPadder(sc.maxPadding, nil)
+		paddingSize := padder.Calculate(len(data))
+		targetSize := protocol.HeaderSize + len(data) + paddingSize
 		pkt, err = protocol.NewPaddedDataPacket(data, seq, targetSize)
 	} else {
 		pkt, err = protocol.NewDataPacket(data, seq)
