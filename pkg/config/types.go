@@ -175,15 +175,36 @@ type ModeSettings struct {
 // Metadata
 // ═══════════════════════════════════════════════════════════
 
-// Metadata اطلاعات متا
+// Metadata server metadata
 type Metadata struct {
-	CreatedAt string            `json:"created_at,omitempty"`
-	UpdatedAt string            `json:"updated_at,omitempty"`
-	Country   string            `json:"country,omitempty"`   // "IR", "US", ...
-	ISPHint   string            `json:"isp_hint,omitempty"`  // "MCI", "Irancell", ...
-	Notes     string            `json:"notes,omitempty"`
-	Tags      []string          `json:"tags,omitempty"`
-	Custom    map[string]string `json:"custom,omitempty"` // custom fields
+	CreatedAt    string            `json:"created_at,omitempty"`
+	UpdatedAt    string            `json:"updated_at,omitempty"`
+	ExpiresAt    string            `json:"expires_at,omitempty"`
+	Country      string            `json:"country,omitempty"`
+	ISPHint      string            `json:"isp_hint,omitempty"`
+	Notes        string            `json:"notes,omitempty"`
+	Tags         []string          `json:"tags,omitempty"`
+	Custom       map[string]string `json:"custom,omitempty"`
+	Quota        *QuotaInfo        `json:"quota,omitempty"`
+	Announcement *AnnouncementConfig `json:"announcement,omitempty"`
+}
+
+// QuotaInfo traffic quota information
+type QuotaInfo struct {
+	TotalBytes     int64  `json:"total_bytes,omitempty"`
+	UsedBytes      int64  `json:"used_bytes,omitempty"`
+	RemainingBytes int64  `json:"remaining_bytes,omitempty"`
+	ResetDate      string `json:"reset_date,omitempty"`
+	Unlimited      bool   `json:"unlimited,omitempty"`
+}
+
+// AnnouncementConfig server announcement/notification
+type AnnouncementConfig struct {
+	Enabled  bool     `json:"enabled"`
+	URL      string   `json:"url,omitempty"`
+	Text     string   `json:"text,omitempty"`
+	Interval Duration `json:"interval,omitempty"`
+	Priority string   `json:"priority,omitempty"` // "info", "warning", "critical"
 }
 
 // ═══════════════════════════════════════════════════════════
