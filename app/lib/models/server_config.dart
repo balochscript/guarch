@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:flutter/material.dart'; // for Color class
 
 class ServerConfig {
   String id;
@@ -456,5 +457,205 @@ class SNIDomain {
       fallback: json['fallback'] ?? false,
       priority: json['priority'] ?? 0,
     );
+  }
+}
+
+class Metadata {
+  final String? createdAt;
+  final String? updatedAt;
+  final String? expiresAt;
+  final String? country;
+  final String? ispHint;
+  final String? notes;
+  final List<String>? tags;
+  final Map<String, String>? custom;
+  final QuotaInfo? quota;
+  final AnnouncementConfig? announcement;
+
+  Metadata({
+    this.createdAt,
+    this.updatedAt,
+    this.expiresAt,
+    this.country,
+    this.ispHint,
+    this.notes,
+    this.tags,
+    this.custom,
+    this.quota,
+    this.announcement,
+  });
+
+  factory Metadata.fromJson(Map<String, dynamic> json) {
+    return Metadata(
+      createdAt: json['created_at'],
+      updatedAt: json['updated_at'],
+      expiresAt: json['expires_at'],
+      country: json['country'],
+      ispHint: json['isp_hint'],
+      notes: json['notes'],
+      tags: json['tags'] != null ? List<String>.from(json['tags']) : null,
+      custom: json['custom'] != null
+          ? Map<String, String>.from(json['custom'])
+          : null,
+      quota: json['quota'] != null ? QuotaInfo.fromJson(json['quota']) : null,
+      announcement: json['announcement'] != null
+          ? AnnouncementConfig.fromJson(json['announcement'])
+          : null,
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+        if (createdAt != null) 'created_at': createdAt,
+        if (updatedAt != null) 'updated_at': updatedAt,
+        if (expiresAt != null) 'expires_at': expiresAt,
+        if (country != null) 'country': country,
+        if (ispHint != null) 'isp_hint': ispHint,
+        if (notes != null) 'notes': notes,
+        if (tags != null) 'tags': tags,
+        if (custom != null) 'custom': custom,
+        if (quota != null) 'quota': quota!.toJson(),
+        if (announcement != null) 'announcement': announcement!.toJson(),
+      };
+
+  bool get isExpired {
+    if (expiresAt == null) return false;
+    try {
+      final expiry = DateTime.parse(expiresAt!);
+      return DateTime.now().isAfter(expiry);
+    } catch (_) {
+      return false;
+    }
+  }
+
+  String get expiryText {
+    if (expiresAt == null) return 'Never';
+    if (isExpired) return 'Expired';
+
+    try {
+      final expiry = DateTime.parse(expiresAt!);
+      final diff = expiry.difference(DateTime.now()).inDays;
+
+      if (diff == 0) return 'Today';
+      if (diff == 1) return 'Tomorrow';
+      if (diff < 30) return '$diff days';
+
+      return '${expiry.day}/${expiry.month}/${expiry.year}';
+    } catch (_) {
+      return expiresAt!;
+    }
+  }
+}
+
+class QuotaInfo {
+  final int? totalBytes;
+  final int? usedBytes;
+  final int? remainingBytes;
+  final String? resetDate;
+  final bool unlimited;
+
+  QuotaInfo({
+    this.totalBytes,
+    this.usedBytes,
+    this.remainingBytes,
+    this.resetDate,
+    this.unlimited = false,
+  });
+
+  factory QuotaInfo.fromJson(Map<String, dynamic> json) {
+    return QuotaInfo(
+      totalBytes: json['total_bytes'],
+      usedBytes: json['used_bytes'],
+      remainingBytes: json['remaining_bytes'],
+      resetDate: json['reset_date'],
+      unlimited: json['unlimited'] ?? false,
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+        if (totalBytes != null) 'total_bytes': totalBytes,
+        if (usedBytes != null) 'used_bytes': usedBytes,
+        if (remainingBytes != null) 'remaining_bytes': remainingBytes,
+        if (resetDate != null) 'reset_date': resetDate,
+        'unlimited': unlimited,
+      };
+
+  String get totalFormatted => _formatBytes(totalBytes ?? 0);
+  String get usedFormatted => _formatBytes(usedBytes ?? 0);
+  String get remainingFormatted => _formatBytes(remainingBytes ?? 0);
+
+  double get usagePercent {
+    if (unlimited || totalBytes == null || totalBytes == 0) return 0.0;
+    return ((usedBytes ?? 0) / totalBytes!) * 100;
+  }
+
+  Color get progressColor {
+    if (usagePercent > 90) return Colors.red;
+    if (usagePercent > 70) return Colors.orange;
+    return Colors.green;
+  }
+
+  String _formatBytes(int bytes) {
+    if (bytes < 1024) return '$bytes B';
+    if (bytes < 1048576) return '${(bytes / 1024).toStringAsFixed(1)} KB';
+    if (bytes < 1073741824) {
+      return '${(bytes / 1048576).toStringAsFixed(1)} MB';
+    }
+    return '${(bytes / 1073741824).toStringAsFixed(1)} GB';
+  }
+}
+
+class AnnouncementConfig {
+  final bool enabled;
+  final String? url;
+  final String? text;
+  final String? interval;
+  final String? priority;
+
+  AnnouncementConfig({
+    this.enabled = false,
+    this.url,
+    this.text,
+    this.interval,
+    this.priority,
+  });
+
+  factory AnnouncementConfig.fromJson(Map<String, dynamic> json) {
+    return AnnouncementConfig(
+      enabled: json['enabled'] ?? false,
+      url: json['url'],
+      text: json['text'],
+      interval: json['interval'],
+      priority: json['priority'] ?? 'info',
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+        'enabled': enabled,
+        if (url != null) 'url': url,
+        if (text != null) 'text': text,
+        if (interval != null) 'interval': interval,
+        if (priority != null) 'priority': priority,
+      };
+
+  String get icon {
+    switch (priority) {
+      case 'critical':
+        return '🚨';
+      case 'warning':
+        return '⚠️';
+      default:
+        return 'ℹ️';
+    }
+  }
+
+  Color get color {
+    switch (priority) {
+      case 'critical':
+        return Colors.red;
+      case 'warning':
+        return Colors.orange;
+      default:
+        return Colors.blue;
+    }
   }
 }
