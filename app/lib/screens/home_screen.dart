@@ -162,7 +162,7 @@ class _HomeTab extends StatelessWidget {
     );
   }
 
-  Widget _buildServerInfo(
+    Widget _buildServerInfo(
       BuildContext context, dynamic server, AppProvider provider) {
     if (server == null) {
       return Card(
@@ -283,6 +283,120 @@ class _HomeTab extends StatelessWidget {
             ),
             isThreeLine: true,
           ),
+          
+          // Metadata footer
+          if (server.metadata != null)
+            _buildMetadataFooter(context, server.metadata),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMetadataFooter(BuildContext context, dynamic metadata) {
+    final hasAnnouncement = metadata.announcement?.enabled == true && 
+                           metadata.announcement?.text != null;
+    final hasQuota = metadata.quota != null && metadata.quota.unlimited == false;
+    final hasExpiry = metadata.expiresAt != null;
+    
+    if (!hasAnnouncement && !hasQuota && !hasExpiry) {
+      return const SizedBox.shrink();
+    }
+
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Theme.of(context).brightness == Brightness.dark
+            ? Colors.grey.shade900
+            : Colors.grey.shade50,
+        borderRadius: const BorderRadius.vertical(bottom: Radius.circular(12)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Announcement
+          if (hasAnnouncement)
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  metadata.announcement.icon,
+                  style: const TextStyle(fontSize: 16),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    metadata.announcement.text,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 12,
+                      height: 1.3,
+                      color: textSecondary(context),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          
+          // Quota
+          if (hasQuota) ...[
+            if (hasAnnouncement) const SizedBox(height: 10),
+            Row(
+              children: [
+                const Text('📊', style: TextStyle(fontSize: 14)),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(2),
+                        child: LinearProgressIndicator(
+                          value: metadata.quota.usagePercent / 100,
+                          backgroundColor: Colors.grey.shade300,
+                          valueColor: AlwaysStoppedAnimation<Color>(
+                            metadata.quota.progressColor,
+                          ),
+                          minHeight: 4,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        '${metadata.quota.remainingFormatted} remaining of ${metadata.quota.totalFormatted}',
+                        style: TextStyle(
+                          fontSize: 10,
+                          color: textMuted(context),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ],
+          
+          // Expiry
+          if (hasExpiry) ...[
+            if (hasAnnouncement || hasQuota) const SizedBox(height: 8),
+            Row(
+              children: [
+                Text(
+                  metadata.isExpired ? '⏰' : '📅',
+                  style: const TextStyle(fontSize: 14),
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  metadata.isExpired 
+                      ? 'Config expired'
+                      : 'Expires: ${metadata.expiryText}',
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: metadata.isExpired ? Colors.red : textMuted(context),
+                  ),
+                ),
+              ],
+            ),
+          ],
         ],
       ),
     );
