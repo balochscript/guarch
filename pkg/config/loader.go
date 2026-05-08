@@ -250,9 +250,26 @@ func (l *Loader) applyDefaults(cfg *ServerConfig) {
 		cfg.Modes.Fast.SNIRotation = "off"
 	}
 	
-	// Metadata defaults
+		// Metadata defaults
 	if cfg.Metadata.CreatedAt == "" {
 		cfg.Metadata.CreatedAt = time.Now().Format(time.RFC3339)
+	}
+	
+	// Announcement defaults
+	if cfg.Metadata.Announcement != nil && cfg.Metadata.Announcement.Enabled {
+		if cfg.Metadata.Announcement.Interval.Duration == 0 {
+			cfg.Metadata.Announcement.Interval.Duration = 1 * time.Hour
+		}
+		if cfg.Metadata.Announcement.Priority == "" {
+			cfg.Metadata.Announcement.Priority = "info"
+		}
+	}
+	
+	// Quota calculation
+	if cfg.Metadata.Quota != nil && !cfg.Metadata.Quota.Unlimited {
+		if cfg.Metadata.Quota.RemainingBytes == 0 {
+			cfg.Metadata.Quota.RemainingBytes = cfg.Metadata.Quota.TotalBytes - cfg.Metadata.Quota.UsedBytes
+		}
 	}
 }
 
