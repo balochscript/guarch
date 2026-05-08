@@ -36,6 +36,9 @@ class ServerConfig {
   
   bool isActive;
   DateTime createdAt;
+  
+  // Metadata
+  Metadata? metadata;
 
   ServerConfig({
     required this.id,
