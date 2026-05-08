@@ -93,7 +93,6 @@ class _AddServerScreenState extends State<AddServerScreen> {
       appBar: AppBar(
         title: Text(isEditing ? 'Edit Server' : 'Add Server'),
         actions: [
-          // Quick Save Button
           IconButton(
             icon: const Icon(Icons.check),
             onPressed: _save,
@@ -106,9 +105,7 @@ class _AddServerScreenState extends State<AddServerScreen> {
         child: ListView(
           padding: const EdgeInsets.all(24),
           children: [
-            // ═══════════════════════════════════════════════
             // Basic Information
-            // ═══════════════════════════════════════════════
             _buildSectionHeader('🎯 Server Information'),
             const SizedBox(height: 16),
             
@@ -194,9 +191,7 @@ class _AddServerScreenState extends State<AddServerScreen> {
               ),
             ),
 
-            // ═══════════════════════════════════════════════
             // Security
-            // ═══════════════════════════════════════════════
             const SizedBox(height: 32),
             _buildSectionHeader('🔐 Security'),
             const SizedBox(height: 4),
@@ -241,9 +236,7 @@ class _AddServerScreenState extends State<AddServerScreen> {
               style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
             ),
 
-            // ═══════════════════════════════════════════════
-            // SNI Rotation (v1.0.1)
-            // ═══════════════════════════════════════════════
+            // SNI Rotation
             const SizedBox(height: 32),
             _buildToggleSection(
               '🔄 SNI Rotation',
@@ -348,153 +341,172 @@ class _AddServerScreenState extends State<AddServerScreen> {
                       const SizedBox(height: 8),
 
                       ..._sniDomains.asMap().entries.map((entry) {
-  final index = entry.key;  // 🆕 اضافه شد
-  final domain = entry.value;
-  
-  // محاسبه icon و color بر اساس نوع domain
-  IconData icon;
-  Color color;
-  if (domain.fallback) {
-    icon = Icons.shield;  // fallback = سپر
-    color = Colors.blue;
-  } else if (domain.checkHealth) {
-    icon = Icons.check_circle;  // health check = چک
-    color = Colors.green;
-  } else {
-    icon = Icons.circle_outlined;  // معمولی
-    color = Colors.grey;
-  }
-  
-  return Padding(
-    padding: const EdgeInsets.only(bottom: 4),
-    child: Row(
-      children: [
-        Icon(icon, size: 16, color: color),
-        const SizedBox(width: 8),
-        Expanded(
-          child: Text(
-            domain.domain,
-            style: TextStyle(
-              fontSize: 14,
-              color: textSecondary(context),
-            ),
-          ),
-        ),
-        
-        // نمایش badges
-        if (domain.fallback)
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-            decoration: BoxDecoration(
-              color: Colors.blue.withOpacity(0.2),
-              borderRadius: BorderRadius.circular(4),
-            ),
-            child: const Text(
-              'Fallback',
-              style: TextStyle(fontSize: 10, color: Colors.blue),
-            ),
-          ),
-        const SizedBox(width: 4),
-        if (domain.checkHealth && !domain.fallback)
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-            decoration: BoxDecoration(
-              color: Colors.green.withOpacity(0.2),
-              borderRadius: BorderRadius.circular(4),
-            ),
-            child: const Text(
-              'Health',
-              style: TextStyle(fontSize: 10, color: Colors.green),
-            ),
-          ),
-        
-        if (_sniMode == 'weighted')
-          Padding(
-            padding: const EdgeInsets.only(left: 4),
-            child: Text(
-              '${domain.weight}%',
-              style: TextStyle(
-                color: textMuted(context),
-                fontSize: 12,
-              ),
-            ),
-          ),
-        const SizedBox(width: 8),
-        
-        // منوی گزینه‌ها
-        PopupMenuButton<String>(
-          icon: Icon(Icons.more_vert, size: 16, color: textMuted(context)),
-          itemBuilder: (context) => [
-            PopupMenuItem(
-              value: 'health',
-              child: Row(
-                children: [
-                  Icon(
-                    domain.checkHealth ? Icons.check_box : Icons.check_box_outline_blank,
-                    size: 18,
-                  ),
-                  const SizedBox(width: 8),
-                  const Text('Health Check'),
-                ],
-              ),
-            ),
-            PopupMenuItem(
-              value: 'fallback',
-              child: Row(
-                children: [
-                  Icon(
-                    domain.fallback ? Icons.check_box : Icons.check_box_outline_blank,
-                    size: 18,
-                  ),
-                  const SizedBox(width: 8),
-                  const Text('Fallback'),
-                ],
-              ),
-            ),
-            const PopupMenuDivider(),
-            const PopupMenuItem(
-              value: 'delete',
-              child: Row(
-                children: [
-                  Icon(Icons.delete, size: 18, color: Colors.red),
-                  SizedBox(width: 8),
-                  Text('Delete', style: TextStyle(color: Colors.red)),
-                ],
-              ),
-            ),
-          ],
-          onSelected: (value) {
-            setState(() {
-              switch (value) {
-                case 'health':
-                  // toggle health check
-                  domain.checkHealth = !domain.checkHealth;
-                  // اگه health فعال شد، fallback رو خاموش کن
-                  if (domain.checkHealth) {
-                    domain.fallback = false;
-                  }
-                  break;
-                case 'fallback':
-                  // toggle fallback
-                  domain.fallback = !domain.fallback;
-                  // اگه fallback فعال شد، health رو خاموش کن
-                  if (domain.fallback) {
-                    domain.checkHealth = false;
-                  }
-                  break;
-                case 'delete':
-                  // حذف domain
-                  _sniDomains.removeAt(index);
-                  _recalculateSNIWeights();
-                  break;
-              }
-            });
-          },
-        ),
-      ],
-    ),
-  );
-}).toList(),
+                        final index = entry.key;
+                        final domain = entry.value;
+                        
+                        IconData icon;
+                        Color color;
+                        if (domain.fallback) {
+                          icon = Icons.shield;
+                          color = Colors.blue;
+                        } else if (domain.checkHealth) {
+                          icon = Icons.check_circle;
+                          color = Colors.green;
+                        } else {
+                          icon = Icons.circle_outlined;
+                          color = Colors.grey;
+                        }
+                        
+                        return Padding(
+                          padding: const EdgeInsets.only(bottom: 4),
+                          child: Row(
+                            children: [
+                              Icon(icon, size: 16, color: color),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  domain.domain,
+                                  style: TextStyle(
+                                    fontSize: 14,
+                                    color: textSecondary(context),
+                                  ),
+                                ),
+                              ),
+                              
+                              if (domain.fallback)
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 6,
+                                    vertical: 2,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: Colors.blue.withOpacity(0.2),
+                                    borderRadius: BorderRadius.circular(4),
+                                  ),
+                                  child: const Text(
+                                    'Fallback',
+                                    style: TextStyle(
+                                      fontSize: 10,
+                                      color: Colors.blue,
+                                    ),
+                                  ),
+                                ),
+                              const SizedBox(width: 4),
+                              if (domain.checkHealth && !domain.fallback)
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 6,
+                                    vertical: 2,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: Colors.green.withOpacity(0.2),
+                                    borderRadius: BorderRadius.circular(4),
+                                  ),
+                                  child: const Text(
+                                    'Health',
+                                    style: TextStyle(
+                                      fontSize: 10,
+                                      color: Colors.green,
+                                    ),
+                                  ),
+                                ),
+                              
+                              if (_sniMode == 'weighted')
+                                Padding(
+                                  padding: const EdgeInsets.only(left: 4),
+                                  child: Text(
+                                    '${domain.weight}%',
+                                    style: TextStyle(
+                                      color: textMuted(context),
+                                      fontSize: 12,
+                                    ),
+                                  ),
+                                ),
+                              const SizedBox(width: 8),
+                              
+                              PopupMenuButton<String>(
+                                icon: Icon(
+                                  Icons.more_vert,
+                                  size: 16,
+                                  color: textMuted(context),
+                                ),
+                                itemBuilder: (context) => [
+                                  PopupMenuItem(
+                                    value: 'health',
+                                    child: Row(
+                                      children: [
+                                        Icon(
+                                          domain.checkHealth
+                                              ? Icons.check_box
+                                              : Icons.check_box_outline_blank,
+                                          size: 18,
+                                        ),
+                                        const SizedBox(width: 8),
+                                        const Text('Health Check'),
+                                      ],
+                                    ),
+                                  ),
+                                  PopupMenuItem(
+                                    value: 'fallback',
+                                    child: Row(
+                                      children: [
+                                        Icon(
+                                          domain.fallback
+                                              ? Icons.check_box
+                                              : Icons.check_box_outline_blank,
+                                          size: 18,
+                                        ),
+                                        const SizedBox(width: 8),
+                                        const Text('Fallback'),
+                                      ],
+                                    ),
+                                  ),
+                                  const PopupMenuDivider(),
+                                  const PopupMenuItem(
+                                    value: 'delete',
+                                    child: Row(
+                                      children: [
+                                        Icon(
+                                          Icons.delete,
+                                          size: 18,
+                                          color: Colors.red,
+                                        ),
+                                        SizedBox(width: 8),
+                                        Text(
+                                          'Delete',
+                                          style: TextStyle(color: Colors.red),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                                onSelected: (value) {
+                                  setState(() {
+                                    switch (value) {
+                                      case 'health':
+                                        domain.checkHealth = !domain.checkHealth;
+                                        if (domain.checkHealth) {
+                                          domain.fallback = false;
+                                        }
+                                        break;
+                                      case 'fallback':
+                                        domain.fallback = !domain.fallback;
+                                        if (domain.fallback) {
+                                          domain.checkHealth = false;
+                                        }
+                                        break;
+                                      case 'delete':
+                                        _sniDomains.removeAt(index);
+                                        _recalculateSNIWeights();
+                                        break;
+                                    }
+                                  });
+                                },
+                              ),
+                            ],
+                          ),
+                        );
+                      }).toList(),
                       
                       if (_sniDomains.isEmpty)
                         const Padding(
@@ -510,9 +522,7 @@ class _AddServerScreenState extends State<AddServerScreen> {
               ),
             ],
 
-            // ═══════════════════════════════════════════════
-            // Cover Traffic (v1.0.1)
-            // ═══════════════════════════════════════════════
+            // Cover Traffic
             const SizedBox(height: 32),
             _buildToggleSection(
               '🎭 Cover Traffic',
@@ -659,7 +669,6 @@ class _AddServerScreenState extends State<AddServerScreen> {
                 ),
               ),
               
-              // Battery-Aware & Data Saver
               const SizedBox(height: 16),
               Card(
                 child: Column(
@@ -699,9 +708,7 @@ class _AddServerScreenState extends State<AddServerScreen> {
               ),
             ],
 
-            // ═══════════════════════════════════════════════
-            // DNS Fallback (v1.0.1)
-            // ═══════════════════════════════════════════════
+            // DNS Fallback
             const SizedBox(height: 32),
             _buildToggleSection(
               '🔌 DNS Fallback',
@@ -791,9 +798,7 @@ class _AddServerScreenState extends State<AddServerScreen> {
               ),
             ],
 
-            // ═══════════════════════════════════════════════
             // Advanced Settings
-            // ═══════════════════════════════════════════════
             const SizedBox(height: 32),
             ExpansionTile(
               leading: Icon(Icons.tune, color: textMuted(context)),
@@ -822,9 +827,7 @@ class _AddServerScreenState extends State<AddServerScreen> {
               ],
             ),
 
-            // ═══════════════════════════════════════════════
             // Save Button
-            // ═══════════════════════════════════════════════
             const SizedBox(height: 32),
             FilledButton(
               onPressed: _save,
@@ -843,9 +846,7 @@ class _AddServerScreenState extends State<AddServerScreen> {
     );
   }
 
-  // ═══════════════════════════════════════════════════════════════
   // Helper Widgets
-  // ═══════════════════════════════════════════════════════════════
 
   Widget _buildSectionHeader(String title) {
     return Row(
@@ -918,7 +919,6 @@ class _AddServerScreenState extends State<AddServerScreen> {
   Widget _quickAddSNIChip(String domain) {
     final exists = _sniDomains.any((d) => d.domain == domain);
     final isFallbackDomain = [
-      'www.google.com',
       'www.cloudflare.com',
       'www.microsoft.com',
     ].contains(domain);
@@ -934,7 +934,7 @@ class _AddServerScreenState extends State<AddServerScreen> {
           : () => setState(() {
                 _sniDomains.add(SNIDomain(
                   domain: domain,
-                  checkHealth: !isFallbackDomain,  // ← اگه fallback نیست، health check کن
+                  checkHealth: !isFallbackDomain,
                   fallback: isFallbackDomain,
                 ));
                 _recalculateSNIWeights();
@@ -942,9 +942,7 @@ class _AddServerScreenState extends State<AddServerScreen> {
     );
   }
 
-  // ═══════════════════════════════════════════════════════════════
   // Helper Methods
-  // ═══════════════════════════════════════════════════════════════
 
   void _addDomain() {
     final domain = _domainController.text.trim().toLowerCase();
@@ -1006,15 +1004,13 @@ class _AddServerScreenState extends State<AddServerScreen> {
   }
 
   void _recalculateSNIWeights() {
-  if (_sniDomains.isEmpty) return;
-  
-  // همه domain ها را در نظر بگیر (enabled فیلد نداریم دیگه)
-  final w = 100 ~/ _sniDomains.length;
-  final r = 100 % _sniDomains.length;
-  for (var i = 0; i < _sniDomains.length; i++) {
-    _sniDomains[i].weight = w + (i < r ? 1 : 0);
+    if (_sniDomains.isEmpty) return;
+    final w = 100 ~/ _sniDomains.length;
+    final r = 100 % _sniDomains.length;
+    for (var i = 0; i < _sniDomains.length; i++) {
+      _sniDomains[i].weight = w + (i < r ? 1 : 0);
+    }
   }
-}
 
   void _save() {
     if (!_formKey.currentState!.validate()) return;
@@ -1030,31 +1026,30 @@ class _AddServerScreenState extends State<AddServerScreen> {
     }
 
     if (_sniEnabled && _sniDomains.isEmpty) {
-  ScaffoldMessenger.of(context).showSnackBar(
-    const SnackBar(
-      content: Text('Add at least one SNI domain'),
-      backgroundColor: Colors.orange,
-    ),
-  );
-  return;
-}
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Add at least one SNI domain'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
 
     if (_sniEnabled && _sniDomains.any((d) => d.checkHealth)) {
-  // اگه health check داریم، باید حداقل یک fallback هم داشته باشیم
-  final hasFallback = _sniDomains.any((d) => d.fallback);
-  if (!hasFallback) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text(
-          'At least one domain should be marked as fallback when health check is enabled',
-        ),
-        backgroundColor: Colors.orange,
-        duration: Duration(seconds: 5),
-      ),
-    );
-    return;
-  }
-}
+      final hasFallback = _sniDomains.any((d) => d.fallback);
+      if (!hasFallback) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'At least one domain should be marked as fallback when health check is enabled',
+            ),
+            backgroundColor: Colors.orange,
+            duration: Duration(seconds: 5),
+          ),
+        );
+        return;
+      }
+    }
 
     final provider = context.read<AppProvider>();
     final psk = _pskController.text.trim();
