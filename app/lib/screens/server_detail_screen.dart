@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+import 'package:qr_flutter/qr_flutter.dart';
 import 'package:guarch/app.dart';
 import 'package:guarch/models/server_config.dart';
 import 'package:guarch/providers/app_provider.dart';
@@ -67,9 +68,7 @@ class _ServerDetailScreenState extends State<ServerDetailScreen> {
             ),
           ),
 
-          // ═══════════════════════════════════════════════
           // Connection Info
-          // ═══════════════════════════════════════════════
           const SizedBox(height: 32),
           _sectionTitle(context, '🎯 Connection'),
           _infoTile(context, 'Address', server.address, Icons.dns),
@@ -81,9 +80,7 @@ class _ServerDetailScreenState extends State<ServerDetailScreen> {
             Icons.settings_ethernet,
           ),
 
-          // ═══════════════════════════════════════════════
           // Latency Tests
-          // ═══════════════════════════════════════════════
           const SizedBox(height: 24),
           _sectionTitle(context, '⏱️ Latency'),
 
@@ -203,9 +200,7 @@ class _ServerDetailScreenState extends State<ServerDetailScreen> {
             ],
           ),
 
-          // ═══════════════════════════════════════════════
           // Security
-          // ═══════════════════════════════════════════════
           const SizedBox(height: 24),
           _sectionTitle(context, '🔐 Security'),
 
@@ -286,9 +281,7 @@ class _ServerDetailScreenState extends State<ServerDetailScreen> {
             ),
           ),
 
-          // ═══════════════════════════════════════════════
-          // Advanced Features (v1.0.1)
-          // ═══════════════════════════════════════════════
+          // Advanced Features
           const SizedBox(height: 24),
           _sectionTitle(context, '🎯 Advanced Features'),
 
@@ -356,9 +349,7 @@ class _ServerDetailScreenState extends State<ServerDetailScreen> {
             ),
           ),
 
-          // ═══════════════════════════════════════════════
           // Cover Domains
-          // ═══════════════════════════════════════════════
           if (server.coverEnabled) ...[
             const SizedBox(height: 24),
             _sectionTitle(context, '🎭 Cover Domains'),
@@ -383,9 +374,7 @@ class _ServerDetailScreenState extends State<ServerDetailScreen> {
             ),
           ],
 
-          // ═══════════════════════════════════════════════
           // SNI Domains
-          // ═══════════════════════════════════════════════
           if (server.sniEnabled) ...[
             const SizedBox(height: 24),
             _sectionTitle(context, '🔄 SNI Domains'),
@@ -412,12 +401,18 @@ class _ServerDetailScreenState extends State<ServerDetailScreen> {
                 ),
           ],
 
-          // ═══════════════════════════════════════════════
           // Actions
-          // ═══════════════════════════════════════════════
           const SizedBox(height: 32),
           Row(
             children: [
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: () => _showQRCode(context, server),
+                  icon: const Icon(Icons.qr_code),
+                  label: const Text('QR Code'),
+                ),
+              ),
+              const SizedBox(width: 12),
               Expanded(
                 child: OutlinedButton.icon(
                   onPressed: () => Navigator.push(
@@ -430,7 +425,11 @@ class _ServerDetailScreenState extends State<ServerDetailScreen> {
                   label: const Text('Export'),
                 ),
               ),
-              const SizedBox(width: 12),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
               Expanded(
                 child: FilledButton.icon(
                   onPressed: () {
@@ -449,9 +448,7 @@ class _ServerDetailScreenState extends State<ServerDetailScreen> {
             ],
           ),
 
-          // ═══════════════════════════════════════════════
           // Warnings
-          // ═══════════════════════════════════════════════
           if (server.psk.isEmpty) ...[
             const SizedBox(height: 24),
             Card(
@@ -496,9 +493,7 @@ class _ServerDetailScreenState extends State<ServerDetailScreen> {
     );
   }
 
-  // ═══════════════════════════════════════════════════════════════
   // Helper Widgets
-  // ═══════════════════════════════════════════════════════════════
 
   Widget _sectionTitle(BuildContext context, String title) {
     return Padding(
@@ -585,9 +580,7 @@ class _ServerDetailScreenState extends State<ServerDetailScreen> {
     return '${diff.inDays}d ago';
   }
 
-  // ═══════════════════════════════════════════════════════════════
   // Test Actions
-  // ═══════════════════════════════════════════════════════════════
 
   Future<void> _runTCPing(BuildContext context) async {
     setState(() => _isTesting = true);
@@ -641,5 +634,134 @@ class _ServerDetailScreenState extends State<ServerDetailScreen> {
         ),
       );
     }
+  }
+
+  // QR Code Dialog
+
+  void _showQRCode(BuildContext context, ServerConfig server) {
+    final uri = server.toShareString();
+
+    showDialog(
+      context: context,
+      builder: (context) => Dialog(
+        child: Container(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Row(
+                children: [
+                  Text(
+                    server.protocolEmoji,
+                    style: const TextStyle(fontSize: 32),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Share ${server.name}',
+                          style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                                fontWeight: FontWeight.bold,
+                              ),
+                        ),
+                        Text(
+                          'Scan this QR code',
+                          style: TextStyle(
+                            fontSize: 13,
+                            color: textMuted(context),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.close),
+                    onPressed: () => Navigator.pop(context),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 24),
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: Theme.of(context).brightness == Brightness.dark
+                        ? Colors.grey.shade700
+                        : Colors.grey.shade300,
+                  ),
+                ),
+                child: QrImageView(
+                  data: uri,
+                  version: QrVersions.auto,
+                  size: 280,
+                  backgroundColor: Colors.white,
+                  errorCorrectionLevel: QrErrorCorrectLevel.M,
+                ),
+              ),
+              const SizedBox(height: 24),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: () {
+                        Clipboard.setData(ClipboardData(text: uri));
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('Config URI copied to clipboard'),
+                          ),
+                        );
+                      },
+                      icon: const Icon(Icons.copy, size: 18),
+                      label: const Text('Copy URI'),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: FilledButton.icon(
+                      onPressed: () {
+                        Navigator.pop(context);
+                      },
+                      icon: const Icon(Icons.check, size: 18),
+                      label: const Text('Done'),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.blue.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Row(
+                  children: [
+                    Icon(
+                      Icons.info_outline,
+                      size: 18,
+                      color: accentColor(context),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Share via encrypted channels only (Signal, Telegram secret chat)',
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: textMuted(context),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 }
