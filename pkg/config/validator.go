@@ -61,6 +61,10 @@ func (v *Validator) Validate(cfg *ServerConfig) error {
 			return fmt.Errorf("fragment: %w", err)
 		}
 	}
+
+	if err := v.validateMetadata(&cfg.Metadata); err != nil {
+		return fmt.Errorf("metadata: %w", err)
+	}
 	
 	return nil
 }
