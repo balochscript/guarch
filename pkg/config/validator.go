@@ -333,3 +333,55 @@ func (v *Validator) isValidDomain(domain string) bool {
 	
 	return true
 }
+
+// validateMetadata validate metadata fields
+func (v *Validator) validateMetadata(meta *Metadata) error {
+	// Quota validation
+	if meta.Quota != nil && !meta.Quota.Unlimited {
+		if meta.Quota.TotalBytes < 0 {
+			return fmt.Errorf("quota.total_bytes cannot be negative")
+		}
+		if meta.Quota.UsedBytes < 0 {
+			return fmt.Errorf("quota.used_bytes cannot be negative")
+		}
+		if meta.Quota.UsedBytes > meta.Quota.TotalBytes {
+			return fmt.Errorf("quota.used_bytes exceeds total_bytes")
+		}
+	}
+	
+	// Announcement validation
+	if meta.Announcement != nil && meta.Announcement.Enabled {
+		if meta.Announcement.URL != "" {
+			if _, err := url.Parse(meta.Announcement.URL); err != nil {
+				return fmt.Errorf("announcement.url invalid: %w", err)
+			}
+		}
+		
+		if meta.Announcement.URL == "" && meta.Announcement.Text == "" {
+			return fmt.Errorf("announcement requires either url or text")
+		}
+		
+		if meta.Announcement.Interval.Duration < 0 {
+			return fmt.Errorf("announcement.interval cannot be negative")
+		}
+		
+		validPriorities := map[string]bool{"info": true, "warning": true, "critical": true}
+		if meta.Announcement.Priority != "" && !validPriorities[meta.Announcement.Priority] {
+			return fmt.Errorf("announcement.priority must be info/warning/critical")
+		}
+	}
+	
+	// Expires validation
+	if meta.ExpiresAt != "" {
+		expiry, err := time.Parse(time.RFC3339, meta.ExpiresAt)
+		if err != nil {
+			return fmt.Errorf("expires_at invalid format (expected RFC3339): %w", err)
+		}
+		
+		if time.Now().After(expiry) {
+			return fmt.Errorf("config has expired")
+		}
+	}
+	
+	return nil
+}
