@@ -281,7 +281,6 @@ class ServerConfig {
     return ServerConfig.fromJson(json);
   }
 
-  // ✅ فقط یک copyWith (تکرار حذف شد)
   ServerConfig copyWith({
     String? name,
     String? address,
@@ -309,6 +308,7 @@ class ServerConfig {
     int? ping,
     int? realDelay,
     DateTime? lastTested,
+    Metadata? metadata,
   }) {
     return ServerConfig(
       id: id,
@@ -339,6 +339,7 @@ class ServerConfig {
       lastTested: lastTested ?? this.lastTested,
       isActive: isActive ?? this.isActive,
       createdAt: createdAt,
+      metadata: metadata ?? this.metadata,
     );
   }
 
