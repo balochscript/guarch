@@ -782,6 +782,142 @@ Create a JSON file with the following structure:
 | `version` | int | Config schema version (always 1) |
 | `server.name` | string | Friendly server name (display only) |
 | `server.address` | string | Server IP:PORT |
+## Configuration Files
+
+### Client Configuration
+
+Create a JSON file with the following structure:
+
+```json
+{
+  "version": 1,
+  "server": {
+    "name": "My Server",
+    "address": "1.2.3.4:8443",
+    "protocol": "guarch",
+    "psk": "your-hex-encoded-psk-here",
+    "cert_pin": "sha256-hex-64-chars"
+  },
+  "sni": {
+    "enabled": true,
+    "mode": "weighted",
+    "rotation_interval": "5m",
+    "health_check_interval": "30s",
+    "health_check_timeout": "5s",
+    "domains": [
+      {
+        "domain": "www.google.com",
+        "weight": 30,
+        "check_health": true
+      },
+      {
+        "domain": "www.microsoft.com",
+        "weight": 20,
+        "check_health": true
+      },
+      {
+        "domain": "github.com",
+        "weight": 15,
+        "check_health": true
+      },
+      {
+        "domain": "www.cloudflare.com",
+        "weight": 10,
+        "check_health": false,
+        "fallback": true
+      }
+    ]
+  },
+  "cover_traffic": {
+    "enabled": true,
+    "mode": "stealth",
+    "adaptive": {
+      "enabled": true,
+      "idle_threshold": 51200,
+      "light_threshold": 512000,
+      "medium_threshold": 5242880,
+      "level_switch_delay": "30s"
+    },
+    "battery_aware": {
+      "enabled": true,
+      "low_battery_threshold": 30
+    },
+    "data_saver": {
+      "enabled": false
+    },
+    "domains": [
+      {
+        "domain": "www.google.com",
+        "paths": ["/", "/search?q=weather", "/search?q=news"],
+        "weight": 30,
+        "min_interval": "2s",
+        "max_interval": "8s",
+        "enabled": true
+      },
+      {
+        "domain": "www.microsoft.com",
+        "paths": ["/", "/en-us/windows"],
+        "weight": 20,
+        "min_interval": "3s",
+        "max_interval": "10s",
+        "enabled": true
+      }
+    ]
+  },
+  "dns_fallback": {
+    "enabled": false,
+    "mode": "auto",
+    "domain": "tunnel.yourdomain.com",
+    "servers": [
+      "8.8.8.8:53",
+      "1.1.1.1:53"
+    ],
+    "query_timeout": "5s",
+    "max_retries": 3,
+    "fallback_threshold": 3
+  },
+  "metadata": {
+    "created_at": "2024-01-20T10:00:00Z",
+    "expires_at": "2024-12-31T23:59:59Z",
+    "country": "IR",
+    "notes": "Production server",
+    "tags": ["iran", "vip"],
+    "quota": {
+      "total_bytes": 107374182400,
+      "used_bytes": 5368709120,
+      "remaining_bytes": 102005473280,
+      "reset_date": "2024-02-01T00:00:00Z",
+      "unlimited": false
+    },
+    "announcement": {
+      "enabled": true,
+      "url": "https://cdn.example.com/announcement.txt",
+      "text": "Server upgraded! 2x speed, better stability",
+      "interval": "2h",
+      "priority": "info"
+    }
+  },
+  "advanced": {
+    "utls": {
+      "enabled": false,
+      "fingerprint": "chrome_auto"
+    },
+    "fragmentation": {
+      "enabled": false,
+      "min_size": 40,
+      "max_size": 100
+    }
+  }
+}
+```
+
+**Field Descriptions:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `version` | int | Config schema version (always 1) |
+| `server.name` | string | Friendly server name (display only) |
+| `server.address` | string | Server IP:PORT |
 | `server.protocol` | string | Protocol: guarch, grouk, or zhip |
 | `server.psk` | string | Hex-encoded pre-shared key (min 32 hex chars) |
 | `server.cert_pin` | string | SHA-256 certificate pin (64 hex chars) |
@@ -801,6 +937,17 @@ Create a JSON file with the following structure:
 | `cover_traffic.data_saver.enabled` | bool | Halve cover rate (saves bandwidth) |
 | `dns_fallback.enabled` | bool | Enable DNS tunneling fallback |
 | `dns_fallback.mode` | string | auto (switch on TLS fail) or manual |
+| `metadata.expires_at` | string | ISO8601 expiry date (config becomes invalid after this) |
+| `metadata.quota.total_bytes` | int | Total bandwidth quota in bytes |
+| `metadata.quota.used_bytes` | int | Consumed bandwidth |
+| `metadata.quota.remaining_bytes` | int | Remaining bandwidth (auto-calculated if omitted) |
+| `metadata.quota.reset_date` | string | ISO8601 date when quota resets |
+| `metadata.quota.unlimited` | bool | If true, no quota limits apply |
+| `metadata.announcement.enabled` | bool | Enable announcement display |
+| `metadata.announcement.url` | string | API endpoint to fetch dynamic announcement |
+| `metadata.announcement.text` | string | Static announcement text (fallback if URL fails) |
+| `metadata.announcement.interval` | duration | How often to refresh from URL (e.g., "2h") |
+| `metadata.announcement.priority` | string | Display priority: info, warning, critical |
 | `advanced.utls.enabled` | bool | Enable browser fingerprinting (coming soon) |
 | `advanced.fragmentation.enabled` | bool | Enable packet fragmentation (coming soon) |
 
@@ -868,7 +1015,7 @@ cfg.Server.PSK = "your-psk"
 | Preset | Description | Best For |
 |--------|-------------|----------|
 | `iran_stealth` | Maximum stealth, 6 domains, heavy cover | Iran, China (heavy censorship) |
-| `iran_balanced` | Balanced, 3 domains, data saver enabled | Iran (moderate usage) |
+| `iran_balanced` | Balanced, 4 domains, data saver enabled | Iran (moderate usage) |
 | `global_stealth` | High stealth, international domains | Worldwide (high censorship) |
 | `global_balanced` | Balanced, international domains | General use worldwide |
 | `minimal` | No cover, maximum speed | Unrestricted networks |
@@ -897,6 +1044,77 @@ cat my_server.json | base64 -w 0 | sed 's/^/guarch:\/\//'
 ```
 
 Or scan QR code in mobile app.
+
+### Metadata Features
+
+#### Expiration Tracking
+
+Configs can have expiration dates:
+
+```json
+{
+  "metadata": {
+    "expires_at": "2024-12-31T23:59:59Z"
+  }
+}
+```
+
+The app will:
+- Display countdown (e.g., "Expires in 15 days")
+- Show warning when < 7 days remain
+- Prevent connection after expiry
+
+#### Bandwidth Quota
+
+Track bandwidth usage:
+
+```json
+{
+  "metadata": {
+    "quota": {
+      "total_bytes": 107374182400,
+      "used_bytes": 5368709120,
+      "remaining_bytes": 102005473280,
+      "reset_date": "2024-02-01T00:00:00Z",
+      "unlimited": false
+    }
+  }
+}
+```
+
+The app displays:
+- Progress bar with color coding (green/orange/red)
+- Formatted sizes (e.g., "5.0 GB / 100 GB")
+- Days until reset
+
+#### Dynamic Announcements
+
+Server owners can push announcements:
+
+```json
+{
+  "metadata": {
+    "announcement": {
+      "enabled": true,
+      "url": "https://cdn.example.com/announcement.txt",
+      "text": "Fallback: Server under maintenance Sunday 2AM-4AM",
+      "interval": "2h",
+      "priority": "warning"
+    }
+  }
+}
+```
+
+**Priority levels:**
+- `info` (ℹ️ blue) — General information
+- `warning` (⚠️ orange) — Important notices
+- `critical` (🚨 red) — Urgent alerts
+
+The app:
+- Fetches from URL every `interval`
+- Falls back to `text` if URL unreachable
+- Shows colored banner based on priority
+- Caches last successful fetch
 
 ## SNI Rotation System
 
