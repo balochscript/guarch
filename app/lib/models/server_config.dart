@@ -192,7 +192,7 @@ class ServerConfig {
     };
   }
 
-  factory ServerConfig.fromJson(Map<String, dynamic> json) {
+    factory ServerConfig.fromJson(Map<String, dynamic> json) {
     final server = json['server'] as Map<String, dynamic>? ?? json;
     final sni = json['sni'] as Map<String, dynamic>? ?? {};
     final cover = json['cover_traffic'] as Map<String, dynamic>? ?? json['cover'] ?? {};
@@ -231,6 +231,9 @@ class ServerConfig {
       createdAt: json['created_at'] != null
           ? DateTime.parse(json['created_at'])
           : DateTime.now(),
+      metadata: json['metadata'] != null 
+          ? Metadata.fromJson(json['metadata']) 
+          : null,
     );
   }
 
