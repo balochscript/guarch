@@ -144,7 +144,7 @@ class ServerConfig {
       psk.isNotEmpty &&
       ['guarch', 'grouk', 'zhip'].contains(protocol);
 
-  Map<String, dynamic> toJson() {
+    Map<String, dynamic> toJson() {
     return {
       'version': 1,
       'id': id,
@@ -182,6 +182,7 @@ class ServerConfig {
         'timeout': '${dnsFallbackTimeout}s',
         'switch_threshold': dnsFallbackSwitchThreshold,
       },
+      if (metadata != null) 'metadata': metadata!.toJson(),
       'listen_port': listenPort,
       'is_active': isActive,
       'ping': ping,
