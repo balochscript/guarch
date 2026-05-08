@@ -25,6 +25,10 @@
   
   "metadata": {
     "notes": "Minimal configuration for maximum speed - use only in non-censored networks",
-    "tags": ["fast", "minimal"]
+    "tags": ["fast", "minimal"],
+    
+    "quota": {
+      "unlimited": true
+    }
   }
 }
