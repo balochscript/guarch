@@ -81,6 +81,19 @@
   "metadata": {
     "country": "IR",
     "notes": "Balanced mode - recommended for daily use in Iran",
-    "tags": ["iran", "balanced", "recommended"]
+    "tags": ["iran", "balanced", "recommended"],
+    
+    "quota": {
+      "total_bytes": 53687091200,
+      "used_bytes": 10737418240,
+      "unlimited": false
+    },
+    
+    "announcement": {
+      "enabled": true,
+      "text": "Balanced mode active. Enable data saver if on limited plan.",
+      "interval": "6h",
+      "priority": "info"
+    }
   }
 }
