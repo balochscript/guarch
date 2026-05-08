@@ -1990,7 +1990,55 @@ Example:
 guarch://eyJuYW1lIjoiTXkgU2VydmVyIiwiYWRkcmVzcyI6IjEuMi4zLjQiLC...
 ```
 
-Configs can also be shared as JSON and imported via clipboard.
+### Sharing Methods
+
+**1. QR Code:**
+- Tap server → Share → Generate QR
+- Other device scans QR → Auto imports
+
+**2. Link:**
+- Tap server → Share → Copy Link
+- Send via Telegram/WhatsApp/Email
+- Recipient taps link → Opens in Guarch app
+
+**3. Clipboard JSON:**
+- Tap server → Export JSON → Copy
+- Share raw JSON text
+- Recipient: Add Server → Import from Clipboard
+
+### Metadata in Shared Configs
+
+Shared configs include:
+
+**Server announcements:**
+```
+ℹ️ "Server upgraded! 2x speed, ping under 50ms"
+⚠️ "Maintenance scheduled: Sunday 2AM-4AM"
+🚨 "Security update required - please update app"
+```
+
+**Quota information:**
+```
+📊 50.0 GB / 100 GB used (50%)
+⏰ Resets in 5 days
+```
+
+**Expiration:**
+```
+📅 Expires in 15 days
+⏰ Expires today
+❌ Expired (connection disabled)
+```
+
+### Privacy Note
+
+Shared URIs contain:
+- ✅ Server address, protocol, PSK
+- ✅ SNI and cover domains
+- ✅ Metadata (quota, expiry, announcements)
+- ❌ Never includes: connection logs, traffic data, user identity
+
+**Recommendation:** Share configs only through encrypted channels (Telegram secret chats, Signal, etc.)
 
 ## Project Structure
 
