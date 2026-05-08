@@ -40,7 +40,7 @@ class ServerConfig {
   // Metadata
   Metadata? metadata;
 
-  ServerConfig({
+    ServerConfig({
     required this.id,
     required this.name,
     required this.address,
@@ -69,6 +69,7 @@ class ServerConfig {
     this.lastTested,
     this.isActive = false,
     DateTime? createdAt,
+    this.metadata,
   })  : coverDomains = coverDomains ?? defaultCoverDomains(),
         sniDomains = sniDomains ?? defaultSNIDomains(),
         dnsFallbackServers = dnsFallbackServers ?? ['8.8.8.8:53', '1.1.1.1:53'],
