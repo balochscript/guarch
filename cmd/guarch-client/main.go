@@ -255,7 +255,6 @@ func buildConfigFromFlags(serverAddr, psk, certPin, mode string) (*config.Server
 func (c *Client) initModules(ctx context.Context) error {
 	// SNI Manager
 	if c.config.SNI.Enabled {
-		// 🆕 استفاده از integration (به جای manual conversion)
 		var err error
 		c.sniManager, err = sni.NewManagerFromConfig(&c.config.SNI)
 		if err != nil {
@@ -287,6 +286,22 @@ func (c *Client) initModules(ctx context.Context) error {
 		c.coverMgr.Start(ctx)
 		
 		log.Printf("[cover] manager started (domains: %d)", len(coverCfg.Domains))
+		
+		// ═══════════════════════════════════════════════════════════
+		// ✅ اضافه شده: warm-up delay
+		// دلیل: اطمینان از اینکه cover traffic قبل از اولین handshake
+		//       چند request واقعی ارسال کرده باشد
+		// ═══════════════════════════════════════════════════════════
+		log.Printf("[cover] warming up (waiting 3 seconds for initial requests)...")
+		
+		warmupTimer := time.NewTimer(3 * time.Second)
+		select {
+		case <-warmupTimer.C:
+			log.Printf("[cover] warm-up complete, ready to connect")
+		case <-ctx.Done():
+			warmupTimer.Stop()
+			return ctx.Err()
+		}
 	}
 	
 	return nil
