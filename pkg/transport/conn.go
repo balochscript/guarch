@@ -94,13 +94,13 @@ type HandshakeConfig struct {
 }
 
 // Handshake انجام PSK handshake و ایجاد SecureConn
-// 🆕 بهبود یافته: اضافه شده timeout + replay window + validation بیشتر
+// ✅ بهبود یافته: اضافه شده obfuscation برای جلوگیری از DPI fingerprinting
 func Handshake(raw net.Conn, isServer bool, cfg *HandshakeConfig) (*SecureConn, error) {
 	if cfg == nil {
 		cfg = &HandshakeConfig{}
 	}
 
-	// 🆕 ADDED: تنظیم مقادیر پیش‌فرض
+	// تنظیم مقادیر پیش‌فرض
 	if len(cfg.PSK) == 0 {
 		return nil, fmt.Errorf("guarch: PSK is required for secure handshake")
 	}
@@ -117,12 +117,12 @@ func Handshake(raw net.Conn, isServer bool, cfg *HandshakeConfig) (*SecureConn, 
 		cfg.ReplayWindowSize = defaultReplayWindowSize
 	}
 
-	// 🆕 ADDED: تنظیم timeout برای handshake
+	// تنظیم timeout برای handshake
 	deadline := time.Now().Add(cfg.HandshakeTimeout)
 	if err := raw.SetDeadline(deadline); err != nil {
 		return nil, fmt.Errorf("guarch: set handshake deadline: %w", err)
 	}
-	defer raw.SetDeadline(time.Time{}) // پاک کردن deadline بعد از handshake
+	defer raw.SetDeadline(time.Time{})
 
 	// تولید keypair
 	kp, err := crypto.GenerateKeyPair()
@@ -133,27 +133,37 @@ func Handshake(raw net.Conn, isServer bool, cfg *HandshakeConfig) (*SecureConn, 
 
 	var peerPub []byte
 
-	// تبادل کلیدهای عمومی
+	// ═══════════════════════════════════════════════════════════
+	// ✅ اصلاح: تبادل obfuscated public keys
+	// الگو: [2B padLen][padding][32B key]
+	// ═══════════════════════════════════════════════════════════
+	
 	if isServer {
-		peerPub = make([]byte, crypto.PublicKeySize)
-		if _, err := io.ReadFull(raw, peerPub); err != nil {
+		// 1️⃣ Server دریافت client key با padding
+		peerPub, err = receiveObfuscatedKey(raw)
+		if err != nil {
 			return nil, fmt.Errorf("guarch: read client key: %w", err)
 		}
-		if _, err := raw.Write(kp.PublicKey[:]); err != nil {
+		
+		// 2️⃣ Server ارسال server key با padding
+		if err := sendObfuscatedKey(raw, kp.PublicKey[:]); err != nil {
 			return nil, fmt.Errorf("guarch: send server key: %w", err)
 		}
+		
 	} else {
-		if _, err := raw.Write(kp.PublicKey[:]); err != nil {
+		// 1️⃣ Client ارسال client key با padding
+		if err := sendObfuscatedKey(raw, kp.PublicKey[:]); err != nil {
 			return nil, fmt.Errorf("guarch: send client key: %w", err)
 		}
-		peerPub = make([]byte, crypto.PublicKeySize)
-		if _, err := io.ReadFull(raw, peerPub); err != nil {
+		
+		// 2️⃣ Client دریافت server key با padding
+		peerPub, err = receiveObfuscatedKey(raw)
+		if err != nil {
 			return nil, fmt.Errorf("guarch: read server key: %w", err)
 		}
 	}
 
 	// محاسبه shared secret
-	// 🆕 IMPROVED: حالا validation بیشتری توی SharedSecret انجام میشه
 	sharedRaw, err := kp.SharedSecret(peerPub)
 	if err != nil {
 		return nil, fmt.Errorf("guarch: shared secret: %w", err)
@@ -198,20 +208,20 @@ func Handshake(raw net.Conn, isServer bool, cfg *HandshakeConfig) (*SecureConn, 
 		return nil, fmt.Errorf("guarch: recv cipher: %w", err)
 	}
 
-	// 🆕 ADDED: ساخت replay window
+	// ساخت replay window
 	replayWindow := protocol.NewReplayWindow(cfg.ReplayWindowSize)
 
 	sc := &SecureConn{
 		raw:          raw,
 		sendCipher:   sendCipher,
 		recvCipher:   recvCipher,
-		replayWindow: replayWindow, // 🆕 ADDED
-		readTimeout:  cfg.ReadTimeout,  // 🆕 ADDED
-		writeTimeout: cfg.WriteTimeout, // 🆕 ADDED
-		isServer:     isServer,         // 🆕 ADDED
-		peerAddr:     raw.RemoteAddr(), // 🆕 ADDED
-		established:  time.Now(),       // 🆕 ADDED
-		maxPadding:     cfg.MaxPadding,     // ← اضافه کن
+		replayWindow: replayWindow,
+		readTimeout:  cfg.ReadTimeout,
+		writeTimeout: cfg.WriteTimeout,
+		isServer:     isServer,
+		peerAddr:     raw.RemoteAddr(),
+		established:  time.Now(),
+		maxPadding:     cfg.MaxPadding,
 		paddingEnabled: cfg.PaddingEnabled,
 	}
 
@@ -221,6 +231,96 @@ func Handshake(raw net.Conn, isServer bool, cfg *HandshakeConfig) (*SecureConn, 
 	}
 
 	return sc, nil
+}
+
+// ═══════════════════════════════════════════════════════════
+// ✅ توابع کمکی جدید برای obfuscation
+// ═══════════════════════════════════════════════════════════
+
+// sendObfuscatedKey ارسال public key با random padding
+// Format: [2 bytes: padLen][padding][32 bytes: key]
+func sendObfuscatedKey(w io.Writer, key []byte) error {
+	if len(key) != crypto.PublicKeySize {
+		return fmt.Errorf("guarch: invalid key size: %d", len(key))
+	}
+	
+	// ═══════════════════════════════════════════════════════════
+	// تولید random padding (32-160 bytes)
+	// این باعث میشه هر handshake سایز متفاوتی داشته باشه
+	// ═══════════════════════════════════════════════════════════
+	padLen := uint16(cryptoRandIntn(128) + 32)  // 32-160 bytes
+	padding := make([]byte, padLen)
+	
+	if _, err := rand.Read(padding); err != nil {
+		return fmt.Errorf("guarch: padding random: %w", err)
+	}
+	
+	// ارسال: [2B length][padding][32B key]
+	lenBuf := make([]byte, 2)
+	binary.BigEndian.PutUint16(lenBuf, padLen)
+	
+	if _, err := w.Write(lenBuf); err != nil {
+		return err
+	}
+	if _, err := w.Write(padding); err != nil {
+		return err
+	}
+	if _, err := w.Write(key); err != nil {
+		return err
+	}
+	
+	return nil
+}
+
+// receiveObfuscatedKey دریافت public key با random padding
+// Format: [2 bytes: padLen][padding][32 bytes: key]
+func receiveObfuscatedKey(r io.Reader) ([]byte, error) {
+	// 1️⃣ خواندن padding length
+	lenBuf := make([]byte, 2)
+	if _, err := io.ReadFull(r, lenBuf); err != nil {
+		return nil, fmt.Errorf("guarch: read pad length: %w", err)
+	}
+	
+	padLen := binary.BigEndian.Uint16(lenBuf)
+	
+	// ═══════════════════════════════════════════════════════════
+	// Validation: جلوگیری از حملات DoS با padding خیلی بزرگ
+	// ═══════════════════════════════════════════════════════════
+	if padLen < 32 || padLen > 256 {
+		return nil, fmt.Errorf("guarch: invalid padding length: %d (must be 32-256)", padLen)
+	}
+	
+	// 2️⃣ خواندن و دور انداختن padding (نیازی به ذخیره نیست)
+	padding := make([]byte, padLen)
+	if _, err := io.ReadFull(r, padding); err != nil {
+		return nil, fmt.Errorf("guarch: read padding: %w", err)
+	}
+	
+	// 3️⃣ خواندن key اصلی
+	key := make([]byte, crypto.PublicKeySize)
+	if _, err := io.ReadFull(r, key); err != nil {
+		return nil, fmt.Errorf("guarch: read key: %w", err)
+	}
+	
+	return key, nil
+}
+
+// cryptoRandIntn تولید عدد تصادفی crypto-secure
+func cryptoRandIntn(n int) int {
+	if n <= 0 {
+		return 0
+	}
+	
+	max := big.NewInt(int64(n))
+	val, err := rand.Int(rand.Reader, max)
+	if err != nil {
+		// fallback به crypto/rand.Read
+		b := make([]byte, 4)
+		rand.Read(b)
+		return int(binary.BigEndian.Uint32(b)) % n
+	}
+	
+	return int(val.Int64())
 }
 
 // authenticate تایید PSK با HMAC
