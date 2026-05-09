@@ -2,10 +2,12 @@ package transport
 
 import (
 	"crypto/hmac"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/binary"
 	"fmt"
 	"io"
+	"math/big"
 	"net"
 	"sync"
 	"sync/atomic"
