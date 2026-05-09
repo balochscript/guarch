@@ -2293,23 +2293,91 @@ docker-compose up -d
 
 ## Name Origin
 
-**Guarch** is a Balochi word for a traditional hunting technique used by Baloch hunters in southeastern Iran and western Pakistan. The hunter hides behind a piece of cloth or structure and moves slowly alongside the prey. The prey sees only the cloth — something natural and non-threatening — while the hunter remains completely hidden behind it until the right moment.
-
-Similarly, the Guarch protocol hides its real traffic behind normal-looking cover traffic. The firewall (prey) sees only legitimate HTTPS requests to popular websites, while the actual circumvention traffic moves invisibly alongside it.
+**Guarch** (گوارچ) is a Balochi word describing a traditional hunting technique used by Baloch hunters in Balochistan Region. In this method, the hunter conceals himself completely behind a **cube-shaped cloth structure** (held upright with wooden poles) and moves slowly alongside the prey, gradually guiding it toward the desired destination.
 
 ```
-The Hunter (Guarch):          The Protocol:
-
-   🏹 Hunter                    📦 Hidden Data
-    │                            │
-    │ ← Cloth (cover)            │ ← Cover Traffic (Google, GitHub, ...)
-    │                            │
-   🦌 Prey doesn't notice       🔥 Firewall doesn't notice
+     ┌─────────┐
+     │  Cloth  │  ← Prey sees only a natural, harmless object
+     │ ┌─────┐ │
+     │ │ 🏹  │ │  ← Hunter completely hidden behind
+     │ └─────┘ │
+     └─────────┘
+         │
+         ▼
+       🦌 Prey
+   (senses no danger)
 ```
 
-The sister protocols follow the same philosophy:
-- **Grouk** (گرۏک) — Thunder; strikes fast like lightning through raw UDP
-- **Zhip** (ژیپ) — Quick/nimble; balanced speed via QUIC
+The hunter **"Guarches"** the prey (guides it) toward the target location — the prey sees only the cloth, never the hunter.
+
+### Protocol Analogy
+
+The Guarch protocol implements this exact philosophy:
+
+| Guarch Technique | Guarch Protocol |
+|------------------|-----------------|
+| 🏹 **Hunter** | 📦 Your hidden data (real traffic) |
+| 🎭 **Cloth** | ✅ Cover Traffic (real HTTPS to Google, GitHub, Microsoft) |
+| 🦌 **Prey** | 🔥 Firewall / DPI (censorship system) |
+| 🎯 **Destination** | 🌐 Free Internet |
+
+```
+Firewall sees:
+  ✅ TLS to google.com       ← Normal
+  ✅ TLS to github.com       ← Normal
+  ✅ TLS to microsoft.com    ← Normal
+  ✅ TLS to cdn-service.com  ← Normal (but hidden data flows here!)
+  
+Result: 🎯 Passes through — indistinguishable from regular browsing
+```
+
+### Project Motto
+
+> **"Guarch Your Activity"**
+
+Just as the Balochi hunter guides the prey without detection, Guarch guides your traffic past censorship without the firewall noticing.
+
+---
+
+### Why Guarch is Different
+
+**Traditional VPN/Proxy:**
+```
+Firewall sees → [Suspicious encrypted traffic to unknown IP]
+Result: ❌ BLOCKED
+```
+
+**Guarch Protocol:**
+```
+Firewall sees → [Normal web browsing]
+                [HTTPS requests to legitimate sites]
+                [Natural traffic patterns with realistic timing]
+Result: ✅ PASSES — indistinguishable from normal user
+```
+
+### Guarch Techniques in the Protocol
+
+1. **Cloth (Cover)** — Real cover traffic to configurable domains
+2. **Slow Movement (Shaping)** — Traffic shaping with natural timing
+3. **Position Change (Rotation)** — Automatic SNI rotation
+4. **Concealment (Padding)** — Smart padding to common web sizes
+5. **Gradual Guidance (Adaptive)** — Adaptive cover with 4 activity levels
+
+Together, these create a "digital cloth" that completely hides your real traffic.
+
+---
+
+### Sister Protocols
+
+Following Guarch's success, two additional protocols were created with the same philosophy:
+
+| Protocol | Balochi Meaning | Philosophy | Emoji |
+|----------|----------------|------------|-------|
+| **Guarch** | To guide secretly | Hide behind cover traffic | 🏹 |
+| **Grouk** | Thunder/Lightning | Strike fast via raw UDP | 🌩️ |
+| **Zhip** | Quick/Nimble | Balanced speed via QUIC | ⚡ |
+
+All three share one goal: **undetectable circumvention** — but with different approaches for different scenarios.
 
 ## Changelog
 
@@ -2474,7 +2542,7 @@ See [LICENSE](LICENSE) for full legal text.
 ---
 
 **Guarch Protocol Suite v1.0.1**  
-Built with 🏹🌩️⚡ by the community — Hidden like a Balochi hunter
+Built with ♡ by the community — Guarch your activities
 
 **Latest Release:** [v1.0.1](https://github.com/balochscript/guarch/releases/tag/v1.0.1) (2024-01-21)  
 **Documentation:** [GitHub Wiki](https://github.com/balochscript/guarch/wiki)  
