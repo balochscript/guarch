@@ -401,6 +401,17 @@ func (e *Engine) connectInternal() error {
     coverMgr.Start(e.ctx)
     log.Printf("[cover] Cover traffic enabled (%s mode, %d domains)",
         cfg.Cover.Mode, len(cfg.Cover.Domains))
+
+	e.logInfo("[cover] warming up (waiting 3 seconds for initial requests)...")
+        
+        warmupTimer := time.NewTimer(3 * time.Second)
+        select {
+        case <-warmupTimer.C:
+            e.logInfo("[cover] warm-up complete, ready to connect")
+        case <-e.ctx.Done():
+            warmupTimer.Stop()
+            return e.ctx.Err()
+        }
 }
 
 	switch strings.ToLower(protocol) {
