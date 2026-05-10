@@ -1,4 +1,3 @@
-// pkg/core/sni/health.go
 package sni
 
 import (
