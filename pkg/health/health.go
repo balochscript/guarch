@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/http"
 	"runtime"
+	"sync"
 	"sync/atomic"
 	"time"
 )
@@ -44,37 +45,54 @@ func (c *Checker) AddError()        { c.errors.Add(1) }
 
 // SNIStats آمار SNI rotation
 type SNIStats struct {
-	Enabled        bool              `json:"enabled"`
-	CurrentDomain  string            `json:"current_domain,omitempty"`
-	Mode           string            `json:"mode,omitempty"`
-	TotalRotations uint64            `json:"total_rotations,omitempty"`
-	LastRotation   string            `json:"last_rotation,omitempty"` // RFC3339 format
-	TotalDomains   int               `json:"total_domains"`
-	HealthyDomains int               `json:"healthy_domains,omitempty"`
-	HealthStatus   map[string]bool   `json:"health_status,omitempty"`
+	Enabled        bool            `json:"enabled"`
+	CurrentDomain  string          `json:"current_domain,omitempty"`
+	Mode           string          `json:"mode,omitempty"`
+	TotalRotations uint64          `json:"total_rotations,omitempty"`
+	LastRotation   string          `json:"last_rotation,omitempty"`
+	TotalDomains   int             `json:"total_domains"`
+	HealthyDomains int             `json:"healthy_domains,omitempty"`
+	HealthStatus   map[string]bool `json:"health_status,omitempty"`
 }
 
 // Status ساختار وضعیت سرور (برای JSON API)
 type Status struct {
-	Status        string `json:"status"`
-	Uptime        string `json:"uptime"`
-	UptimeSeconds int64  `json:"uptime_seconds"`
-	ActiveConns   int64  `json:"active_connections"`
-	TotalConns    int64  `json:"total_connections"`
-	TotalBytes    int64  `json:"total_bytes"`
-	CoverRequests int64  `json:"cover_requests"`
-	Errors        int64  `json:"errors"`
-	TotalErrors   int64  `json:"total_errors"` // ← اضافه شد: alias برای Errors
-	GoRoutines    int    `json:"goroutines"`
-	MemoryMB      uint64 `json:"memory_mb"`
+	Status        string    `json:"status"`
+	Uptime        string    `json:"uptime"`
+	UptimeSeconds int64     `json:"uptime_seconds"`
+	ActiveConns   int64     `json:"active_connections"`
+	TotalConns    int64     `json:"total_connections"`
+	TotalBytes    int64     `json:"total_bytes"`
+	CoverRequests int64     `json:"cover_requests"`
+	Errors        int64     `json:"errors"`
+	TotalErrors   int64     `json:"total_errors"`
+	GoRoutines    int       `json:"goroutines"`
+	MemoryMB      uint64    `json:"memory_mb"`
 	SNI           *SNIStats `json:"sni,omitempty"`
+}
+
+// SNIStatsProvider interface برای type assertion
+type SNIStatsProvider interface {
+	Stats() SNIManagerStats
+	GetHealthStatus() map[string]bool
+}
+
+// SNIManagerStats ساختار آمار SNI manager
+type SNIManagerStats struct {
+	Enabled        bool
+	CurrentSNI     string
+	TotalSwitches  uint64
+	LastSwitch     time.Time
+	Mode           string
+	TotalDomains   int
+	HealthyDomains int
 }
 
 func (c *Checker) GetStatus() Status {
 	var mem runtime.MemStats
 	runtime.ReadMemStats(&mem)
 	uptime := time.Since(c.startTime)
-	
+
 	errCount := c.errors.Load()
 
 	status := Status{
@@ -90,30 +108,18 @@ func (c *Checker) GetStatus() Status {
 		GoRoutines:    runtime.NumGoroutine(),
 		MemoryMB:      mem.Alloc / 1024 / 1024,
 	}
-	
-	// 🆕 اضافه کردن SNI stats
+
+	// اضافه کردن SNI stats
 	c.sniMu.RLock()
 	if c.sniManager != nil {
-		// Type assertion (فقط کار می‌کنه اگه sni.Manager باشه)
-		if mgr, ok := c.sniManager.(interface {
-			Stats() interface {
-				Enabled        bool
-				CurrentSNI     string
-				TotalSwitches  uint64
-				LastSwitch     time.Time
-				Mode           string
-				TotalDomains   int
-				HealthyDomains int
-			}
-			GetHealthStatus() map[string]bool
-		}); ok {
+		if mgr, ok := c.sniManager.(SNIStatsProvider); ok {
 			stats := mgr.Stats()
-			
+
 			lastRotation := ""
 			if !stats.LastSwitch.IsZero() {
 				lastRotation = stats.LastSwitch.Format(time.RFC3339)
 			}
-			
+
 			status.SNI = &SNIStats{
 				Enabled:        stats.Enabled,
 				CurrentDomain:  stats.CurrentSNI,
@@ -127,7 +133,7 @@ func (c *Checker) GetStatus() Status {
 		}
 	}
 	c.sniMu.RUnlock()
-	
+
 	return status
 }
 
