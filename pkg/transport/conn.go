@@ -16,7 +16,7 @@ import (
 	"guarch/pkg/crypto"
 	glog "guarch/pkg/log"
 	"guarch/pkg/protocol"
-	"guarch/pkg/core/cover"
+	"guarch/pkg/cover"
 )
 
 const (
