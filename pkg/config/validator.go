@@ -380,7 +380,7 @@ func (v *Validator) validateMetadata(meta *Metadata) error {
 		}
 		
 		if time.Now().After(expiry) {
-			return fmt.Errorf("config has expired")
+			return fmt.Errorf("config has expired!")
 		}
 	}
 	
