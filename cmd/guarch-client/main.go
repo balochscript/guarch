@@ -597,7 +597,9 @@ func (c *Client) handleSOCKS(socksConn net.Conn, ctx context.Context) {
 
 	socks5.SendReply(socksConn, 0x00)
 
+	// ✅ نمایش ID فقط برای mux.Stream
 	log.Printf("[guarch] ✅ %s (stream %d)", target, stream.ID())
+	
 	c.relayWithTracking(stream, socksConn)
 	log.Printf("[guarch] ✖ %s", target)
 }
