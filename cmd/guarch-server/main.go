@@ -20,6 +20,7 @@ import (
 	"guarch/cmd/internal/cmdutil"
 	"guarch/pkg/antidetect"
 	"guarch/pkg/config"
+	"guarch/pkg/core/dns"
 	"guarch/pkg/cover"
 	"guarch/pkg/health"
 	"guarch/pkg/mux"
@@ -698,9 +699,8 @@ func convertCoverDomains(domains []config.CoverDomain) []cover.DomainConfig {
 
 // DNSSessionManager مدیریت session های DNS tunnel
 type DNSSessionManager struct {
-	sessions sync.Map // sessionID -> *DNSSession
+	sessions sync.Map  // sessionID (uint32) -> *DNSSession
 }
-
 // DNSSession یک session DNS tunnel
 type DNSSession struct {
 	id           uint32
