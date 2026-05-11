@@ -704,7 +704,7 @@ func parsePort(s string) uint16 {
 	return p
 }
 
-func (c *Client) relayWithTracking(stream *mux.Stream, conn net.Conn) {
+func (c *Client) relayWithTracking(stream io.ReadWriteCloser, conn net.Conn) {
 	ch := make(chan error, 2)
 
 	go func() {
