@@ -72,6 +72,7 @@ func main() {
 	mode       := flag.String("mode", "balanced", "Mode: stealth, balanced, fast")
 	
 	// Feature toggles
+		// Feature toggles
 	enableSNI   := flag.Bool("sni", true, "Enable SNI")
 	enableCover := flag.Bool("cover", true, "Enable cover traffic")
 	enableDNS   := flag.Bool("dns", false, "Enable DNS fallback")
@@ -93,15 +94,19 @@ func main() {
 		log.Fatalf("❌ Config error: %v", err)
 	}
 	
-	// Apply feature flags (override config)
-	if !*enableSNI {
-		cfg.SNI.Enabled = false
-	}
-	if !*enableCover {
-		cfg.Cover.Enabled = false
-	}
-	if !*enableDNS {
-		cfg.DNS.Enabled = false
+	// ✅ Feature flag overrides - فقط اگه config file استفاده نشده
+	// اگه از config file استفاده شده، flag ها نادیده گرفته می‌شوند
+	if *configFile == "" && *configURI == "" {
+		// فقط برای flag-based config
+		if !*enableSNI {
+			cfg.SNI.Enabled = false
+		}
+		if !*enableCover {
+			cfg.Cover.Enabled = false
+		}
+		if *enableDNS {
+			cfg.DNS.Enabled = true
+		}
 	}
 
 	// ═══════════════════════════════════════
