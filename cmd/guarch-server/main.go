@@ -241,17 +241,15 @@ if cfg.DNS.Enabled {
 		// ═══════════════════════════════════════════════════════════
 		// تنظیمات اضافی از config
 		// ═══════════════════════════════════════════════════════════
-		if cfg.DNS.MaxSessions > 0 {
-			dnsServer.SetMaxSessions(cfg.DNS.MaxSessions)
-		}
-		
-		if cfg.DNS.SessionTimeout.Duration > 0 {
-			dnsServer.SetSessionTimeout(cfg.DNS.SessionTimeout.Duration)
-		}
-		
-		if cfg.DNS.RateLimit > 0 {
-			dnsServer.SetRateLimit(cfg.DNS.RateLimit)
-		}
+		dnsServerCfg := &dns.ServerConfig{
+            Domain:         cfg.DNS.Domain,
+            Addr:           dnsListenAddr,
+            MaxSessions:    cfg.DNS.MaxSessions,     // ← اضافه شد
+            SessionTimeout: cfg.DNS.SessionTimeout.Duration, // ← اضافه شد
+            RateLimit:      cfg.DNS.RateLimit,       // ← اضافه شد
+        }
+
+            dnsServer, err := dns.NewServer(dnsServerCfg)
 		
 		// ═══════════════════════════════════════════════════════════
 		// Session Manager برای نگهداری TCP connections
