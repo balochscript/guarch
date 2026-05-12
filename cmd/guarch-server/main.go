@@ -255,8 +255,8 @@ if cfg.DNS.Enabled {
 		// Session Manager برای نگهداری TCP connections
 		// ═══════════════════════════════════════════════════════════
 		sessionManager := &DNSSessionManager{
-			sessions: make(map[uint32]*DNSSession),
-		}
+            sessions: sync.Map{},  // ← یا حتی خالی بذار
+        }
 		
 		// Cleanup goroutine برای session های expired
 		go func() {
