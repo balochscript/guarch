@@ -5,191 +5,128 @@ import (
 	"time"
 )
 
-// ═══════════════════════════════════════════════════════════
-// Root Config Structure
-// ═══════════════════════════════════════════════════════════
-
-// ServerConfig تنظیمات کامل سرور
 type ServerConfig struct {
 	Version  int            `json:"version"`
 	Server   ServerInfo     `json:"server"`
 	SNI      SNIConfig      `json:"sni,omitempty"`
-	Cover    CoverConfig    `json:"cover_traffic,omitempty"`
-	DNS      DNSConfig      `json:"dns_fallback,omitempty"`
+	Cover    CoverConfig    `json:"cover,omitempty"`
+	DNS      DNSConfig      `json:"dns,omitempty"`
 	UTLS     UTLSConfig     `json:"utls,omitempty"`
 	Fragment FragmentConfig `json:"fragmentation,omitempty"`
 	Modes    ModesConfig    `json:"modes,omitempty"`
 	Metadata Metadata       `json:"metadata,omitempty"`
 }
 
-// ═══════════════════════════════════════════════════════════
-// Server Info
-// ═══════════════════════════════════════════════════════════
-
-// ServerInfo اطلاعات اصلی سرور
 type ServerInfo struct {
 	Name     string `json:"name"`
-	Address  string `json:"address"`           // "1.2.3.4:8443"
-	Protocol string `json:"protocol"`          // "guarch", "grouk", "zhip"
-	PSK      string `json:"psk"`               // hex-encoded
-	CertPin  string `json:"cert_pin,omitempty"` // sha256 pin
+	Address  string `json:"address"`
+	Protocol string `json:"protocol"`
+	PSK      string `json:"psk"`
+	CertPin  string `json:"cert_pin,omitempty"`
 }
 
-// ═══════════════════════════════════════════════════════════
-// SNI Config
-// ═══════════════════════════════════════════════════════════
-
-// SNIConfig تنظیمات SNI (Server Name Indication)
 type SNIConfig struct {
 	Enabled             bool        `json:"enabled"`
-	Mode                string      `json:"mode"` // "random", "weighted", "sequential", "single"
+	Mode                string      `json:"mode"`
 	Domains             []SNIDomain `json:"domains"`
-	RotationInterval    Duration    `json:"rotation_interval,omitempty"`    // مثلاً "5m"
-	HealthCheckInterval Duration    `json:"health_check_interval,omitempty"` // مثلاً "30s"
-	HealthCheckTimeout  Duration    `json:"health_check_timeout,omitempty"`  // مثلاً "5s"
+	RotationInterval    Duration    `json:"rotation_interval,omitempty"`
+	HealthCheckInterval Duration    `json:"health_check_interval,omitempty"`
+	HealthCheckTimeout  Duration    `json:"health_check_timeout,omitempty"`
 }
 
-// SNIDomain یک دامنه SNI
 type SNIDomain struct {
-	Domain      string `json:"domain"`                 // "google.com"
-	Weight      int    `json:"weight,omitempty"`       // برای weighted mode
-	CheckHealth bool   `json:"check_health,omitempty"` // آیا health check بشه؟
-	Fallback    bool   `json:"fallback,omitempty"`     // آیا fallback است؟
-	Priority    int    `json:"priority,omitempty"`     // اولویت (پایین‌تر = بالاتر)
+	Domain      string `json:"domain"`
+	Weight      int    `json:"weight,omitempty"`
+	CheckHealth bool   `json:"check_health,omitempty"`
+	Fallback    bool   `json:"fallback,omitempty"`
+	Priority    int    `json:"priority,omitempty"`
 }
 
-// ═══════════════════════════════════════════════════════════
-// Cover Traffic Config
-// ═══════════════════════════════════════════════════════════
-
-// CoverConfig تنظیمات cover traffic
 type CoverConfig struct {
 	Enabled  bool            `json:"enabled"`
-	Mode     string          `json:"mode"` // "auto", "stealth", "balanced", "fast", "off"
+	Mode     string          `json:"mode"`
 	Domains  []CoverDomain   `json:"domains"`
 	Adaptive AdaptiveConfig  `json:"adaptive,omitempty"`
 }
 
-// CoverDomain یک دامنه برای cover traffic
 type CoverDomain struct {
-	Domain      string   `json:"domain"`       // "www.google.com"
-	Paths       []string `json:"paths"`        // ["/", "/search?q=weather"]
-	Weight      int      `json:"weight"`       // وزن برای انتخاب تصادفی
-	IntervalMin Duration `json:"interval_min"` // حداقل فاصله بین درخواست‌ها
-	IntervalMax Duration `json:"interval_max"` // حداکثر فاصله بین درخواست‌ها
-	UserAgents  []string `json:"user_agents,omitempty"` // لیست User-Agent (optional)
+	Domain      string   `json:"domain"`
+	Paths       []string `json:"paths"`
+	Weight      int      `json:"weight"`
+	IntervalMin Duration `json:"interval_min"`
+	IntervalMax Duration `json:"interval_max"`
+	UserAgents  []string `json:"user_agents,omitempty"`
 }
 
-// AdaptiveConfig تنظیمات adaptive mode
 type AdaptiveConfig struct {
 	Enabled         bool   `json:"enabled"`
-	BatteryAware    bool   `json:"battery_aware"`    // کاهش در حالت کم باتری
-	DataSaverMode   bool   `json:"data_saver_mode"`  // کاهش برای صرفه‌جویی دیتا
-	IdleThreshold   string `json:"idle_threshold"`   // مثلاً "50KB/min"
-	LightThreshold  string `json:"light_threshold"`  // مثلاً "500KB/min"
-	MediumThreshold string `json:"medium_threshold"` // مثلاً "5MB/min"
+	BatteryAware    bool   `json:"battery_aware"`
+	DataSaverMode   bool   `json:"data_saver_mode"`
+	IdleThreshold   string `json:"idle_threshold"`
+	LightThreshold  string `json:"light_threshold"`
+	MediumThreshold string `json:"medium_threshold"`
 }
 
-// ═══════════════════════════════════════════════════════════
-// DNS Fallback Config
-// ═══════════════════════════════════════════════════════════
-
-// DNSConfig تنظیمات DNS tunneling fallback
-// DNSConfig تنظیمات DNS fallback
 type DNSConfig struct {
-    Enabled         bool     `json:"enabled"`
-    Domain          string   `json:"domain"`           // دامنه authoritative
-    
-    // ═══════════════════════════════════════════════════════════
-    // Client Settings (برای اتصال به DNS servers)
-    // ═══════════════════════════════════════════════════════════
-    Servers         []string `json:"servers"`          // لیست upstream DNS servers
-    AutoSwitch      bool     `json:"auto_switch"`      // خودکار switch به DNS اگه TLS fail شد
-    SwitchThreshold int      `json:"switch_threshold"` // بعد از چند تا TLS failure
-    Timeout         Duration `json:"timeout,omitempty"`
-    MaxRetries      int      `json:"max_retries,omitempty"`      // حداکثر تعداد retry
-    RetryDelay      Duration `json:"retry_delay,omitempty"`      // تاخیر بین retry ها
-    
-    // ═══════════════════════════════════════════════════════════
-    // Server Settings (برای اجرای DNS server authoritative)
-    // ═══════════════════════════════════════════════════════════
-    ListenAddr      string   `json:"listen_addr,omitempty"`      // آدرس listen (مثلاً ":5353" یا ":53")
-    MaxSessions     int      `json:"max_sessions,omitempty"`     // حداکثر تعداد session همزمان
-    SessionTimeout  Duration `json:"session_timeout,omitempty"`  // timeout برای session های inactive
-    RateLimit       int      `json:"rate_limit,omitempty"`       // حداکثر query در ثانیه (0 = unlimited)
-    CacheEnabled    bool     `json:"cache_enabled,omitempty"`    // فعال کردن response cache
-    CacheTTL        Duration `json:"cache_ttl,omitempty"`        // مدت زمان cache
-    
-    // ═══════════════════════════════════════════════════════════
-    // Advanced Settings
-    // ═══════════════════════════════════════════════════════════
-    BufferSize      int      `json:"buffer_size,omitempty"`      // اندازه buffer برای هر session
-    MaxPacketSize   int      `json:"max_packet_size,omitempty"`  // حداکثر اندازه packet
-    Compression     bool     `json:"compression,omitempty"`      // فشرده‌سازی data قبل از encode
+	Enabled         bool     `json:"enabled"`
+	Domain          string   `json:"domain"`
+	Servers         []string `json:"servers"`
+	AutoSwitch      bool     `json:"auto_switch"`
+	SwitchThreshold int      `json:"switch_threshold"`
+	Timeout         Duration `json:"timeout,omitempty"`
+	MaxRetries      int      `json:"max_retries,omitempty"`
+	RetryDelay      Duration `json:"retry_delay,omitempty"`
+	ListenAddr      string   `json:"listen_addr,omitempty"`
+	MaxSessions     int      `json:"max_sessions,omitempty"`
+	SessionTimeout  Duration `json:"session_timeout,omitempty"`
+	RateLimit       int      `json:"rate_limit,omitempty"`
+	CacheEnabled    bool     `json:"cache_enabled,omitempty"`
+	CacheTTL        Duration `json:"cache_ttl,omitempty"`
+	BufferSize      int      `json:"buffer_size,omitempty"`
+	MaxPacketSize   int      `json:"max_packet_size,omitempty"`
+	Compression     bool     `json:"compression,omitempty"`
 }
 
-// ═══════════════════════════════════════════════════════════
-// uTLS Config
-// ═══════════════════════════════════════════════════════════
-
-// UTLSConfig تنظیمات uTLS (Browser Fingerprinting)
 type UTLSConfig struct {
-	Enabled     bool     `json:"enabled"`
-	Fingerprint string   `json:"fingerprint"` // "chrome_auto", "firefox_121", ...
-	Options     []string `json:"options,omitempty"` // لیست fingerprint های قابل انتخاب
-	RandomizeALPN bool   `json:"randomize_alpn,omitempty"`
+	Enabled       bool     `json:"enabled"`
+	Fingerprint   string   `json:"fingerprint"`
+	Options       []string `json:"options,omitempty"`
+	RandomizeALPN bool     `json:"randomize_alpn,omitempty"`
 }
 
-// ═══════════════════════════════════════════════════════════
-// Fragmentation Config
-// ═══════════════════════════════════════════════════════════
-
-// FragmentConfig تنظیمات packet fragmentation
 type FragmentConfig struct {
-	Enabled bool `json:"enabled"`
-	MinSize int  `json:"min_size"` // حداقل سایز fragment (bytes)
-	MaxSize int  `json:"max_size"` // حداکثر سایز fragment (bytes)
-	Delay   Duration `json:"delay,omitempty"` // تاخیر بین fragment ها
+	Enabled bool     `json:"enabled"`
+	MinSize int      `json:"min_size"`
+	MaxSize int      `json:"max_size"`
+	Delay   Duration `json:"delay,omitempty"`
 }
 
-// ═══════════════════════════════════════════════════════════
-// Modes Config
-// ═══════════════════════════════════════════════════════════
-
-// ModesConfig تنظیمات پیش‌فرض برای هر mode
 type ModesConfig struct {
 	Stealth  ModeSettings `json:"stealth"`
 	Balanced ModeSettings `json:"balanced"`
 	Fast     ModeSettings `json:"fast"`
 }
 
-// ModeSettings تنظیمات یک mode
 type ModeSettings struct {
-	CoverRate   string `json:"cover_rate"`   // "high", "medium", "low", "off"
-	Padding     int    `json:"padding"`      // حداکثر padding (bytes)
-	SNIRotation string `json:"sni_rotation"` // "fast", "normal", "slow", "off"
-	DNSFallback bool   `json:"dns_fallback,omitempty"` // فعال کردن DNS fallback
+	CoverRate   string `json:"cover_rate"`
+	Padding     int    `json:"padding"`
+	SNIRotation string `json:"sni_rotation"`
+	DNSFallback bool   `json:"dns_fallback,omitempty"`
 }
 
-// ═══════════════════════════════════════════════════════════
-// Metadata
-// ═══════════════════════════════════════════════════════════
-
-// Metadata server metadata
 type Metadata struct {
-	CreatedAt    string            `json:"created_at,omitempty"`
-	UpdatedAt    string            `json:"updated_at,omitempty"`
-	ExpiresAt    string            `json:"expires_at,omitempty"`
-	Country      string            `json:"country,omitempty"`
-	ISPHint      string            `json:"isp_hint,omitempty"`
-	Notes        string            `json:"notes,omitempty"`
-	Tags         []string          `json:"tags,omitempty"`
-	Custom       map[string]string `json:"custom,omitempty"`
-	Quota        *QuotaInfo        `json:"quota,omitempty"`
+	CreatedAt    string              `json:"created_at,omitempty"`
+	UpdatedAt    string              `json:"updated_at,omitempty"`
+	ExpiresAt    string              `json:"expires_at,omitempty"`
+	Country      string              `json:"country,omitempty"`
+	ISPHint      string              `json:"isp_hint,omitempty"`
+	Notes        string              `json:"notes,omitempty"`
+	Tags         []string            `json:"tags,omitempty"`
+	Custom       map[string]string   `json:"custom,omitempty"`
+	Quota        *QuotaInfo          `json:"quota,omitempty"`
 	Announcement *AnnouncementConfig `json:"announcement,omitempty"`
 }
 
-// QuotaInfo traffic quota information
 type QuotaInfo struct {
 	TotalBytes     int64  `json:"total_bytes,omitempty"`
 	UsedBytes      int64  `json:"used_bytes,omitempty"`
@@ -198,25 +135,18 @@ type QuotaInfo struct {
 	Unlimited      bool   `json:"unlimited,omitempty"`
 }
 
-// AnnouncementConfig server announcement/notification
 type AnnouncementConfig struct {
 	Enabled  bool     `json:"enabled"`
 	URL      string   `json:"url,omitempty"`
 	Text     string   `json:"text,omitempty"`
 	Interval Duration `json:"interval,omitempty"`
-	Priority string   `json:"priority,omitempty"` // "info", "warning", "critical"
+	Priority string   `json:"priority,omitempty"`
 }
 
-// ═══════════════════════════════════════════════════════════
-// Helper Types
-// ═══════════════════════════════════════════════════════════
-
-// Duration wrapper برای parse کردن duration strings
 type Duration struct {
 	time.Duration
 }
 
-// UnmarshalJSON parse duration از JSON string
 func (d *Duration) UnmarshalJSON(b []byte) error {
 	var s string
 	if err := json.Unmarshal(b, &s); err != nil {
@@ -237,7 +167,6 @@ func (d *Duration) UnmarshalJSON(b []byte) error {
 	return nil
 }
 
-// MarshalJSON تبدیل duration به JSON string
 func (d Duration) MarshalJSON() ([]byte, error) {
 	if d.Duration == 0 {
 		return json.Marshal("")
@@ -245,60 +174,46 @@ func (d Duration) MarshalJSON() ([]byte, error) {
 	return json.Marshal(d.Duration.String())
 }
 
-// ═══════════════════════════════════════════════════════════
-// Client Local Config (برای اپلیکیشن موبایل)
-// ═══════════════════════════════════════════════════════════
-
-// ClientConfig تنظیمات محلی کلاینت
 type ClientConfig struct {
-	Version     int                    `json:"version"`
-	Preferences UserPreferences        `json:"user_preferences"`
-	Servers     []SavedServer          `json:"servers"`
-	ActiveID    string                 `json:"active_server_id,omitempty"`
+	Version     int             `json:"version"`
+	Preferences UserPreferences `json:"user_preferences"`
+	Servers     []SavedServer   `json:"servers"`
+	ActiveID    string          `json:"active_server_id,omitempty"`
 }
 
-// UserPreferences تنظیمات کاربر
 type UserPreferences struct {
 	AutoConnect       bool   `json:"auto_connect"`
 	AutoSelectFastest bool   `json:"auto_select_fastest"`
 	KillSwitch        bool   `json:"kill_switch"`
 	IPv6              bool   `json:"ipv6"`
-	LogLevel          string `json:"log_level"` // "debug", "info", "warn", "error"
-	Theme             string `json:"theme"`     // "dark", "light", "auto"
+	LogLevel          string `json:"log_level"`
+	Theme             string `json:"theme"`
 }
 
-// SavedServer یک سرور ذخیره شده
 type SavedServer struct {
-	ID             string                 `json:"id"` // UUID
-	ImportedConfig ServerConfig           `json:"imported_config"`
-	Overrides      *ConfigOverrides       `json:"overrides,omitempty"`
-	Stats          ServerStats            `json:"stats,omitempty"`
+	ID             string           `json:"id"`
+	ImportedConfig ServerConfig     `json:"imported_config"`
+	Overrides      *ConfigOverrides `json:"overrides,omitempty"`
+	Stats          ServerStats      `json:"stats,omitempty"`
 }
 
-// ConfigOverrides تنظیمات override محلی
 type ConfigOverrides struct {
-	Mode              *string         `json:"mode,omitempty"` // "stealth", "balanced", "fast"
-	CoverEnabled      *bool           `json:"cover_enabled,omitempty"`
-	BatteryAware      *bool           `json:"battery_aware,omitempty"`
-	DataSaverMode     *bool           `json:"data_saver_mode,omitempty"`
-	CustomSNIDomains  []SNIDomain     `json:"custom_sni_domains,omitempty"`
-	CustomCoverDomains []CoverDomain  `json:"custom_cover_domains,omitempty"`
+	Mode               *string       `json:"mode,omitempty"`
+	CoverEnabled       *bool         `json:"cover_enabled,omitempty"`
+	BatteryAware       *bool         `json:"battery_aware,omitempty"`
+	DataSaverMode      *bool         `json:"data_saver_mode,omitempty"`
+	CustomSNIDomains   []SNIDomain   `json:"custom_sni_domains,omitempty"`
+	CustomCoverDomains []CoverDomain `json:"custom_cover_domains,omitempty"`
 }
 
-// ServerStats آمار سرور
 type ServerStats struct {
-	LastConnected string `json:"last_connected,omitempty"`
-	TotalBytes    uint64 `json:"total_bytes"`
-	AvgPing       int    `json:"avg_ping"` // milliseconds
-	SuccessRate   float64 `json:"success_rate"` // 0.0 - 1.0
-	TotalConnections int `json:"total_connections"`
+	LastConnected    string  `json:"last_connected,omitempty"`
+	TotalBytes       uint64  `json:"total_bytes"`
+	AvgPing          int     `json:"avg_ping"`
+	SuccessRate      float64 `json:"success_rate"`
+	TotalConnections int     `json:"total_connections"`
 }
 
-// ═══════════════════════════════════════════════════════════
-// Helper Functions
-// ═══════════════════════════════════════════════════════════
-
-// GetMaxPaddingForMode برگرداندن حداکثر padding بر اساس mode
 func GetMaxPaddingForMode(mode string) int {
 	switch mode {
 	case "stealth":
@@ -308,6 +223,6 @@ func GetMaxPaddingForMode(mode string) int {
 	case "fast", "off":
 		return 0
 	default:
-		return 256 // default = balanced
+		return 256
 	}
 }
