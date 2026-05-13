@@ -98,14 +98,14 @@ func main() {
 		if err != nil {
 			log.Fatalf("❌ Config error: %v", err)
 		}
-	}
-	
+		}
+
 	// ✅ Feature flag overrides - فقط اگه config file استفاده نشده
-if *configFile == "" {
-	if !*enableCover {
-		cfg.Cover.Enabled = false
+	if *configFile == "" {
+		if !*enableCover {
+			cfg.Cover.Enabled = false
+		}
 	}
-}
 	
 	serverConfig = cfg
 	serverPSK = []byte(cfg.Server.PSK)
