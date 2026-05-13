@@ -100,10 +100,12 @@ func main() {
 		}
 	}
 	
-	// Apply feature flags (override config)
+	// ✅ Feature flag overrides - فقط اگه config file استفاده نشده
+if *configFile == "" {
 	if !*enableCover {
 		cfg.Cover.Enabled = false
 	}
+}
 	
 	serverConfig = cfg
 	serverPSK = []byte(cfg.Server.PSK)
