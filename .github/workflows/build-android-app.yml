@@ -9,19 +9,22 @@ jobs:
   build:
     runs-on: ubuntu-latest
     timeout-minutes: 60
-    
+
     steps:
       - uses: actions/checkout@v4
 
+      # ✅ Java
       - uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
           java-version: '17'
 
+      # ✅ Go (پایدار با gomobile)
       - uses: actions/setup-go@v5
         with:
           go-version: '1.24.x'
 
+      # ✅ Android SDK
       - uses: android-actions/setup-android@v3
 
       - name: Install NDK
@@ -29,72 +32,61 @@ jobs:
           sdkmanager "ndk;25.2.9519653"
           echo "ANDROID_NDK_HOME=$ANDROID_SDK_ROOT/ndk/25.2.9519653" >> $GITHUB_ENV
 
+      # ✅ Flutter
       - uses: subosito/flutter-action@v2
         with:
           flutter-version: '3.24.0'
           channel: 'stable'
 
+      # ✅ Clean Go cache (جلوگیری از خطای قبلی)
+      - name: Clean Go cache
+        run: |
+          go clean -modcache
+
+      # ✅ Download Go modules
       - name: Setup Go modules
         run: |
-          go version
-          go get golang.org/x/mobile@latest
           go mod tidy
           go mod download
           go mod verify
 
+      # ✅ Install gomobile
       - name: Install gomobile
         run: |
           go install golang.org/x/mobile/cmd/gomobile@latest
           go install golang.org/x/mobile/cmd/gobind@latest
           echo "$(go env GOPATH)/bin" >> $GITHUB_PATH
-          gomobile init -v
+          gomobile init
 
+      # ✅ Build AAR
       - name: Build AAR
         env:
           CGO_ENABLED: 1
-          GO111MODULE: on
         run: |
-          export PATH=$PATH:$(go env GOPATH)/bin
           mkdir -p app/android/app/libs
-          
           gomobile bind \
             -target=android \
             -androidapi 21 \
             -o app/android/app/libs/mobile.aar \
             -javapkg=com.guarch.mobile \
-            -v \
             ./mobile
-          
-          ls -lh app/android/app/libs/mobile.aar
 
-      - name: Verify icon
-        run: |
-          if [ -f app/assets/icon.png ]; then
-            echo "✓ Icon found"
-            ls -lh app/assets/icon.png
-          else
-            echo "✗ Icon missing"
-            exit 1
-          fi
-
-      - name: Generate launcher icons
+      # ✅ Build Universal APK
+      - name: Flutter build (Universal)
         working-directory: app
         run: |
           flutter pub get
           flutter pub run flutter_launcher_icons
-
-      - name: Build Universal APK
-        working-directory: app
-        run: |
           flutter build apk --release
 
+      # ✅ Rename
       - name: Rename APK
         run: |
           cd app/build/app/outputs/flutter-apk/
           VERSION=$(grep "^version:" ../../../../pubspec.yaml | awk '{print $2}' | cut -d'+' -f1)
           mv app-release.apk guarch-v${VERSION}-universal.apk
-          ls -lh
 
+      # ✅ Upload
       - uses: actions/upload-artifact@v4
         with:
           name: guarch-universal-apk
