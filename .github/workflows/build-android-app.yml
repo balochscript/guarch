@@ -67,13 +67,16 @@ jobs:
           echo "$(go env GOPATH)/bin" >> $GITHUB_PATH
 
       - name: 🔧 Initialize gomobile
-        run: |
-          gomobile init -v
+        run: gomobile init -v
 
-      - name: 🧹 Download Go dependencies
+      # ========== 🆕 این step کلیدیه ==========
+      - name: 📥 Add gomobile to go.mod
         run: |
+          go get golang.org/x/mobile@latest
+          go mod tidy
           go mod download
           go mod verify
+          echo "✅ golang.org/x/mobile added to go.mod"
 
       - name: 🏗️ Build Mobile AAR
         env:
@@ -104,7 +107,7 @@ jobs:
             cp icon.png app/assets/icon.png
             echo "✅ Icon copied"
           else
-            echo "⚠️ No icon.png found in root"
+            echo "⚠️ No icon.png found"
           fi
 
       - name: 📚 Flutter Dependencies
@@ -112,7 +115,6 @@ jobs:
         run: |
           flutter doctor -v
           flutter pub get
-          flutter pub upgrade
 
       - name: 🎨 Generate Launcher Icons
         working-directory: app
@@ -120,17 +122,15 @@ jobs:
           if grep -q "flutter_launcher_icons" pubspec.yaml; then
             flutter pub run flutter_launcher_icons
             echo "✅ Icons generated"
-          else
-            echo "ℹ️ No flutter_launcher_icons configured"
           fi
 
       - name: 🚀 Build APK
         working-directory: app
         run: |
           if [ "${{ github.event.inputs.build_mode }}" = "debug" ]; then
-            flutter build apk --debug --verbose
+            flutter build apk --debug
           else
-            flutter build apk --release --split-per-abi --verbose
+            flutter build apk --release --split-per-abi
           fi
 
       - name: 📝 Rename APKs
@@ -174,11 +174,11 @@ jobs:
       - name: 📊 Build Summary
         if: always()
         run: |
-          echo "## 📦 Build Complete" >> $GITHUB_STEP_SUMMARY
+          echo "## 📦 Build Status" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           
           if [ -d app/build/app/outputs/flutter-apk/ ]; then
-            echo "### APK Files:" >> $GITHUB_STEP_SUMMARY
+            echo "### ✅ APK Files:" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
             echo "| File | Size |" >> $GITHUB_STEP_SUMMARY
             echo "|------|------|" >> $GITHUB_STEP_SUMMARY
@@ -189,4 +189,7 @@ jobs:
               SIZE=$(du -h "$apk" | cut -f1)
               echo "| \`$apk\` | $SIZE |" >> $GITHUB_STEP_SUMMARY
             done
+          else
+            echo "### ❌ Build Failed" >> $GITHUB_STEP_SUMMARY
+            echo "Check logs for errors" >> $GITHUB_STEP_SUMMARY
           fi
