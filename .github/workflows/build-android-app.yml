@@ -13,18 +13,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # ✅ Java
       - uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
           java-version: '17'
 
-      # ✅ Go (پایدار با gomobile)
       - uses: actions/setup-go@v5
         with:
-          go-version: '1.24.x'
+          go-version: '1.22.x'
 
-      # ✅ Android SDK
       - uses: android-actions/setup-android@v3
 
       - name: Install NDK
@@ -32,33 +29,33 @@ jobs:
           sdkmanager "ndk;25.2.9519653"
           echo "ANDROID_NDK_HOME=$ANDROID_SDK_ROOT/ndk/25.2.9519653" >> $GITHUB_ENV
 
-      # ✅ Flutter
       - uses: subosito/flutter-action@v2
         with:
           flutter-version: '3.24.0'
           channel: 'stable'
 
-      # ✅ Clean Go cache (جلوگیری از خطای قبلی)
+      # ✅ پاکسازی cache احتمالی خراب
       - name: Clean Go cache
         run: |
           go clean -modcache
 
-      # ✅ Download Go modules
+      # ✅ دانلود dependency ها
       - name: Setup Go modules
         run: |
           go mod tidy
           go mod download
           go mod verify
 
-      # ✅ Install gomobile
+      # ✅ نصب gomobile + دانلود سورس mobile
       - name: Install gomobile
         run: |
           go install golang.org/x/mobile/cmd/gomobile@latest
           go install golang.org/x/mobile/cmd/gobind@latest
+          go get golang.org/x/mobile@latest
           echo "$(go env GOPATH)/bin" >> $GITHUB_PATH
           gomobile init
 
-      # ✅ Build AAR
+      # ✅ بیلد AAR
       - name: Build AAR
         env:
           CGO_ENABLED: 1
@@ -66,12 +63,12 @@ jobs:
           mkdir -p app/android/app/libs
           gomobile bind \
             -target=android \
-            -androidapi 21 \
+            -androidapi=21 \
             -o app/android/app/libs/mobile.aar \
             -javapkg=com.guarch.mobile \
             ./mobile
 
-      # ✅ Build Universal APK
+      # ✅ بیلد Universal APK
       - name: Flutter build (Universal)
         working-directory: app
         run: |
@@ -79,14 +76,12 @@ jobs:
           flutter pub run flutter_launcher_icons
           flutter build apk --release
 
-      # ✅ Rename
       - name: Rename APK
         run: |
           cd app/build/app/outputs/flutter-apk/
           VERSION=$(grep "^version:" ../../../../pubspec.yaml | awk '{print $2}' | cut -d'+' -f1)
           mv app-release.apk guarch-v${VERSION}-universal.apk
 
-      # ✅ Upload
       - uses: actions/upload-artifact@v4
         with:
           name: guarch-universal-apk
