@@ -43,6 +43,10 @@ jobs:
           go-version: '1.22'
           cache: true
 
+      # ========== Setup Android SDK ==========
+      - name: 📱 Setup Android SDK
+        uses: android-actions/setup-android@v3
+
       # ========== Setup Flutter ==========
       - name: 🦋 Setup Flutter
         uses: subosito/flutter-action@v2
@@ -51,6 +55,12 @@ jobs:
           channel: 'stable'
           cache: true
 
+      # ========== Setup Android NDK ==========
+      - name: 🔧 Setup Android NDK
+        run: |
+          sdkmanager --install "ndk;25.1.8937393"
+          echo "ANDROID_NDK_HOME=$ANDROID_SDK_ROOT/ndk/25.1.8937393" >> $GITHUB_ENV
+
       # ========== Install gomobile ==========
       - name: 📦 Install gomobile
         run: |
@@ -58,13 +68,22 @@ jobs:
           go install golang.org/x/mobile/cmd/gobind@latest
           echo "$(go env GOPATH)/bin" >> $GITHUB_PATH
 
-      # ========== Init gomobile ==========
-      - name: 🔧 Initialize gomobile
-        run: gomobile init
+      # ========== Get mobile dependencies ==========
+      - name: 📥 Get mobile bind package
+        run: |
+          go get golang.org/x/mobile/bind
+          go get golang.org/x/mobile/cmd/gomobile
+          go get golang.org/x/mobile/cmd/gobind
 
       # ========== Tidy Go modules ==========
       - name: 🧹 Tidy Go modules
         run: go mod tidy
+
+      # ========== Init gomobile ==========
+      - name: 🔧 Initialize gomobile
+        run: |
+          gomobile init
+          echo "Gomobile initialized successfully"
 
       # ========== Build Go Mobile Library (AAR) ==========
       - name: 🏗️ Build Mobile AAR
@@ -85,26 +104,27 @@ jobs:
       # ========== Prepare App Icon ==========
       - name: 🎨 Prepare App Icon
         run: |
-          # کپی آیکون به assets (اگر وجود نداشته باشد)
           mkdir -p app/assets
           if [ ! -f app/assets/icon.png ]; then
-            cp icon.png app/assets/icon.png
+            if [ -f icon.png ]; then
+              cp icon.png app/assets/icon.png
+              echo "Copied icon.png to app/assets/"
+            else
+              echo "Warning: No icon.png found"
+            fi
           fi
-          
-          # تولید آیکون‌های اندروید (از Flutter به طور خودکار انجام می‌شود)
-          echo "Icon prepared in app/assets/icon.png"
 
       # ========== Flutter Dependencies ==========
       - name: 📚 Get Flutter Dependencies
         working-directory: app
         run: flutter pub get
 
-      # ========== Flutter Code Generation ==========
-      - name: 🔄 Run Build Runner (if needed)
+      # ========== Generate Launcher Icons ==========
+      - name: 🎨 Generate Launcher Icons
         working-directory: app
         run: |
-          if grep -q "build_runner" pubspec.yaml; then
-            flutter pub run build_runner build --delete-conflicting-outputs
+          if grep -q "flutter_launcher_icons" pubspec.yaml; then
+            flutter pub run flutter_launcher_icons
           fi
 
       # ========== Build APK (Release or Debug) ==========
@@ -132,11 +152,9 @@ jobs:
         run: |
           cd app/build/app/outputs/flutter-apk/
           
-          # دریافت version از pubspec.yaml
           VERSION=$(grep "^version:" ../../../../pubspec.yaml | awk '{print $2}' | cut -d'+' -f1)
           BUILD=$(grep "^version:" ../../../../pubspec.yaml | awk '{print $2}' | cut -d'+' -f2)
           
-          # Rename
           for apk in app-*.apk; do
             if [ -f "$apk" ]; then
               NEW_NAME=$(echo $apk | sed "s/app-/guarch-v${VERSION}+${BUILD}-/")
@@ -147,21 +165,21 @@ jobs:
           
           ls -lh *.apk
 
-      # ========== Upload Universal APK ==========
-      - name: 📤 Upload Universal APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: guarch-universal-apk
-          path: app/build/app/outputs/flutter-apk/*-release.apk
-          if-no-files-found: warn
-          retention-days: 30
-
-      # ========== Upload ARM64 APK ==========
+      # ========== Upload ARM64 APK (Most Important) ==========
       - name: 📤 Upload ARM64 APK
         uses: actions/upload-artifact@v4
         with:
           name: guarch-arm64-apk
           path: app/build/app/outputs/flutter-apk/*-arm64-v8a-release.apk
+          if-no-files-found: error
+          retention-days: 30
+
+      # ========== Upload Universal APK ==========
+      - name: 📤 Upload Universal APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: guarch-universal-apk
+          path: app/build/app/outputs/flutter-apk/guarch-*-release.apk
           if-no-files-found: warn
           retention-days: 30
 
@@ -171,15 +189,6 @@ jobs:
         with:
           name: guarch-armeabi-apk
           path: app/build/app/outputs/flutter-apk/*-armeabi-v7a-release.apk
-          if-no-files-found: warn
-          retention-days: 30
-
-      # ========== Upload x86_64 APK ==========
-      - name: 📤 Upload x86_64 APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: guarch-x86_64-apk
-          path: app/build/app/outputs/flutter-apk/*-x86_64-release.apk
           if-no-files-found: warn
           retention-days: 30
 
@@ -202,5 +211,5 @@ jobs:
           done
           
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### 🔗 Download Links:" >> $GITHUB_STEP_SUMMARY
-          echo "- Navigate to **Actions** → **This workflow run** → **Artifacts**" >> $GITHUB_STEP_SUMMARY
+          echo "### 🔗 Download:" >> $GITHUB_STEP_SUMMARY
+          echo "Navigate to **Artifacts** section below" >> $GITHUB_STEP_SUMMARY
