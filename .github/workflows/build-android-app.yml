@@ -20,7 +20,7 @@ jobs:
 
       - uses: actions/setup-go@v5
         with:
-          go-version: '1.24'
+          go-version: '1.25'
 
       - uses: android-actions/setup-android@v3
 
@@ -34,27 +34,24 @@ jobs:
           flutter-version: '3.24.0'
           channel: 'stable'
 
-      - name: Install gomobile
+      - name: Prepare Go modules
+        run: |
+          go get golang.org/x/mobile@latest
+          go mod tidy
+
+      - name: Install gomobile (after go mod tidy)
         run: |
           go install golang.org/x/mobile/cmd/gomobile@latest
           go install golang.org/x/mobile/cmd/gobind@latest
           gomobile init
 
-      - name: Fix module and build AAR
+      - name: Build AAR
         run: |
-          # ✅ این بخش کلیدیه
           export PATH=$PATH:$(go env GOPATH)/bin
-          
-          # اضافه کردن x/mobile به go.mod
-          go get golang.org/x/mobile@latest
-          go mod tidy
-          
-          # Build AAR
           mkdir -p app/android/app/libs
           cd mobile
           gomobile bind -target=android -androidapi 21 -o ../app/android/app/libs/mobile.aar -javapkg=com.guarch.mobile .
           cd ..
-          
           ls -lh app/android/app/libs/mobile.aar
 
       - name: Flutter build
