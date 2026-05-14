@@ -18,7 +18,6 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
-      # ========== تغییر کلیدی: Go 1.25 ==========
       - uses: actions/setup-go@v5
         with:
           go-version: '1.25'
@@ -50,6 +49,7 @@ jobs:
           echo "$(go env GOPATH)/bin" >> $GITHUB_PATH
           gomobile init
 
+      # ========== تغییر کلیدی: بدون cd mobile ==========
       - name: Build AAR
         env:
           CGO_ENABLED: 1
@@ -57,15 +57,14 @@ jobs:
           export PATH=$PATH:$(go env GOPATH)/bin
           mkdir -p app/android/app/libs
           
-          cd mobile
+          # ✅ از root اجرا می‌کنیم با package path
           gomobile bind \
             -target=android \
             -androidapi 21 \
-            -o ../app/android/app/libs/mobile.aar \
+            -o app/android/app/libs/mobile.aar \
             -javapkg=com.guarch.mobile \
             -v \
-            .
-          cd ..
+            ./mobile
           
           ls -lh app/android/app/libs/mobile.aar
 
@@ -84,20 +83,13 @@ jobs:
         run: |
           cd app/build/app/outputs/flutter-apk/
           VERSION=$(grep "^version:" ../../../../pubspec.yaml | awk '{print $2}' | cut -d'+' -f1)
-          BUILD=$(grep "^version:" ../../../../pubspec.yaml | awk '{print $2}' | cut -d'+' -f2)
           for apk in app-*.apk; do
             [ -f "$apk" ] || continue
-            NEW=$(echo $apk | sed "s/app-/guarch-v${VERSION}+${BUILD}-/")
+            NEW=$(echo $apk | sed "s/app-/guarch-v${VERSION}-/")
             mv "$apk" "$NEW"
           done
 
       - uses: actions/upload-artifact@v4
         with:
-          name: guarch-arm64
+          name: apk-arm64
           path: app/build/app/outputs/flutter-apk/*-arm64-v8a-release.apk
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: guarch-armeabi
-          path: app/build/app/outputs/flutter-apk/*-armeabi-v7a-release.apk
-          if-no-files-found: warn
