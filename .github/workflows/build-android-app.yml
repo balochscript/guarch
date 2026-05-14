@@ -20,7 +20,7 @@ jobs:
 
       - uses: actions/setup-go@v5
         with:
-          go-version: '1.25'
+          go-version: '1.22.x'
 
       - uses: android-actions/setup-android@v3
 
@@ -34,11 +34,10 @@ jobs:
           flutter-version: '3.24.0'
           channel: 'stable'
 
-      - name: Prepare Go modules
+      - name: Setup Go modules
         run: |
-          go mod edit -require=golang.org/x/mobile@latest
-          go get golang.org/x/mobile/bind@latest
-          go mod tidy
+          go version
+          go get golang.org/x/mobile@latest
           go mod download
           go mod verify
 
@@ -46,19 +45,21 @@ jobs:
         run: |
           go install golang.org/x/mobile/cmd/gomobile@latest
           go install golang.org/x/mobile/cmd/gobind@latest
-          export PATH=$PATH:$(go env GOPATH)/bin
           echo "$(go env GOPATH)/bin" >> $GITHUB_PATH
-          gomobile init
+          gomobile init -v
 
-      # ========== تغییر کلیدی: بدون cd mobile ==========
+      - name: Verify mobile package
+        run: |
+          ls -la mobile/
+          cat mobile/mobile.go | head -20
+
       - name: Build AAR
         env:
           CGO_ENABLED: 1
+          GO111MODULE: on
         run: |
-          export PATH=$PATH:$(go env GOPATH)/bin
           mkdir -p app/android/app/libs
           
-          # ✅ از root اجرا می‌کنیم با package path
           gomobile bind \
             -target=android \
             -androidapi 21 \
