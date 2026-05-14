@@ -2066,7 +2066,9 @@ guarch/
 │   │   ├── loader.go           #   Multi-source loading (file, URI, CLI flags)
 │   │   ├── validator.go        #   Comprehensive validation with helpful errors
 │   │   ├── manager.go          #   Runtime config management (hot-reload ready)
-│   │   └── presets.go          #   Built-in presets (iran_stealth, iran_balanced, etc.)
+│   │   ├── presets.go          #   Built-in presets (iran_stealth, iran_balanced, etc.)
+│   │   ├── adapters.go         #   Config adapters and conversions
+│   │   └── config_test.go
 │   ├── core/
 │   │   ├── sni/                # 🆕 SNI rotation system (v1.0.1)
 │   │   │   ├── manager.go      #   SNI lifecycle management, rotation, stats
@@ -2078,11 +2080,13 @@ guarch/
 │   │       ├── encoder.go      #   Data → DNS query encoding (base32, chunking)
 │   │       ├── decoder.go      #   DNS → Data decoding with reassembly
 │   │       ├── client.go       #   DNS client (multi-server, retries, timeout)
-│   │       └── server.go       #   Authoritative DNS server (session management)
+│   │       ├── server.go       #   Authoritative DNS server (session management)
+│   │       └── wrapper.go      #   Stream wrapper for DNS tunnel
 │   ├── protocol/               # Wire protocol
 │   │   ├── packet.go           #   Packet structure (18B header + payload + padding)
 │   │   ├── packet_test.go
 │   │   ├── handshake.go        #   ConnectRequest/Response (IPv4/IPv6/Domain)
+│   │   ├── padding.go          #   Padding utilities
 │   │   └── errors.go           #   Typed errors (replay, auth, decrypt, etc.)
 │   ├── crypto/                 # Cryptography
 │   │   ├── aead.go             #   ChaCha20-Poly1305 Seal/Open with AAD
@@ -2127,11 +2131,13 @@ guarch/
 │   │   └── health_test.go
 │   ├── log/                    # Logging
 │   │   └── log.go              #   Leveled logger (Debug/Info/Warn/Error/None)
+│   ├── engine/                 # Core engine
+│   │   └── engine.go           #   Main engine logic
 │   └── fec/                    # Forward Error Correction
 │       └── fec.go              #   XOR-based FEC encoder/decoder
 ├── mobile/
-│   ├── mobile.go              # gomobile binding — Engine for Android/iOS
-│   └── tun.go                 # TUN device handler via tun2socks
+│   ├── mobile.go               # gomobile binding — Engine for Android/iOS
+│   └── tun.go                  # TUN device handler via tun2socks
 ├── app/                        # Flutter Android application
 │   ├── lib/
 │   │   ├── main.dart
@@ -2144,31 +2150,77 @@ guarch/
 │   │   ├── screens/
 │   │   │   ├── home_screen.dart
 │   │   │   ├── servers_screen.dart
+│   │   │   ├── server_detail_screen.dart
 │   │   │   ├── add_server_screen.dart # SNI/Cover domain customization (v1.0.1)
+│   │   │   ├── import_screen.dart
+│   │   │   ├── export_screen.dart
 │   │   │   ├── settings_screen.dart   # Battery/data saver toggles (v1.0.1)
-│   │   │   └── ...
+│   │   │   ├── advanced_settings_screen.dart
+│   │   │   ├── logs_screen.dart
+│   │   │   ├── log_viewer_screen.dart
+│   │   │   └── about_screen.dart
 │   │   ├── services/
 │   │   │   └── guarch_engine.dart    # Enhanced with config URI support (v1.0.1)
 │   │   └── widgets/
-│   │       └── ...
-│   └── android/
-│       └── ...
+│   │       ├── connection_button.dart
+│   │       ├── server_card.dart
+│   │       ├── server_tile.dart
+│   │       └── stats_card.dart
+│   ├── android/
+│   │   ├── app/
+│   │   │   ├── src/
+│   │   │   │   └── main/
+│   │   │   │       ├── kotlin/com/guarch/app/
+│   │   │   │       │   ├── MainActivity.kt
+│   │   │   │       │   ├── GuarchService.kt
+│   │   │   │       │   ├── BootReceiver.kt
+│   │   │   │       │   └── CrashLogger.kt
+│   │   │   │       ├── res/
+│   │   │   │       │   ├── drawable/
+│   │   │   │       │   ├── drawable-v21/
+│   │   │   │       │   ├── values/
+│   │   │   │       │   ├── values-night/
+│   │   │   │       │   └── xml/
+│   │   │   │       │       ├── network_security_config.xml
+│   │   │   │       │       └── file_paths.xml
+│   │   │   │       └── AndroidManifest.xml
+│   │   │   └── build.gradle
+│   │   ├── gradle/
+│   │   │   └── wrapper/
+│   │   │       └── gradle-wrapper.properties
+│   │   ├── build.gradle
+│   │   ├── settings.gradle
+│   │   └── gradle.properties
+│   ├── assets/
+│   │   └── icon.png
+│   └── pubspec.yaml
+├── android/                    # Additional Android resources
+│   └── app/
+│       └── src/
+│           └── main/
+│               └── res/
+│                   └── xml/
+│                       └── network_security_config.xml
 ├── configs/                    # 🆕 Configuration files (v1.0.1)
+│   ├── client.json             #   Basic client config
+│   ├── server.json             #   Basic server config
 │   ├── example_client.json     #   Annotated client config example
 │   ├── example_server.json     #   Annotated server config example
 │   ├── iran_stealth.json       #   Production config for Iran (maximum stealth)
 │   ├── iran_balanced.json      #   Balanced config with data saver
-│   ├── global_stealth.json     #   High stealth for international use
-│   ├── global_balanced.json    #   Recommended for general worldwide use
 │   └── global_minimal.json     #   Minimal overhead for unrestricted networks
+├── scripts/
+│   └── install-server.sh       # Server installation script
 ├── go.mod
 ├── go.sum
 ├── Makefile                    # Enhanced with version embedding, release targets (v1.0.1)
 ├── Dockerfile
 ├── docker-compose.yml
+├── icon.png                    # Project icon
 ├── LICENSE
 ├── README.md
 └── CHANGELOG.md                # 🆕 Complete version history (v1.0.1)
+
 ```
 
 ## Comparison with Other Tools
