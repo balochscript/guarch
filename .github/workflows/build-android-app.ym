@@ -20,7 +20,7 @@ jobs:
 
       - uses: actions/setup-go@v5
         with:
-          go-version: '1.22.x'
+          go-version: '1.24.x'
 
       - uses: android-actions/setup-android@v3
 
@@ -36,6 +36,9 @@ jobs:
 
       - name: Setup Go modules
         run: |
+          go version
+          go get golang.org/x/mobile@latest
+          go mod tidy
           go mod download
           go mod verify
 
@@ -44,25 +47,45 @@ jobs:
           go install golang.org/x/mobile/cmd/gomobile@latest
           go install golang.org/x/mobile/cmd/gobind@latest
           echo "$(go env GOPATH)/bin" >> $GITHUB_PATH
-          gomobile init
+          gomobile init -v
 
       - name: Build AAR
         env:
           CGO_ENABLED: 1
+          GO111MODULE: on
         run: |
+          export PATH=$PATH:$(go env GOPATH)/bin
           mkdir -p app/android/app/libs
+          
           gomobile bind \
             -target=android \
             -androidapi 21 \
             -o app/android/app/libs/mobile.aar \
             -javapkg=com.guarch.mobile \
+            -v \
             ./mobile
+          
+          ls -lh app/android/app/libs/mobile.aar
 
-      - name: Flutter build (Universal)
+      - name: Verify icon
+        run: |
+          if [ -f app/assets/icon.png ]; then
+            echo "✓ Icon found"
+            ls -lh app/assets/icon.png
+          else
+            echo "✗ Icon missing"
+            exit 1
+          fi
+
+      - name: Generate launcher icons
         working-directory: app
         run: |
           flutter pub get
           flutter pub run flutter_launcher_icons
+
+      - name: Build Universal APK
+        working-directory: app
+        run: |
           flutter build apk --release
 
       - name: Rename APK
@@ -70,6 +93,7 @@ jobs:
           cd app/build/app/outputs/flutter-apk/
           VERSION=$(grep "^version:" ../../../../pubspec.yaml | awk '{print $2}' | cut -d'+' -f1)
           mv app-release.apk guarch-v${VERSION}-universal.apk
+          ls -lh
 
       - uses: actions/upload-artifact@v4
         with:
