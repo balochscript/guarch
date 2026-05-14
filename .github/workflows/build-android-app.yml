@@ -3,73 +3,137 @@ name: Build Android APK
 on:
   push:
     branches: [Dev-1.0.1, main]
+    paths:
+      - 'app/**'
+      - 'mobile/**'
+      - 'pkg/**'
+      - 'go.mod'
+      - 'go.sum'
   workflow_dispatch:
 
 jobs:
   build:
     runs-on: ubuntu-latest
     timeout-minutes: 60
-
+    
     steps:
-      - uses: actions/checkout@v4
+      - name: 📥 Checkout
+        uses: actions/checkout@v4
 
-      # Java
-      - uses: actions/setup-java@v4
+      - name: ☕ Setup Java 17
+        uses: actions/setup-java@v4
         with:
-          distribution: temurin
+          distribution: 'temurin'
           java-version: '17'
 
-      # Go (باید با go.mod یکی باشد)
-      - uses: actions/setup-go@v5
+      - name: 🐹 Setup Go 1.24
+        uses: actions/setup-go@v5
         with:
           go-version: '1.24'
 
-      # Android SDK
-      - uses: android-actions/setup-android@v3
+      - name: 📱 Setup Android SDK
+        uses: android-actions/setup-android@v3
 
-      - name: Install NDK
+      - name: 🔧 Install Android NDK
         run: |
           sdkmanager "ndk;25.2.9519653"
           echo "ANDROID_NDK_HOME=$ANDROID_SDK_ROOT/ndk/25.2.9519653" >> $GITHUB_ENV
 
-      # Flutter
-      - uses: subosito/flutter-action@v2
+      - name: 🦋 Setup Flutter 3.24.0
+        uses: subosito/flutter-action@v2
         with:
           flutter-version: '3.24.0'
-          channel: stable
+          channel: 'stable'
 
-      # ✅ Install gomobile (بدون go get)
-      - name: Install gomobile
+      - name: 📥 Add gomobile to go.mod
         run: |
-          go install golang.org/x/mobile/cmd/gomobile@v0.0.0-20240520174638-7b7b88c5b7c4
-          go install golang.org/x/mobile/cmd/gobind@v0.0.0-20240520174638-7b7b88c5b7c4
+          go get golang.org/x/mobile@latest
+          go mod tidy
+
+      - name: 📦 Install gomobile
+        run: |
+          go install golang.org/x/mobile/cmd/gomobile@latest
+          go install golang.org/x/mobile/cmd/gobind@latest
+          export PATH=$PATH:$(go env GOPATH)/bin
           echo "$(go env GOPATH)/bin" >> $GITHUB_PATH
           gomobile init
 
-      # ✅ Build AAR (از ریشه پروژه)
-      - name: Build mobile.aar
+      - name: 🏗️ Build Mobile AAR
         env:
           CGO_ENABLED: 1
         run: |
+          export PATH=$PATH:$(go env GOPATH)/bin
           mkdir -p app/android/app/libs
           
+          cd mobile
           gomobile bind \
             -target=android \
-            -androidapi=21 \
-            -o app/android/app/libs/mobile.aar \
+            -androidapi 21 \
+            -o ../app/android/app/libs/mobile.aar \
             -javapkg=com.guarch.mobile \
-            guarch/mobile
+            -v \
+            .
+          cd ..
           
           ls -lh app/android/app/libs/mobile.aar
 
-      # Flutter build
-      - name: Build APK
+      - name: 🎨 Prepare Icon
+        run: |
+          mkdir -p app/assets
+          [ -f icon.png ] && cp icon.png app/assets/icon.png || true
+
+      - name: 📚 Flutter Dependencies
         working-directory: app
         run: |
           flutter pub get
+
+      - name: 🎨 Generate Icons
+        working-directory: app
+        run: |
+          grep -q "flutter_launcher_icons" pubspec.yaml && \
+            flutter pub run flutter_launcher_icons || true
+
+      - name: 🚀 Build APK
+        working-directory: app
+        run: |
           flutter build apk --release --split-per-abi
 
-      - uses: actions/upload-artifact@v4
+      - name: 📝 Rename APKs
+        run: |
+          cd app/build/app/outputs/flutter-apk/
+          VERSION=$(grep "^version:" ../../../../pubspec.yaml | awk '{print $2}' | cut -d'+' -f1)
+          BUILD=$(grep "^version:" ../../../../pubspec.yaml | awk '{print $2}' | cut -d'+' -f2)
+          
+          for apk in app-*.apk; do
+            [ -f "$apk" ] || continue
+            NEW=$(echo $apk | sed "s/app-/guarch-v${VERSION}+${BUILD}-/")
+            mv "$apk" "$NEW"
+            echo "✅ $NEW ($(du -h "$NEW" | cut -f1))"
+          done
+
+      - name: 📤 Upload ARM64
+        uses: actions/upload-artifact@v4
         with:
-          name: apk-arm64
-          path: app/build/app/outputs/flutter-apk/*arm64*.apk
+          name: guarch-arm64-v8a
+          path: app/build/app/outputs/flutter-apk/*-arm64-v8a-release.apk
+
+      - name: 📤 Upload ARMv7
+        uses: actions/upload-artifact@v4
+        with:
+          name: guarch-armeabi-v7a
+          path: app/build/app/outputs/flutter-apk/*-armeabi-v7a-release.apk
+          if-no-files-found: warn
+
+      - name: 📊 Summary
+        if: always()
+        run: |
+          echo "## 📦 Build Complete" >> $GITHUB_STEP_SUMMARY
+          if [ -d app/build/app/outputs/flutter-apk/ ]; then
+            echo "### APK Files:" >> $GITHUB_STEP_SUMMARY
+            echo "| File | Size |" >> $GITHUB_STEP_SUMMARY
+            echo "|------|------|" >> $GITHUB_STEP_SUMMARY
+            cd app/build/app/outputs/flutter-apk/
+            for apk in *.apk; do
+              [ -f "$apk" ] && echo "| \`$apk\` | $(du -h "$apk" | cut -f1) |" >> $GITHUB_STEP_SUMMARY
+            done
+          fi
