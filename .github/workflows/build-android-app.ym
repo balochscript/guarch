@@ -36,8 +36,6 @@ jobs:
 
       - name: Setup Go modules
         run: |
-          go version
-          go get golang.org/x/mobile@latest
           go mod download
           go mod verify
 
@@ -46,52 +44,34 @@ jobs:
           go install golang.org/x/mobile/cmd/gomobile@latest
           go install golang.org/x/mobile/cmd/gobind@latest
           echo "$(go env GOPATH)/bin" >> $GITHUB_PATH
-          gomobile init -v
-
-      - name: Verify mobile package
-        run: |
-          ls -la mobile/
-          cat mobile/mobile.go | head -20
+          gomobile init
 
       - name: Build AAR
         env:
           CGO_ENABLED: 1
-          GO111MODULE: on
         run: |
           mkdir -p app/android/app/libs
-          
           gomobile bind \
             -target=android \
             -androidapi 21 \
             -o app/android/app/libs/mobile.aar \
             -javapkg=com.guarch.mobile \
-            -v \
             ./mobile
-          
-          ls -lh app/android/app/libs/mobile.aar
 
-      - name: Prepare icon
-        run: |
-          mkdir -p app/assets
-          [ -f icon.png ] && cp icon.png app/assets/icon.png || true
-
-      - name: Flutter build
+      - name: Flutter build (Universal)
         working-directory: app
         run: |
           flutter pub get
-          flutter build apk --release --split-per-abi
+          flutter pub run flutter_launcher_icons
+          flutter build apk --release
 
-      - name: Rename APKs
+      - name: Rename APK
         run: |
           cd app/build/app/outputs/flutter-apk/
           VERSION=$(grep "^version:" ../../../../pubspec.yaml | awk '{print $2}' | cut -d'+' -f1)
-          for apk in app-*.apk; do
-            [ -f "$apk" ] || continue
-            NEW=$(echo $apk | sed "s/app-/guarch-v${VERSION}-/")
-            mv "$apk" "$NEW"
-          done
+          mv app-release.apk guarch-v${VERSION}-universal.apk
 
       - uses: actions/upload-artifact@v4
         with:
-          name: apk-arm64
-          path: app/build/app/outputs/flutter-apk/*-arm64-v8a-release.apk
+          name: guarch-universal-apk
+          path: app/build/app/outputs/flutter-apk/guarch-*-universal.apk
