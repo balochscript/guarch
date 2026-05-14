@@ -34,10 +34,8 @@ jobs:
           flutter-version: '3.24.0'
           channel: 'stable'
 
-      - name: Prepare Go workspace
+      - name: Prepare Go modules
         run: |
-          go work init
-          go work use .
           go get golang.org/x/mobile@latest
           go mod tidy
           go mod download
@@ -53,18 +51,18 @@ jobs:
           CGO_ENABLED: 1
         run: |
           export PATH=$PATH:$(go env GOPATH)/bin
-          export GOWORK=off
           
           mkdir -p app/android/app/libs
           
+          cd mobile
           gomobile bind \
             -target=android \
             -androidapi 21 \
-            -o app/android/app/libs/mobile.aar \
+            -o ../app/android/app/libs/mobile.aar \
             -javapkg=com.guarch.mobile \
             -v \
-            -work \
-            github.com/balochscript/guarch/mobile
+            .
+          cd ..
           
           ls -lh app/android/app/libs/mobile.aar
 
