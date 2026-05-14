@@ -36,7 +36,8 @@ jobs:
 
       - name: Prepare Go modules
         run: |
-          go get golang.org/x/mobile@latest
+          go mod edit -require=golang.org/x/mobile@latest
+          go get golang.org/x/mobile/bind@latest
           go mod tidy
           go mod download
           go mod verify
