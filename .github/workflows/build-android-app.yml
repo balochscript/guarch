@@ -18,9 +18,10 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
+      # ========== تغییر کلیدی: Go 1.25 ==========
       - uses: actions/setup-go@v5
         with:
-          go-version: '1.24'
+          go-version: '1.25'
 
       - uses: android-actions/setup-android@v3
 
@@ -34,32 +35,12 @@ jobs:
           flutter-version: '3.24.0'
           channel: 'stable'
 
-      # ========== کلید اصلی: این قسمت ==========
-      - name: Prepare Go workspace
+      - name: Prepare Go modules
         run: |
-          # 1. اضافه کردن x/mobile به go.mod
           go get golang.org/x/mobile@latest
-          
-          # 2. اطمینان از resolve شدن همه dependencies
-          go mod download
-          
-          # 3. ساخت یک dummy file که x/mobile/bind رو import کنه
-          cat > /tmp/dummy.go << 'EOF'
-          package main
-          import _ "golang.org/x/mobile/bind"
-          func main() {}
-          EOF
-          
-          # 4. build کردن این dummy (برای force کردن resolve)
-          go build -o /tmp/dummy /tmp/dummy.go || true
-          
-          # 5. حالا go mod tidy
           go mod tidy
-          
-          # 6. verify
-          go list -m golang.org/x/mobile
-          
-          echo "✅ x/mobile prepared"
+          go mod download
+          go mod verify
 
       - name: Install gomobile
         run: |
@@ -88,13 +69,35 @@ jobs:
           
           ls -lh app/android/app/libs/mobile.aar
 
+      - name: Prepare icon
+        run: |
+          mkdir -p app/assets
+          [ -f icon.png ] && cp icon.png app/assets/icon.png || true
+
       - name: Flutter build
         working-directory: app
         run: |
           flutter pub get
           flutter build apk --release --split-per-abi
 
+      - name: Rename APKs
+        run: |
+          cd app/build/app/outputs/flutter-apk/
+          VERSION=$(grep "^version:" ../../../../pubspec.yaml | awk '{print $2}' | cut -d'+' -f1)
+          BUILD=$(grep "^version:" ../../../../pubspec.yaml | awk '{print $2}' | cut -d'+' -f2)
+          for apk in app-*.apk; do
+            [ -f "$apk" ] || continue
+            NEW=$(echo $apk | sed "s/app-/guarch-v${VERSION}+${BUILD}-/")
+            mv "$apk" "$NEW"
+          done
+
       - uses: actions/upload-artifact@v4
         with:
-          name: apk-arm64
-          path: app/build/app/outputs/flutter-apk/*arm64*.apk
+          name: guarch-arm64
+          path: app/build/app/outputs/flutter-apk/*-arm64-v8a-release.apk
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: guarch-armeabi
+          path: app/build/app/outputs/flutter-apk/*-armeabi-v7a-release.apk
+          if-no-files-found: warn
