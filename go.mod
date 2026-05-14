@@ -6,7 +6,6 @@ require (
 	github.com/miekg/dns v1.1.72
 	github.com/quic-go/quic-go v0.59.0
 	golang.org/x/crypto v0.46.0
-	golang.org/x/mobile v0.0.0-20240716161057-1ad2df20a8b6
 	golang.org/x/net v0.48.0
 	gvisor.dev/gvisor v0.0.0-20250523182742-eede7a881b20
 )
