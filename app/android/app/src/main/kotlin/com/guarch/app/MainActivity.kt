@@ -789,12 +789,12 @@ class MainActivity : FlutterActivity() {
     private fun tryInitGoEngine() {
         CrashLogger.d(TAG, "--- tryInitGoEngine ---")
         try {
-            val cls = Class.forName("mobile.Mobile")
+            val cls = Class.forName("com.guarch.mobile.Mobile")
             goEngine = cls.getMethod("new_").invoke(null)
             
             // Set callback for Go engine events
             try {
-                val callbackClass = Class.forName("mobile.Callback")
+                val callbackClass = Class.forName("com.guarch.mobile.Callback")
                 val callback = java.lang.reflect.Proxy.newProxyInstance(
                     callbackClass.classLoader,
                     arrayOf(callbackClass)
