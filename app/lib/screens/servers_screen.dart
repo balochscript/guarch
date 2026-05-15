@@ -7,6 +7,10 @@ import 'package:guarch/models/server_config.dart';
 import 'package:guarch/screens/add_server_screen.dart';
 import 'package:guarch/screens/server_detail_screen.dart';
 import 'package:share_plus/share_plus.dart';
+import 'package:qr_flutter/qr_flutter.dart';
+import 'package:qr_code_scanner/qr_code_scanner.dart';
+import 'package:image_picker/image_picker.dart';
+import 'dart:io';
 
 class ServersScreen extends StatelessWidget {
   const ServersScreen({super.key});
@@ -19,7 +23,6 @@ class ServersScreen extends StatelessWidget {
           appBar: AppBar(
             title: const Text('Servers'),
             actions: [
-              // Ping Options Menu
               PopupMenuButton<String>(
                 icon: const Icon(Icons.speed),
                 tooltip: 'Ping options',
@@ -59,29 +62,19 @@ class ServersScreen extends StatelessWidget {
                   ),
                 ],
               ),
-              // Import from clipboard
-              IconButton(
-                icon: const Icon(Icons.content_paste),
-                tooltip: 'Import from clipboard',
-                onPressed: () => _importFromClipboard(context, provider),
-              ),
             ],
           ),
           body: provider.servers.isEmpty
               ? _buildEmpty(context)
               : _buildList(context, provider),
           floatingActionButton: FloatingActionButton(
-            onPressed: () => _openAddServer(context),
+            onPressed: () => _showAddServerMenu(context, provider),
             child: const Icon(Icons.add),
           ),
         );
       },
     );
   }
-
-  // ═══════════════════════════════════════════════════════════════
-  // Empty State
-  // ═══════════════════════════════════════════════════════════════
 
   Widget _buildEmpty(BuildContext context) {
     return Center(
@@ -110,7 +103,7 @@ class ServersScreen extends StatelessWidget {
           ),
           const SizedBox(height: 24),
           FilledButton.icon(
-            onPressed: () => _openAddServer(context),
+            onPressed: () => _showAddServerMenu(context, Provider.of<AppProvider>(context, listen: false)),
             icon: const Icon(Icons.add),
             label: const Text('Add Server'),
           ),
@@ -118,10 +111,6 @@ class ServersScreen extends StatelessWidget {
       ),
     );
   }
-
-  // ═══════════════════════════════════════════════════════════════
-  // Server List
-  // ═══════════════════════════════════════════════════════════════
 
   Widget _buildList(BuildContext context, AppProvider provider) {
     return ListView.builder(
@@ -152,22 +141,17 @@ class ServersScreen extends StatelessWidget {
               padding: const EdgeInsets.all(16),
               child: Column(
                 children: [
-                  // ─── Header Row ───
                   Row(
                     children: [
-                      // Protocol Emoji / Ping Emoji
                       Text(
                         server.pingEmoji,
                         style: const TextStyle(fontSize: 28),
                       ),
                       const SizedBox(width: 12),
-
-                      // Server Info
                       Expanded(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            // Name + Active badge
                             Row(
                               children: [
                                 Flexible(
@@ -205,8 +189,6 @@ class ServersScreen extends StatelessWidget {
                               ],
                             ),
                             const SizedBox(height: 4),
-
-                            // Protocol + Address
                             Row(
                               children: [
                                 Text(
@@ -238,12 +220,9 @@ class ServersScreen extends StatelessWidget {
                           ],
                         ),
                       ),
-
-                      // Ping & Stats Column
                       Column(
                         crossAxisAlignment: CrossAxisAlignment.end,
                         children: [
-                          // TCP Ping
                           Row(
                             children: [
                               const Icon(
@@ -262,8 +241,6 @@ class ServersScreen extends StatelessWidget {
                               ),
                             ],
                           ),
-
-                          // Real Delay (if tested)
                           if (server.realDelay != null) ...[
                             const SizedBox(height: 2),
                             Row(
@@ -285,8 +262,6 @@ class ServersScreen extends StatelessWidget {
                               ],
                             ),
                           ],
-
-                          // Cover Traffic Info
                           if (server.coverEnabled) ...[
                             const SizedBox(height: 2),
                             Text(
@@ -297,8 +272,6 @@ class ServersScreen extends StatelessWidget {
                               ),
                             ),
                           ],
-
-                          // Last Tested
                           if (server.lastTested != null) ...[
                             const SizedBox(height: 2),
                             Text(
@@ -313,16 +286,12 @@ class ServersScreen extends StatelessWidget {
                       ),
                     ],
                   ),
-
                   const SizedBox(height: 8),
                   const Divider(height: 1, thickness: 0.5),
                   const SizedBox(height: 4),
-
-                  // ─── Action Buttons ───
                   Row(
                     mainAxisAlignment: MainAxisAlignment.end,
                     children: [
-                      // TCP Ping
                       _actionButton(
                         context,
                         Icons.bolt,
@@ -335,8 +304,6 @@ class ServersScreen extends StatelessWidget {
                           ));
                         },
                       ),
-
-                      // Real Delay Test
                       _actionButton(
                         context,
                         Icons.auto_graph,
@@ -349,39 +316,18 @@ class ServersScreen extends StatelessWidget {
                           ));
                         },
                       ),
-
-                      // Share
                       _actionButton(
                         context,
                         Icons.share,
                         'Share',
-                        () => Share.share(provider.exportConfig(server)),
+                        () => _showShareMenu(context, provider, server),
                       ),
-
-                      // Copy JSON
-                      _actionButton(
-                        context,
-                        Icons.copy,
-                        'Copy Config',
-                        () {
-                          Clipboard.setData(ClipboardData(
-                            text: provider.exportConfigJson(server),
-                          ));
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text('Config copied')),
-                          );
-                        },
-                      ),
-
-                      // Edit
                       _actionButton(
                         context,
                         Icons.edit,
                         'Edit',
                         () => _openEditServer(context, server),
                       ),
-
-                      // Delete
                       _actionButton(
                         context,
                         Icons.delete_outline,
@@ -399,10 +345,6 @@ class ServersScreen extends StatelessWidget {
       },
     );
   }
-
-  // ═══════════════════════════════════════════════════════════════
-  // Helper Widgets
-  // ═══════════════════════════════════════════════════════════════
 
   Widget _actionButton(
     BuildContext context,
@@ -423,10 +365,6 @@ class ServersScreen extends StatelessWidget {
     );
   }
 
-  // ═══════════════════════════════════════════════════════════════
-  // Helper Methods
-  // ═══════════════════════════════════════════════════════════════
-
   Color _pingColor(BuildContext context, int? ping) {
     if (ping == null) return textMuted(context);
     if (ping < 0) return Colors.red;
@@ -435,11 +373,186 @@ class ServersScreen extends StatelessWidget {
     return Colors.red;
   }
 
-  void _openAddServer(BuildContext context) {
+  void _showAddServerMenu(BuildContext context, AppProvider provider) {
+    showModalBottomSheet(
+      context: context,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.content_paste),
+              title: const Text('Import from Clipboard'),
+              onTap: () async {
+                Navigator.pop(ctx);
+                final data = await Clipboard.getData(Clipboard.kTextPlain);
+                if (data?.text != null && data!.text!.isNotEmpty) {
+                  provider.importConfig(data.text!);
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Config imported')),
+                    );
+                  }
+                } else {
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Clipboard is empty')),
+                    );
+                  }
+                }
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.qr_code_scanner),
+              title: const Text('Scan QR Code'),
+              onTap: () {
+                Navigator.pop(ctx);
+                _scanQRCode(context, provider);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.photo_library),
+              title: const Text('Pick QR from Gallery'),
+              onTap: () {
+                Navigator.pop(ctx);
+                _pickQRFromGallery(context, provider);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.add),
+              title: const Text('Create Manually'),
+              onTap: () {
+                Navigator.pop(ctx);
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const AddServerScreen()),
+                );
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showShareMenu(BuildContext context, AppProvider provider, ServerConfig server) {
+    showModalBottomSheet(
+      context: context,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.copy),
+              title: const Text('Copy URI'),
+              onTap: () {
+                Navigator.pop(ctx);
+                Clipboard.setData(ClipboardData(text: provider.exportConfig(server)));
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('URI copied')),
+                );
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.share),
+              title: const Text('Share URI'),
+              onTap: () {
+                Navigator.pop(ctx);
+                Share.share(provider.exportConfig(server));
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.code),
+              title: const Text('Copy JSON'),
+              onTap: () {
+                Navigator.pop(ctx);
+                Clipboard.setData(ClipboardData(text: provider.exportConfigJson(server)));
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('JSON copied')),
+                );
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.share),
+              title: const Text('Share JSON'),
+              onTap: () {
+                Navigator.pop(ctx);
+                Share.share(provider.exportConfigJson(server));
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.qr_code),
+              title: const Text('Share QR Code'),
+              onTap: () {
+                Navigator.pop(ctx);
+                _showQRCode(context, provider.exportConfig(server), server.name);
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showQRCode(BuildContext context, String data, String title) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(title),
+        content: SizedBox(
+          width: 280,
+          height: 280,
+          child: QrImageView(
+            data: data,
+            version: QrVersions.auto,
+            backgroundColor: Colors.white,
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _scanQRCode(BuildContext context, AppProvider provider) {
     Navigator.push(
       context,
-      MaterialPageRoute(builder: (_) => const AddServerScreen()),
+      MaterialPageRoute(
+        builder: (_) => Scaffold(
+          appBar: AppBar(title: const Text('Scan QR Code')),
+          body: QRView(
+            key: GlobalKey(debugLabel: 'QR'),
+            onQRViewCreated: (controller) {
+              controller.scannedDataStream.listen((scanData) {
+                if (scanData.code != null) {
+                  controller.dispose();
+                  Navigator.pop(context);
+                  provider.importConfig(scanData.code!);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('QR Code scanned')),
+                  );
+                }
+              });
+            },
+          ),
+        ),
+      ),
     );
+  }
+
+  Future<void> _pickQRFromGallery(BuildContext context, AppProvider provider) async {
+    final picker = ImagePicker();
+    final image = await picker.pickImage(source: ImageSource.gallery);
+    
+    if (image != null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('QR parsing not yet implemented')),
+      );
+    }
   }
 
   void _openEditServer(BuildContext context, ServerConfig server) {
@@ -447,27 +560,6 @@ class ServersScreen extends StatelessWidget {
       context,
       MaterialPageRoute(builder: (_) => AddServerScreen(server: server)),
     );
-  }
-
-  Future<void> _importFromClipboard(
-    BuildContext context,
-    AppProvider provider,
-  ) async {
-    final data = await Clipboard.getData(Clipboard.kTextPlain);
-    if (data?.text != null && data!.text!.isNotEmpty) {
-      provider.importConfig(data.text!);
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Config imported')),
-        );
-      }
-    } else {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Clipboard is empty')),
-        );
-      }
-    }
   }
 
   void _confirmDelete(
