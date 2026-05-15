@@ -1,8 +1,18 @@
 import 'package:flutter/material.dart';
 import 'package:guarch/app.dart';
+import 'package:guarch/services/guarch_engine.dart';
 
 class AboutScreen extends StatelessWidget {
   const AboutScreen({super.key});
+
+  Future<String> _getVersionInfo() async {
+    try {
+      final engineVersion = await GuarchEngine.getVersion();
+      return 'App: 1.0.1\nEngine: $engineVersion';
+    } catch (e) {
+      return 'App: 1.0.1\nEngine: Unknown';
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -21,10 +31,18 @@ class AboutScreen extends StatelessWidget {
                     color: textPrimary(context))),
           ),
           const SizedBox(height: 8),
-          Center(
-              child: Text('Version 1.0.0',
-                  style: TextStyle(color: textMuted(context)))),
-
+          FutureBuilder<String>(
+            future: _getVersionInfo(),
+            builder: (context, snapshot) {
+              return Center(
+                child: Text(
+                  snapshot.data ?? 'Loading...',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: textMuted(context)),
+                ),
+              );
+            },
+          ),
           const SizedBox(height: 32),
           _infoCard(context, '🏹', 'What is Guarch?',
               'Guarch is a Balochi word for a traditional hunting technique. '
