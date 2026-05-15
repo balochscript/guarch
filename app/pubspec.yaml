@@ -21,7 +21,7 @@ dependencies:
   connectivity_plus: ^6.0.5
   cupertino_icons: ^1.0.8
   qr_flutter: ^4.1.0
-  qr_code_scanner: ^1.0.1
+  mobile_scanner: ^5.2.3
   image_picker: ^1.1.2
 
 dev_dependencies:
