@@ -1,3 +1,4 @@
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -8,9 +9,8 @@ import 'package:guarch/screens/add_server_screen.dart';
 import 'package:guarch/screens/server_detail_screen.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:qr_flutter/qr_flutter.dart';
-import 'package:qr_code_scanner/qr_code_scanner.dart';
+import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:image_picker/image_picker.dart';
-import 'dart:io';
 
 class ServersScreen extends StatelessWidget {
   const ServersScreen({super.key});
@@ -435,6 +435,49 @@ class ServersScreen extends StatelessWidget {
     );
   }
 
+  void _scanQRCode(BuildContext context, AppProvider provider) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => Scaffold(
+          appBar: AppBar(
+            title: const Text('Scan QR Code'),
+            backgroundColor: Colors.black,
+          ),
+          body: MobileScanner(
+            onDetect: (capture) {
+              final List<Barcode> barcodes = capture.barcodes;
+              for (final barcode in barcodes) {
+                if (barcode.rawValue != null) {
+                  Navigator.pop(context);
+                  provider.importConfig(barcode.rawValue!);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('QR Code scanned successfully')),
+                  );
+                  break;
+                }
+              }
+            },
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _pickQRFromGallery(BuildContext context, AppProvider provider) async {
+    final picker = ImagePicker();
+    final image = await picker.pickImage(source: ImageSource.gallery);
+    
+    if (image != null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('QR code reading from images requires additional setup. Use camera scanner instead.'),
+          duration: Duration(seconds: 3),
+        ),
+      );
+    }
+  }
+
   void _showShareMenu(BuildContext context, AppProvider provider, ServerConfig server) {
     showModalBottomSheet(
       context: context,
@@ -482,7 +525,7 @@ class ServersScreen extends StatelessWidget {
             ),
             ListTile(
               leading: const Icon(Icons.qr_code),
-              title: const Text('Share QR Code'),
+              title: const Text('Show QR Code'),
               onTap: () {
                 Navigator.pop(ctx);
                 _showQRCode(context, provider.exportConfig(server), server.name);
@@ -516,43 +559,6 @@ class ServersScreen extends StatelessWidget {
         ],
       ),
     );
-  }
-
-  void _scanQRCode(BuildContext context, AppProvider provider) {
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => Scaffold(
-          appBar: AppBar(title: const Text('Scan QR Code')),
-          body: QRView(
-            key: GlobalKey(debugLabel: 'QR'),
-            onQRViewCreated: (controller) {
-              controller.scannedDataStream.listen((scanData) {
-                if (scanData.code != null) {
-                  controller.dispose();
-                  Navigator.pop(context);
-                  provider.importConfig(scanData.code!);
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('QR Code scanned')),
-                  );
-                }
-              });
-            },
-          ),
-        ),
-      ),
-    );
-  }
-
-  Future<void> _pickQRFromGallery(BuildContext context, AppProvider provider) async {
-    final picker = ImagePicker();
-    final image = await picker.pickImage(source: ImageSource.gallery);
-    
-    if (image != null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('QR parsing not yet implemented')),
-      );
-    }
   }
 
   void _openEditServer(BuildContext context, ServerConfig server) {
