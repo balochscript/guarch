@@ -789,12 +789,12 @@ class MainActivity : FlutterActivity() {
     private fun tryInitGoEngine() {
         CrashLogger.d(TAG, "--- tryInitGoEngine ---")
         try {
-            val cls = Class.forName("com.guarch.mobile.Mobile")
+            val cls = Class.forName("com.guarch.mobile.mobile.Mobile")
             goEngine = cls.getMethod("new_").invoke(null)
             
             // Set callback for Go engine events
             try {
-                val callbackClass = Class.forName("com.guarch.mobile.Callback")
+                val callbackClass = Class.forName("com.guarch.mobile.mobile.Callback")
                 val callback = java.lang.reflect.Proxy.newProxyInstance(
                     callbackClass.classLoader,
                     arrayOf(callbackClass)
@@ -856,7 +856,7 @@ class MainActivity : FlutterActivity() {
                 .sorted()
             CrashLogger.d(TAG, "  Methods: ${methods.joinToString(", ")}")
         } catch (e: ClassNotFoundException) {
-            CrashLogger.w(TAG, "  mobile.Mobile NOT FOUND (gomobile binding missing)")
+            CrashLogger.w(TAG, "  com.guarch.mobile.mobile.Mobile NOT FOUND (AAR missing or not packaged)")
             goEngine = null
         } catch (e: Throwable) {
             CrashLogger.e(TAG, "  Go engine init FAILED", e)
