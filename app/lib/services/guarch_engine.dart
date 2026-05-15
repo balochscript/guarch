@@ -22,6 +22,15 @@ class GuarchEngine {
   bool _initialized = false;
   bool _nativeAvailable = true;
 
+  static Future<String> getVersion() async {
+    try {
+      final result = await _channel.invokeMethod('getVersion');
+      return result as String? ?? 'Unknown';
+    } catch (e) {
+      return 'Unknown';
+    }
+  }
+
   Future<void> init() async {
     if (_initialized) return;
     _initialized = true;
@@ -76,7 +85,6 @@ class GuarchEngine {
     }
   }
 
-  /// Request VPN permission from Android
   Future<bool> requestVpnPermission() async {
     try {
       final result = await _channel.invokeMethod('requestVpnPermission');
