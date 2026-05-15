@@ -1,8 +1,24 @@
 import 'package:flutter/material.dart';
 import 'package:guarch/app.dart';
+import 'package:guarch/services/guarch_engine.dart';
 
 class AboutScreen extends StatelessWidget {
   const AboutScreen({super.key});
+
+  Future<Map<String, String>> _getVersionInfo() async {
+    try {
+      final engineVersion = await GuarchEngine.getVersion();
+      return {
+        'app': '1.0.1',
+        'engine': engineVersion,
+      };
+    } catch (e) {
+      return {
+        'app': '1.0.1',
+        'engine': 'Unknown',
+      };
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -24,13 +40,32 @@ class AboutScreen extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 8),
-          Center(
-            child: Text(
-              'Version 1.0.1',
-              style: TextStyle(color: textMuted(context)),
-            ),
+          FutureBuilder<Map<String, String>>(
+            future: _getVersionInfo(),
+            builder: (context, snapshot) {
+              if (!snapshot.hasData) {
+                return Center(
+                  child: Text(
+                    'Loading version...',
+                    style: TextStyle(color: textMuted(context)),
+                  ),
+                );
+              }
+              final versions = snapshot.data!;
+              return Column(
+                children: [
+                  Text(
+                    'App: ${versions['app']}',
+                    style: TextStyle(color: textMuted(context)),
+                  ),
+                  Text(
+                    'Engine: ${versions['engine']}',
+                    style: TextStyle(color: textMuted(context)),
+                  ),
+                ],
+              );
+            },
           ),
-
           const SizedBox(height: 32),
           _infoCard(
             context,
@@ -40,7 +75,6 @@ class AboutScreen extends StatelessWidget {
                 'The hunter hides behind a cloth and moves alongside the prey undetected. '
                 'Similarly, this project hides your traffic behind normal-looking internet activity.',
           ),
-
           const SizedBox(height: 16),
           _infoCard(
             context,
@@ -50,10 +84,8 @@ class AboutScreen extends StatelessWidget {
                 'Chrome, etc.) are routed through the encrypted tunnel automatically. '
                 'No manual proxy configuration needed. iOS support is coming soon.',
           ),
-
           const SizedBox(height: 24),
           _sectionTitle(context, 'Three Protocols'),
-
           const SizedBox(height: 12),
           _protocolCard(
             context,
@@ -70,7 +102,6 @@ class AboutScreen extends StatelessWidget {
             ],
             Colors.green,
           ),
-
           const SizedBox(height: 12),
           _protocolCard(
             context,
@@ -87,7 +118,6 @@ class AboutScreen extends StatelessWidget {
             ],
             accentColor(context),
           ),
-
           const SizedBox(height: 12),
           _protocolCard(
             context,
@@ -104,10 +134,8 @@ class AboutScreen extends StatelessWidget {
             ],
             Colors.blue,
           ),
-
           const SizedBox(height: 24),
           _sectionTitle(context, 'Security'),
-
           const SizedBox(height: 12),
           _infoCard(
             context,
@@ -117,7 +145,6 @@ class AboutScreen extends StatelessWidget {
                 'authenticated encryption. PSK (Pre-Shared Key) provides an additional '
                 'layer of authentication. Certificate pinning prevents MITM attacks.',
           ),
-
           const SizedBox(height: 12),
           _infoCard(
             context,
@@ -128,7 +155,6 @@ class AboutScreen extends StatelessWidget {
                 'making it harder to distinguish from normal browsing. Traffic shaping mimics '
                 'real browser patterns with randomized timing and padding.',
           ),
-
           const SizedBox(height: 12),
           _infoCard(
             context,
@@ -138,7 +164,6 @@ class AboutScreen extends StatelessWidget {
                 'Suspicious connection attempts are rate-limited and served decoy content. '
                 'The server behaves exactly like nginx/1.24.0 to passive observers.',
           ),
-
           const SizedBox(height: 12),
           _infoCard(
             context,
@@ -148,13 +173,8 @@ class AboutScreen extends StatelessWidget {
                 'detected and rejected. Key rotation occurs automatically after sending '
                 '1 billion messages or 64 GB of data.',
           ),
-
-          // ═══════════════════════════════════════════════════════════
-          // 🆕 v1.0.1 Features
-          // ═══════════════════════════════════════════════════════════
           const SizedBox(height: 24),
           _sectionTitle(context, 'Advanced Features (v1.0.1)'),
-
           const SizedBox(height: 12),
           _infoCard(
             context,
@@ -165,7 +185,6 @@ class AboutScreen extends StatelessWidget {
                 'appear to be accessing different legitimate websites over time. Supports '
                 'random, weighted, sequential, and single modes with health checking.',
           ),
-
           const SizedBox(height: 12),
           _infoCard(
             context,
@@ -176,7 +195,6 @@ class AboutScreen extends StatelessWidget {
                 'restricted networks where all ports except DNS (53) are blocked. Speed is '
                 'reduced (~50 Kbps) but provides connectivity when nothing else works.',
           ),
-
           const SizedBox(height: 12),
           _infoCard(
             context,
@@ -186,7 +204,6 @@ class AboutScreen extends StatelessWidget {
                 '(below 30% by default). This helps extend battery life while maintaining '
                 'connection security. Threshold is configurable per server.',
           ),
-
           const SizedBox(height: 12),
           _infoCard(
             context,
@@ -196,7 +213,6 @@ class AboutScreen extends StatelessWidget {
                 'metered connections. Perfect for limited mobile data plans. Can be toggled '
                 'on/off from settings at any time.',
           ),
-
           const SizedBox(height: 12),
           _infoCard(
             context,
@@ -206,7 +222,6 @@ class AboutScreen extends StatelessWidget {
                 'levels (idle, light, medium, heavy) with automatic switching. Heavy usage '
                 'generates more cover requests to blend in, while idle periods reduce overhead.',
           ),
-
           const SizedBox(height: 12),
           _infoCard(
             context,
@@ -216,7 +231,6 @@ class AboutScreen extends StatelessWidget {
                 'and battery/data saver preferences. Configure different strategies for different '
                 'network environments (home, office, public WiFi, mobile data).',
           ),
-
           const SizedBox(height: 12),
           _infoCard(
             context,
@@ -226,7 +240,6 @@ class AboutScreen extends StatelessWidget {
                 'retry delay (1-30s), handshake timeout (10-120s), keep-alive interval (10-300s), '
                 'and buffer size (16-128 KB). Optimize for your network conditions.',
           ),
-
           const SizedBox(height: 12),
           _infoCard(
             context,
@@ -236,7 +249,6 @@ class AboutScreen extends StatelessWidget {
                 'logs, Kotlin/Flutter logs, and crash reports. Perfect for troubleshooting '
                 'connection issues. Can be enabled/disabled from settings.',
           ),
-
           const SizedBox(height: 32),
           Center(
             child: Text(
