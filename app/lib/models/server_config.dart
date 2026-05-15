@@ -1,5 +1,5 @@
 import 'dart:convert';
-import 'package:flutter/material.dart'; // for Color class
+import 'package:flutter/material.dart';
 
 class ServerConfig {
   String id;
@@ -13,7 +13,6 @@ class ServerConfig {
   bool coverEnabled;
   List<CoverDomain> coverDomains;
   
-  // Enhanced v1.0.1
   bool sniEnabled;
   String sniMode;
   List<SNIDomain> sniDomains;
@@ -30,7 +29,6 @@ class ServerConfig {
   String shapingPattern;
   int maxPadding;
   
-  // Ping & Delay Testing
   int? ping;
   int? realDelay;
   DateTime? lastTested;
@@ -38,10 +36,9 @@ class ServerConfig {
   bool isActive;
   DateTime createdAt;
   
-  // Metadata
   Metadata? metadata;
 
-    ServerConfig({
+  ServerConfig({
     required this.id,
     required this.name,
     required this.address,
@@ -145,14 +142,13 @@ class ServerConfig {
       psk.isNotEmpty &&
       ['guarch', 'grouk', 'zhip'].contains(protocol);
 
-    Map<String, dynamic> toJson() {
+  Map<String, dynamic> toJson() {
     return {
       'version': 1,
       'id': id,
       'server': {
         'name': name,
-        'address': address,
-        'port': port,
+        'address': '$address:$port',
         'protocol': protocol,
         'psk': psk,
         'cert_pin': certPin,
@@ -193,17 +189,26 @@ class ServerConfig {
     };
   }
 
-    factory ServerConfig.fromJson(Map<String, dynamic> json) {
+  factory ServerConfig.fromJson(Map<String, dynamic> json) {
     final server = json['server'] as Map<String, dynamic>? ?? json;
     final sni = json['sni'] as Map<String, dynamic>? ?? {};
     final cover = json['cover_traffic'] as Map<String, dynamic>? ?? json['cover'] ?? {};
     final dnsFallback = json['dns_fallback'] as Map<String, dynamic>? ?? {};
 
+    String address = server['address'] ?? json['address'] ?? '';
+    int port = server['port'] ?? json['port'] ?? 8443;
+    
+    if (address.contains(':')) {
+      final parts = address.split(':');
+      address = parts[0];
+      port = int.tryParse(parts[1]) ?? port;
+    }
+
     return ServerConfig(
       id: json['id'] ?? DateTime.now().millisecondsSinceEpoch.toString(),
       name: server['name'] ?? 'Server',
-      address: server['address'] ?? json['address'] ?? '',
-      port: server['port'] ?? json['port'] ?? 8443,
+      address: address,
+      port: port,
       psk: server['psk'] ?? json['psk'] ?? '',
       certPin: server['cert_pin'] ?? json['cert_pin'],
       listenPort: json['listen_port'] ?? 1080,
@@ -344,7 +349,6 @@ class ServerConfig {
     );
   }
 
-  // ✅ متدهای static داخل کلاس
   static List<CoverDomain> defaultCoverDomains() {
     return [
       CoverDomain(domain: 'www.google.com', weight: 30, paths: ['/', '/search']),
