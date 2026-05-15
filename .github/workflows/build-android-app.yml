@@ -143,9 +143,9 @@ jobs:
           
           echo ""
           echo "====== Checking for required classes ======"
-          jar tf /tmp/aar_check/classes.jar | grep "com/guarch/mobile/Mobile.class" || { echo "❌ Mobile.class NOT FOUND!"; exit 1; }
-          jar tf /tmp/aar_check/classes.jar | grep "com/guarch/mobile/Callback.class" || echo "⚠️ Callback.class not found (may be optional)"
-          
+          jar tf /tmp/aar_check/classes.jar | grep -q "com/guarch/mobile/mobile/Mobile.class" || { echo "❌ Mobile.class NOT FOUND!"; exit 1; }
+          jar tf /tmp/aar_check/classes.jar | grep -q "com/guarch/mobile/mobile/Callback.class" || echo "⚠️ Callback.class not found (may be optional)"
+
           echo ""
           echo "✅ AAR verification passed!"
 
