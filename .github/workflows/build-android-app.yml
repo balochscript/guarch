@@ -46,6 +46,18 @@ jobs:
           go mod download
           go mod verify
 
+      # 🆕 DEBUG: بررسی mobile package قبل از build
+      - name: Check mobile package
+        run: |
+          echo "====== Mobile package structure ======"
+          ls -la mobile/
+          echo ""
+          echo "====== mobile.go (first 100 lines) ======"
+          head -100 mobile/mobile.go || echo "⚠️ mobile.go not found"
+          echo ""
+          echo "====== Try building mobile package ======"
+          go build -v ./mobile || echo "⚠️ Direct build failed (expected for gomobile)"
+
       # ✅ نصب gomobile + دانلود سورس mobile
       - name: Install gomobile
         run: |
@@ -55,18 +67,87 @@ jobs:
           echo "$(go env GOPATH)/bin" >> $GITHUB_PATH
           gomobile init
 
-      # ✅ بیلد AAR
+      # ✅ بیلد AAR با error handling
       - name: Build AAR
         env:
           CGO_ENABLED: 1
         run: |
+          set -e
+          set -x
+          
           mkdir -p app/android/app/libs
+          
+          echo "====== Building mobile.aar ======"
           gomobile bind \
             -target=android \
             -androidapi=21 \
             -o app/android/app/libs/mobile.aar \
             -javapkg=com.guarch.mobile \
+            -v \
             ./mobile
+          
+          BUILD_STATUS=$?
+          echo "Build exit code: $BUILD_STATUS"
+          
+          if [ $BUILD_STATUS -ne 0 ]; then
+            echo "❌ gomobile bind FAILED!"
+            exit 1
+          fi
+          
+          echo "✅ Build completed"
+
+      # 🆕 DEBUG: بررسی کامل AAR
+      - name: Verify AAR Structure
+        run: |
+          echo "====== AAR File Info ======"
+          ls -lh app/android/app/libs/mobile.aar || { echo "❌ AAR NOT FOUND!"; exit 1; }
+          
+          echo ""
+          echo "====== AAR Size ======"
+          du -h app/android/app/libs/mobile.aar
+          
+          FILE_SIZE=$(stat -c%s app/android/app/libs/mobile.aar)
+          echo "File size in bytes: $FILE_SIZE"
+          
+          if [ $FILE_SIZE -lt 100000 ]; then
+            echo "❌ AAR is too small (< 100KB) - likely empty or broken!"
+            exit 1
+          fi
+          
+          echo ""
+          echo "====== AAR Contents (first 50 entries) ======"
+          unzip -l app/android/app/libs/mobile.aar | head -50
+          
+          echo ""
+          echo "====== Checking for .so files ======"
+          SO_COUNT=$(unzip -l app/android/app/libs/mobile.aar | grep -c "\.so$" || true)
+          echo "Found $SO_COUNT .so files"
+          if [ $SO_COUNT -eq 0 ]; then
+            echo "⚠️ WARNING: NO .so FILES FOUND!"
+          else
+            unzip -l app/android/app/libs/mobile.aar | grep "\.so$"
+          fi
+          
+          echo ""
+          echo "====== Checking for classes.jar ======"
+          unzip -l app/android/app/libs/mobile.aar | grep "classes.jar" || { echo "❌ classes.jar NOT FOUND!"; exit 1; }
+          
+          echo ""
+          echo "====== Extracting and checking classes ======"
+          mkdir -p /tmp/aar_check
+          unzip -j app/android/app/libs/mobile.aar classes.jar -d /tmp/aar_check || { echo "❌ Failed to extract classes.jar"; exit 1; }
+          
+          echo ""
+          echo "====== Java classes in JAR ======"
+          jar tf /tmp/aar_check/classes.jar
+          
+          echo ""
+          echo "====== Checking for required classes ======"
+          jar tf /tmp/aar_check/classes.jar | grep "com/guarch/mobile/Mobile.class" || { echo "❌ Mobile.class NOT FOUND!"; exit 1; }
+          jar tf /tmp/aar_check/classes.jar | grep "com/guarch/mobile/Callback.class" || echo "⚠️ Callback.class not found (may be optional)"
+          
+          echo ""
+          echo "✅ AAR verification passed!"
 
       # ✅ بیلد Universal APK
       - name: Flutter build (Universal)
@@ -81,6 +162,19 @@ jobs:
           cd app/build/app/outputs/flutter-apk/
           VERSION=$(grep "^version:" ../../../../pubspec.yaml | awk '{print $2}' | cut -d'+' -f1)
           mv app-release.apk guarch-v${VERSION}-universal.apk
+
+      # 🆕 DEBUG: بررسی APK نهایی
+      - name: Verify APK contains native libraries
+        run: |
+          echo "====== Checking APK for native libraries ======"
+          APK_PATH="app/build/app/outputs/flutter-apk/guarch-*.apk"
+          
+          echo "APK size:"
+          ls -lh $APK_PATH
+          
+          echo ""
+          echo "Native libraries in APK:"
+          unzip -l $APK_PATH | grep "lib/.*\.so$" || echo "⚠️ No native libraries found in APK!"
 
       - uses: actions/upload-artifact@v4
         with:
