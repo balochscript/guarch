@@ -1,12 +1,9 @@
+
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/services.dart';
 import 'package:guarch/models/server_config.dart';
-
-// ═══════════════════════════════════════════════════════════════
-// Flutter Logger
-// ═══════════════════════════════════════════════════════════════
 
 class FlutterLog {
   static const _logChannel = MethodChannel('com.guarch.app/logs');
@@ -17,7 +14,6 @@ class FlutterLog {
     entries.add('[$time] $tag: $msg');
     if (entries.length > 1000) entries.removeAt(0);
     _writeToNative('$tag: $msg');
-    // ignore: avoid_print
     print('[$tag] $msg');
   }
 
@@ -27,7 +23,6 @@ class FlutterLog {
     entries.add('[$time] E/$tag: $msg$errStr');
     if (entries.length > 1000) entries.removeAt(0);
     _writeToNative('E/$tag: $msg$errStr');
-    // ignore: avoid_print
     print('[E/$tag] $msg $errStr');
   }
 
@@ -36,7 +31,6 @@ class FlutterLog {
     entries.add('[$time] W/$tag: $msg');
     if (entries.length > 1000) entries.removeAt(0);
     _writeToNative('W/$tag: $msg');
-    // ignore: avoid_print
     print('[W/$tag] $msg');
   }
 
@@ -55,10 +49,6 @@ class FlutterLog {
   }
 }
 
-// ═══════════════════════════════════════════════════════════════
-// Guarch Engine
-// ═══════════════════════════════════════════════════════════════
-
 class GuarchEngine {
   static const _channel = MethodChannel('com.guarch.app/engine');
   static const _eventChannel = EventChannel('com.guarch.app/events');
@@ -67,7 +57,6 @@ class GuarchEngine {
   factory GuarchEngine() => _instance;
   GuarchEngine._internal();
 
-  // Stream controllers
   final _statusController = StreamController<String>.broadcast();
   final _statsController = StreamController<Map<String, dynamic>>.broadcast();
   final _logController = StreamController<String>.broadcast();
@@ -75,7 +64,6 @@ class GuarchEngine {
   final _sniController = StreamController<String>.broadcast();
   final _dnsFallbackController = StreamController<bool>.broadcast();
 
-  // Public streams
   Stream<String> get statusStream => _statusController.stream;
   Stream<Map<String, dynamic>> get statsStream => _statsController.stream;
   Stream<String> get logStream => _logController.stream;
@@ -89,9 +77,15 @@ class GuarchEngine {
 
   bool get isNativeAvailable => _nativeAvailable;
 
-  // ═══════════════════════════════════════════════════════════════
-  // Initialization
-  // ═══════════════════════════════════════════════════════════════
+  static Future<String> getVersion() async {
+    try {
+      final result = await _channel.invokeMethod<String>('getVersion');
+      return result ?? 'Unknown';
+    } catch (e) {
+      FlutterLog.e('Engine', 'getVersion failed', e);
+      return 'Unknown';
+    }
+  }
 
   Future<void> init() async {
     FlutterLog.d('Engine', 'init() called, initialized=$_initialized');
@@ -99,10 +93,8 @@ class GuarchEngine {
     _initialized = true;
 
     try {
-      // Set method call handler
       _channel.setMethodCallHandler(_handleMethodCall);
 
-      // Subscribe to event channel
       _eventSubscription = _eventChannel.receiveBroadcastStream().listen(
         (event) {
           _handleEvent(event);
@@ -115,9 +107,8 @@ class GuarchEngine {
 
       FlutterLog.d('Engine', 'Event channel subscribed');
 
-      // Test native availability
       try {
-        final version = await _channel.invokeMethod<String>('getVersion');
+        final version = await getVersion();
         FlutterLog.d('Engine', 'Native engine version: $version');
         _nativeAvailable = true;
       } catch (e) {
@@ -131,10 +122,6 @@ class GuarchEngine {
 
     FlutterLog.d('Engine', 'init() done (native: $_nativeAvailable)');
   }
-
-  // ═══════════════════════════════════════════════════════════════
-  // Event Handlers
-  // ═══════════════════════════════════════════════════════════════
 
   Future<dynamic> _handleMethodCall(MethodCall call) async {
     FlutterLog.d('Engine', 'Method call: ${call.method}');
@@ -239,10 +226,6 @@ class GuarchEngine {
     }
   }
 
-  // ═══════════════════════════════════════════════════════════════
-  // Connection Methods
-  // ═══════════════════════════════════════════════════════════════
-
   Future<bool> connect({
     required String serverAddr,
     int serverPort = 8443,
@@ -297,7 +280,6 @@ class GuarchEngine {
     }
   }
 
-  /// New v1.0.1 method: Connect with full JSON config
   Future<bool> connectWithConfig(String configJson) async {
     FlutterLog.d('Engine', '=== connectWithConfig() (v1.0.1) ===');
 
@@ -308,7 +290,6 @@ class GuarchEngine {
     }
 
     try {
-      // Validate JSON
       final config = jsonDecode(configJson) as Map<String, dynamic>;
       FlutterLog.d('Engine', '  Config version: ${config['version']}');
       FlutterLog.d('Engine', '  Server: ${config['server']?['address']}');
@@ -356,10 +337,6 @@ class GuarchEngine {
     }
   }
 
-  // ═══════════════════════════════════════════════════════════════
-  // Status & Stats
-  // ═══════════════════════════════════════════════════════════════
-
   Future<String> getStatus() async {
     if (!_nativeAvailable) return 'disconnected';
 
@@ -382,10 +359,6 @@ class GuarchEngine {
       return {};
     }
   }
-
-  // ═══════════════════════════════════════════════════════════════
-  // Battery & Data Saver (v1.0.1)
-  // ═══════════════════════════════════════════════════════════════
 
   Future<bool> setBatteryLevel(int level) async {
     if (!_nativeAvailable) return false;
@@ -412,10 +385,6 @@ class GuarchEngine {
       return false;
     }
   }
-
-  // ═══════════════════════════════════════════════════════════════
-  // Config Management (v1.0.1)
-  // ═══════════════════════════════════════════════════════════════
 
   Future<bool> loadConfigJSON(String jsonStr) async {
     if (!_nativeAvailable) return false;
@@ -478,10 +447,6 @@ class GuarchEngine {
     }
   }
 
-  // ═══════════════════════════════════════════════════════════════
-  // Split Tunneling (v1.0.1)
-  // ═══════════════════════════════════════════════════════════════
-
   Future<bool> setSplitTunnelMode(String mode) async {
     if (!_nativeAvailable) return false;
 
@@ -511,11 +476,6 @@ class GuarchEngine {
     }
   }
 
-  // ═══════════════════════════════════════════════════════════════
-  // Ping & Delay Testing
-  // ═══════════════════════════════════════════════════════════════
-
-  /// TCP Ping: Simple socket connection time
   Future<int> ping(String address, int port) async {
     FlutterLog.d('Engine', 'TCP ping $address:$port');
 
@@ -548,7 +508,6 @@ class GuarchEngine {
     }
   }
 
-  /// Real Delay Test: Full VPN handshake + packet round-trip (v1.0.1)
   Future<int> testRealDelay(ServerConfig server) async {
     FlutterLog.d('Engine', '=== testRealDelay ${server.address}:${server.port} ===');
     
@@ -560,7 +519,6 @@ class GuarchEngine {
     final startTime = DateTime.now();
     
     try {
-      // Build minimal config for testing (no cover traffic, no SNI)
       final testConfig = {
         'version': 1,
         'server': {
@@ -586,7 +544,6 @@ class GuarchEngine {
       
       FlutterLog.d('Engine', 'Calling testRealDelay with minimal config...');
       
-      // Try to connect and measure handshake time
       final result = await _channel.invokeMethod(
         'testRealDelay',
         configJson,
@@ -615,7 +572,6 @@ class GuarchEngine {
     }
   }
 
-  /// Test connection (used by testRealDelay in AppProvider)
   Future<bool> testConnection(String address, int port, String psk) async {
     FlutterLog.d('Engine', 'testConnection $address:$port');
     
@@ -650,10 +606,6 @@ class GuarchEngine {
     }
   }
 
-  // ═══════════════════════════════════════════════════════════════
-  // TUN Stats (v1.0.1)
-  // ═══════════════════════════════════════════════════════════════
-
   Future<Map<String, dynamic>> getTUNStats() async {
     if (!_nativeAvailable) return {};
 
@@ -668,10 +620,6 @@ class GuarchEngine {
     }
   }
 
-  // ═══════════════════════════════════════════════════════════════
-  // Logs
-  // ═══════════════════════════════════════════════════════════════
-
   Future<String> readGoLog() async {
     try {
       return await _channel.invokeMethod<String>('readGoLog') ?? 'No Go log';
@@ -685,10 +633,6 @@ class GuarchEngine {
       await _channel.invokeMethod('clearGoLog');
     } catch (_) {}
   }
-
-  // ═══════════════════════════════════════════════════════════════
-  // Dispose
-  // ═══════════════════════════════════════════════════════════════
 
   void dispose() {
     FlutterLog.d('Engine', 'dispose()');
