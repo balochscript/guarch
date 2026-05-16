@@ -1,4 +1,3 @@
-
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
@@ -522,8 +521,8 @@ class GuarchEngine {
       final testConfig = {
         'version': 1,
         'server': {
-          'address': server.address,
-          'port': server.port,
+          'name': server.name,
+          'address': '${server.address}:${server.port}',
           'protocol': server.protocol,
           'psk': server.psk,
           'cert_pin': server.certPin ?? '',
@@ -581,8 +580,8 @@ class GuarchEngine {
       final testConfig = {
         'version': 1,
         'server': {
-          'address': address,
-          'port': port,
+          'name': 'Test',
+          'address': '$address:$port',
           'protocol': 'guarch',
           'psk': psk,
         },
