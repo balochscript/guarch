@@ -8,55 +8,45 @@ import (
 	"time"
 )
 
-// Validator اعتبارسنجی config
 type Validator struct{}
 
-// NewValidator ساخت validator جدید
 func NewValidator() *Validator {
 	return &Validator{}
 }
 
-// Validate اعتبارسنجی کامل config
 func (v *Validator) Validate(cfg *ServerConfig) error {
-	// Version check
 	if cfg.Version != 1 {
 		return fmt.Errorf("unsupported config version: %d (expected 1)", cfg.Version)
 	}
 	
-	// Server info
 	if err := v.validateServerInfo(&cfg.Server); err != nil {
 		return fmt.Errorf("server: %w", err)
 	}
 	
-	// SNI
 	if cfg.SNI.Enabled {
 		if err := v.validateSNI(&cfg.SNI); err != nil {
 			return fmt.Errorf("sni: %w", err)
 		}
 	}
 	
-	// Cover traffic
 	if cfg.Cover.Enabled {
 		if err := v.validateCover(&cfg.Cover); err != nil {
 			return fmt.Errorf("cover: %w", err)
 		}
 	}
 	
-	// DNS fallback
 	if cfg.DNS.Enabled {
 		if err := v.validateDNS(&cfg.DNS); err != nil {
 			return fmt.Errorf("dns: %w", err)
 		}
 	}
 	
-	// uTLS
 	if cfg.UTLS.Enabled {
 		if err := v.validateUTLS(&cfg.UTLS); err != nil {
 			return fmt.Errorf("utls: %w", err)
 		}
 	}
 	
-	// Fragmentation
 	if cfg.Fragment.Enabled {
 		if err := v.validateFragment(&cfg.Fragment); err != nil {
 			return fmt.Errorf("fragment: %w", err)
@@ -70,7 +60,6 @@ func (v *Validator) Validate(cfg *ServerConfig) error {
 	return nil
 }
 
-// validateServerInfo اعتبارسنجی اطلاعات سرور
 func (v *Validator) validateServerInfo(info *ServerInfo) error {
 	if info.Name == "" {
 		return fmt.Errorf("name is required")
@@ -80,7 +69,6 @@ func (v *Validator) validateServerInfo(info *ServerInfo) error {
 		return fmt.Errorf("address is required")
 	}
 	
-	// بررسی فرمت address
 	host, port, err := net.SplitHostPort(info.Address)
 	if err != nil {
 		return fmt.Errorf("invalid address format: %w", err)
@@ -94,7 +82,6 @@ func (v *Validator) validateServerInfo(info *ServerInfo) error {
 		return fmt.Errorf("port is empty")
 	}
 	
-	// بررسی protocol
 	validProtocols := map[string]bool{
 		"guarch": true,
 		"grouk":  true,
@@ -105,7 +92,6 @@ func (v *Validator) validateServerInfo(info *ServerInfo) error {
 		return fmt.Errorf("invalid protocol: %s (must be guarch/grouk/zhip)", info.Protocol)
 	}
 	
-	// بررسی PSK
 	if info.PSK == "" {
 		return fmt.Errorf("PSK is required")
 	}
@@ -117,13 +103,11 @@ func (v *Validator) validateServerInfo(info *ServerInfo) error {
 	return nil
 }
 
-// validateSNI اعتبارسنجی SNI config
 func (v *Validator) validateSNI(sni *SNIConfig) error {
 	if len(sni.Domains) == 0 {
 		return fmt.Errorf("no domains specified")
 	}
 	
-	// بررسی mode
 	validModes := map[string]bool{
 		"random":     true,
 		"weighted":   true,
@@ -136,15 +120,14 @@ func (v *Validator) validateSNI(sni *SNIConfig) error {
 	}
 	
 	totalWeight := 0
-	hasFallback := false      // 🆕 اضافه شد
-	hasHealthCheck := false   // 🆕 اضافه شد
+	hasFallback := false
+	hasHealthCheck := false
 	
 	for i, d := range sni.Domains {
 		if d.Domain == "" {
 			return fmt.Errorf("domain %d: empty domain", i)
 		}
 		
-		// بررسی فرمت domain
 		if !v.isValidDomain(d.Domain) {
 			return fmt.Errorf("domain %d: invalid domain format: %s", i, d.Domain)
 		}
@@ -155,7 +138,6 @@ func (v *Validator) validateSNI(sni *SNIConfig) error {
 		
 		totalWeight += d.Weight
 		
-		// 🆕 چک fallback و health
 		if d.Fallback {
 			hasFallback = true
 		}
@@ -164,12 +146,10 @@ func (v *Validator) validateSNI(sni *SNIConfig) error {
 		}
 	}
 	
-	// برای weighted mode، total weight باید > 0 باشه
 	if sni.Mode == "weighted" && totalWeight == 0 {
 		return fmt.Errorf("weighted mode requires at least one domain with weight > 0")
 	}
 	
-	// 🆕 اگه health check فعاله، باید حداقل یک fallback داشته باشیم
 	if hasHealthCheck && !hasFallback {
 		return fmt.Errorf("health check enabled but no fallback domain defined (at least one domain should have fallback=true)")
 	}
@@ -177,13 +157,11 @@ func (v *Validator) validateSNI(sni *SNIConfig) error {
 	return nil
 }
 
-// validateCover اعتبارسنجی cover traffic config
 func (v *Validator) validateCover(cover *CoverConfig) error {
 	if len(cover.Domains) == 0 {
 		return fmt.Errorf("no domains specified")
 	}
 	
-	// بررسی mode
 	validModes := map[string]bool{
 		"auto":     true,
 		"stealth":  true,
@@ -217,7 +195,6 @@ func (v *Validator) validateCover(cover *CoverConfig) error {
 		
 		totalWeight += d.Weight
 		
-		// بررسی intervals
 		if d.IntervalMin.Duration < 0 {
 			return fmt.Errorf("domain %d: negative interval_min", i)
 		}
@@ -238,7 +215,6 @@ func (v *Validator) validateCover(cover *CoverConfig) error {
 	return nil
 }
 
-// validateDNS اعتبارسنجی DNS config
 func (v *Validator) validateDNS(dns *DNSConfig) error {
 	if dns.Domain == "" {
 		return fmt.Errorf("domain is required")
@@ -265,19 +241,14 @@ func (v *Validator) validateDNS(dns *DNSConfig) error {
 	return nil
 }
 
-// validateUTLS اعتبارسنجی uTLS config
 func (v *Validator) validateUTLS(utls *UTLSConfig) error {
 	if utls.Fingerprint == "" {
 		return fmt.Errorf("fingerprint is required")
 	}
 	
-	// می‌تونیم لیست fingerprint های معتبر رو چک کنیم
-	// ولی الان فقط empty check می‌کنیم
-	
 	return nil
 }
 
-// validateFragment اعتبارسنجی fragmentation config
 func (v *Validator) validateFragment(frag *FragmentConfig) error {
 	if frag.MinSize < 0 {
 		return fmt.Errorf("negative min_size")
@@ -302,17 +273,13 @@ func (v *Validator) validateFragment(frag *FragmentConfig) error {
 	return nil
 }
 
-// isValidDomain بررسی معتبر بودن domain
 func (v *Validator) isValidDomain(domain string) bool {
-	// حذف www. اگه داره
 	domain = strings.TrimPrefix(domain, "www.")
 	
-	// بررسی طول
 	if len(domain) == 0 || len(domain) > 253 {
 		return false
 	}
 	
-	// بررسی کاراکترهای مجاز
 	for _, ch := range domain {
 		if !((ch >= 'a' && ch <= 'z') ||
 			(ch >= 'A' && ch <= 'Z') ||
@@ -322,7 +289,6 @@ func (v *Validator) isValidDomain(domain string) bool {
 		}
 	}
 	
-	// بررسی با url.Parse
 	u, err := url.Parse("https://" + domain)
 	if err != nil {
 		return false
@@ -335,9 +301,7 @@ func (v *Validator) isValidDomain(domain string) bool {
 	return true
 }
 
-// validateMetadata validate metadata fields
 func (v *Validator) validateMetadata(meta *Metadata) error {
-	// Quota validation
 	if meta.Quota != nil && !meta.Quota.Unlimited {
 		if meta.Quota.TotalBytes < 0 {
 			return fmt.Errorf("quota.total_bytes cannot be negative")
@@ -350,7 +314,6 @@ func (v *Validator) validateMetadata(meta *Metadata) error {
 		}
 	}
 	
-	// Announcement validation
 	if meta.Announcement != nil && meta.Announcement.Enabled {
 		if meta.Announcement.URL != "" {
 			if _, err := url.Parse(meta.Announcement.URL); err != nil {
@@ -372,7 +335,6 @@ func (v *Validator) validateMetadata(meta *Metadata) error {
 		}
 	}
 	
-	// Expires validation
 	if meta.ExpiresAt != "" {
 		expiry, err := time.Parse(time.RFC3339, meta.ExpiresAt)
 		if err != nil {
