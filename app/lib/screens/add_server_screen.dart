@@ -19,14 +19,14 @@ class _AddServerScreenState extends State<AddServerScreen> {
   late TextEditingController _portController;
   late TextEditingController _pskController;
   late TextEditingController _pinController;
-  late TextEditingController _listenPortController;
+  late TextEditingController _socksPortController;
   final _domainController = TextEditingController();
   final _sniDomainController = TextEditingController();
   final _dnsDomainController = TextEditingController();
   
   late String _protocol;
-  bool _coverEnabled = true;
-  bool _sniEnabled = true;
+  bool _coverEnabled = false;
+  bool _sniEnabled = false;
   bool _dnsFallbackEnabled = false;
   bool _batteryAwareEnabled = true;
   bool _dataSaverEnabled = false;
@@ -58,19 +58,23 @@ class _AddServerScreenState extends State<AddServerScreen> {
     _portController = TextEditingController(text: (widget.server?.port ?? 8443).toString());
     _pskController = TextEditingController(text: widget.server?.psk ?? '');
     _pinController = TextEditingController(text: widget.server?.certPin ?? '');
-    _listenPortController = TextEditingController(text: (widget.server?.listenPort ?? 1080).toString());
+    _socksPortController = TextEditingController(text: (widget.server?.socksPort ?? 1080).toString());
     
     _protocol = widget.server?.protocol ?? 'guarch';
-    _coverEnabled = widget.server?.coverEnabled ?? true;
-    _sniEnabled = widget.server?.sniEnabled ?? true;
+    _coverEnabled = widget.server?.coverEnabled ?? false;
+    _sniEnabled = widget.server?.sniEnabled ?? false;
     _dnsFallbackEnabled = widget.server?.dnsFallbackEnabled ?? false;
     _batteryAwareEnabled = widget.server?.batteryAwareEnabled ?? true;
     _dataSaverEnabled = widget.server?.dataSaverEnabled ?? false;
     
     _sniMode = widget.server?.sniMode ?? 'weighted';
     _dnsFallbackMode = widget.server?.dnsFallbackMode ?? 'auto';
-    _coverDomains = widget.server?.coverDomains ?? ServerConfig.defaultCoverDomains();
-    _sniDomains = widget.server?.sniDomains ?? ServerConfig.defaultSNIDomains();
+    _coverDomains = widget.server?.coverDomains.isNotEmpty == true
+        ? List.from(widget.server!.coverDomains)
+        : [];
+    _sniDomains = widget.server?.sniDomains.isNotEmpty == true
+        ? List.from(widget.server!.sniDomains)
+        : [];
   }
 
   @override
@@ -80,7 +84,7 @@ class _AddServerScreenState extends State<AddServerScreen> {
     _portController.dispose();
     _pskController.dispose();
     _pinController.dispose();
-    _listenPortController.dispose();
+    _socksPortController.dispose();
     _domainController.dispose();
     _sniDomainController.dispose();
     _dnsDomainController.dispose();
@@ -105,7 +109,6 @@ class _AddServerScreenState extends State<AddServerScreen> {
         child: ListView(
           padding: const EdgeInsets.all(24),
           children: [
-            // Basic Information
             _buildSectionHeader('🎯 Server Information'),
             const SizedBox(height: 16),
             
@@ -191,7 +194,6 @@ class _AddServerScreenState extends State<AddServerScreen> {
               ),
             ),
 
-            // Security
             const SizedBox(height: 32),
             _buildSectionHeader('🔐 Security'),
             const SizedBox(height: 4),
@@ -236,7 +238,6 @@ class _AddServerScreenState extends State<AddServerScreen> {
               style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
             ),
 
-            // SNI Rotation
             const SizedBox(height: 32),
             _buildToggleSection(
               '🔄 SNI Rotation',
@@ -245,284 +246,8 @@ class _AddServerScreenState extends State<AddServerScreen> {
               (v) => setState(() => _sniEnabled = v),
             ),
 
-            if (_sniEnabled) ...[
-              const SizedBox(height: 16),
-              Card(
-                child: Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'SNI Configuration',
-                        style: TextStyle(
-                          fontWeight: FontWeight.w600,
-                          color: textSecondary(context),
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-                      
-                      DropdownButtonFormField<String>(
-                        value: _sniMode,
-                        decoration: const InputDecoration(
-                          labelText: 'Selection Mode',
-                          prefixIcon: Icon(Icons.shuffle),
-                        ),
-                        items: const [
-                          DropdownMenuItem(
-                            value: 'random',
-                            child: Text('🎲 Random'),
-                          ),
-                          DropdownMenuItem(
-                            value: 'weighted',
-                            child: Text('⚖️ Weighted (Recommended)'),
-                          ),
-                          DropdownMenuItem(
-                            value: 'sequential',
-                            child: Text('🔄 Sequential'),
-                          ),
-                          DropdownMenuItem(
-                            value: 'single',
-                            child: Text('📍 Single (No Rotation)'),
-                          ),
-                        ],
-                        onChanged: (v) => setState(() => _sniMode = v!),
-                      ),
-                      
-                      const SizedBox(height: 16),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: TextField(
-                              controller: _sniDomainController,
-                              decoration: const InputDecoration(
-                                hintText: 'e.g. www.google.com',
-                                prefixIcon: Icon(Icons.public, size: 20),
-                                isDense: true,
-                              ),
-                              keyboardType: TextInputType.url,
-                              onSubmitted: (_) => _addSNIDomain(),
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          IconButton.filled(
-                            onPressed: _addSNIDomain,
-                            icon: const Icon(Icons.add),
-                          ),
-                        ],
-                      ),
-                      
-                      const SizedBox(height: 12),
-                      Wrap(
-                        spacing: 8,
-                        runSpacing: 8,
-                        children: [
-                          _quickAddSNIChip('www.google.com'),
-                          _quickAddSNIChip('www.microsoft.com'),
-                          _quickAddSNIChip('github.com'),
-                          _quickAddSNIChip('www.cloudflare.com'),
-                          _quickAddSNIChip('stackoverflow.com'),
-                          _quickAddSNIChip('learn.microsoft.com'),
-                        ],
-                      ),
-                      
-                      const SizedBox(height: 16),
-                      Divider(color: accentColor(context).withOpacity(0.1)),
-                      const SizedBox(height: 8),
-                      
-                      Text(
-                        'Active SNI Domains:',
-                        style: TextStyle(
-                          fontWeight: FontWeight.w600,
-                          fontSize: 13,
-                          color: textSecondary(context),
-                        ),
-                      ),
-                      const SizedBox(height: 8),
+            if (_sniEnabled) ..._buildSNISection(),
 
-                      ..._sniDomains.asMap().entries.map((entry) {
-                        final index = entry.key;
-                        final domain = entry.value;
-                        
-                        IconData icon;
-                        Color color;
-                        if (domain.fallback) {
-                          icon = Icons.shield;
-                          color = Colors.blue;
-                        } else if (domain.checkHealth) {
-                          icon = Icons.check_circle;
-                          color = Colors.green;
-                        } else {
-                          icon = Icons.circle_outlined;
-                          color = Colors.grey;
-                        }
-                        
-                        return Padding(
-                          padding: const EdgeInsets.only(bottom: 4),
-                          child: Row(
-                            children: [
-                              Icon(icon, size: 16, color: color),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                child: Text(
-                                  domain.domain,
-                                  style: TextStyle(
-                                    fontSize: 14,
-                                    color: textSecondary(context),
-                                  ),
-                                ),
-                              ),
-                              
-                              if (domain.fallback)
-                                Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 6,
-                                    vertical: 2,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: Colors.blue.withOpacity(0.2),
-                                    borderRadius: BorderRadius.circular(4),
-                                  ),
-                                  child: const Text(
-                                    'Fallback',
-                                    style: TextStyle(
-                                      fontSize: 10,
-                                      color: Colors.blue,
-                                    ),
-                                  ),
-                                ),
-                              const SizedBox(width: 4),
-                              if (domain.checkHealth && !domain.fallback)
-                                Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 6,
-                                    vertical: 2,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: Colors.green.withOpacity(0.2),
-                                    borderRadius: BorderRadius.circular(4),
-                                  ),
-                                  child: const Text(
-                                    'Health',
-                                    style: TextStyle(
-                                      fontSize: 10,
-                                      color: Colors.green,
-                                    ),
-                                  ),
-                                ),
-                              
-                              if (_sniMode == 'weighted')
-                                Padding(
-                                  padding: const EdgeInsets.only(left: 4),
-                                  child: Text(
-                                    '${domain.weight}%',
-                                    style: TextStyle(
-                                      color: textMuted(context),
-                                      fontSize: 12,
-                                    ),
-                                  ),
-                                ),
-                              const SizedBox(width: 8),
-                              
-                              PopupMenuButton<String>(
-                                icon: Icon(
-                                  Icons.more_vert,
-                                  size: 16,
-                                  color: textMuted(context),
-                                ),
-                                itemBuilder: (context) => [
-                                  PopupMenuItem(
-                                    value: 'health',
-                                    child: Row(
-                                      children: [
-                                        Icon(
-                                          domain.checkHealth
-                                              ? Icons.check_box
-                                              : Icons.check_box_outline_blank,
-                                          size: 18,
-                                        ),
-                                        const SizedBox(width: 8),
-                                        const Text('Health Check'),
-                                      ],
-                                    ),
-                                  ),
-                                  PopupMenuItem(
-                                    value: 'fallback',
-                                    child: Row(
-                                      children: [
-                                        Icon(
-                                          domain.fallback
-                                              ? Icons.check_box
-                                              : Icons.check_box_outline_blank,
-                                          size: 18,
-                                        ),
-                                        const SizedBox(width: 8),
-                                        const Text('Fallback'),
-                                      ],
-                                    ),
-                                  ),
-                                  const PopupMenuDivider(),
-                                  const PopupMenuItem(
-                                    value: 'delete',
-                                    child: Row(
-                                      children: [
-                                        Icon(
-                                          Icons.delete,
-                                          size: 18,
-                                          color: Colors.red,
-                                        ),
-                                        SizedBox(width: 8),
-                                        Text(
-                                          'Delete',
-                                          style: TextStyle(color: Colors.red),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                ],
-                                onSelected: (value) {
-                                  setState(() {
-                                    switch (value) {
-                                      case 'health':
-                                        domain.checkHealth = !domain.checkHealth;
-                                        if (domain.checkHealth) {
-                                          domain.fallback = false;
-                                        }
-                                        break;
-                                      case 'fallback':
-                                        domain.fallback = !domain.fallback;
-                                        if (domain.fallback) {
-                                          domain.checkHealth = false;
-                                        }
-                                        break;
-                                      case 'delete':
-                                        _sniDomains.removeAt(index);
-                                        _recalculateSNIWeights();
-                                        break;
-                                    }
-                                  });
-                                },
-                              ),
-                            ],
-                          ),
-                        );
-                      }).toList(),
-                      
-                      if (_sniDomains.isEmpty)
-                        const Padding(
-                          padding: EdgeInsets.symmetric(vertical: 8),
-                          child: Text(
-                            'No SNI domains added. Using default list.',
-                            style: TextStyle(color: Colors.orange, fontSize: 12),
-                          ),
-                        ),
-                    ],
-                  ),
-                ),
-              ),
-            ],
-
-            // Cover Traffic
             const SizedBox(height: 32),
             _buildToggleSection(
               '🎭 Cover Traffic',
@@ -531,184 +256,8 @@ class _AddServerScreenState extends State<AddServerScreen> {
               (v) => setState(() => _coverEnabled = v),
             ),
 
-            if (_coverEnabled) ...[
-              const SizedBox(height: 16),
-              Card(
-                child: Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Cover Domains',
-                        style: TextStyle(
-                          fontWeight: FontWeight.w600,
-                          color: textSecondary(context),
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        'Add websites you normally visit',
-                        style: TextStyle(color: textMuted(context), fontSize: 12),
-                      ),
-                      const SizedBox(height: 16),
-                      
-                      Row(
-                        children: [
-                          Expanded(
-                            child: TextField(
-                              controller: _domainController,
-                              decoration: const InputDecoration(
-                                hintText: 'e.g. google.com',
-                                prefixIcon: Icon(Icons.public, size: 20),
-                                isDense: true,
-                              ),
-                              keyboardType: TextInputType.url,
-                              onSubmitted: (_) => _addDomain(),
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          IconButton.filled(
-                            onPressed: _addDomain,
-                            icon: const Icon(Icons.add),
-                          ),
-                        ],
-                      ),
-                      
-                      const SizedBox(height: 12),
-                      Wrap(
-                        spacing: 8,
-                        runSpacing: 8,
-                        children: [
-                          _quickAddChip('google.com'),
-                          _quickAddChip('microsoft.com'),
-                          _quickAddChip('github.com'),
-                          _quickAddChip('stackoverflow.com'),
-                          _quickAddChip('cloudflare.com'),
-                          _quickAddChip('youtube.com'),
-                          _quickAddChip('reddit.com'),
-                          _quickAddChip('linkedin.com'),
-                          _quickAddChip('apple.com'),
-                          _quickAddChip('netflix.com'),
-                        ],
-                      ),
-                      
-                      const SizedBox(height: 16),
-                      Divider(color: accentColor(context).withOpacity(0.1)),
-                      const SizedBox(height: 8),
-                      
-                      Text(
-                        'Active Cover Domains:',
-                        style: TextStyle(
-                          fontWeight: FontWeight.w600,
-                          fontSize: 13,
-                          color: textSecondary(context),
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      
-                      ..._coverDomains.asMap().entries.map((entry) {
-                        final index = entry.key;
-                        final domain = entry.value;
-                        return Padding(
-                          padding: const EdgeInsets.only(bottom: 4),
-                          child: Row(
-                            children: [
-                              const Icon(
-                                Icons.check_circle,
-                                size: 16,
-                                color: Colors.green,
-                              ),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                child: Text(
-                                  domain.domain,
-                                  style: TextStyle(
-                                    fontSize: 14,
-                                    color: textSecondary(context),
-                                  ),
-                                ),
-                              ),
-                              Text(
-                                '${domain.weight}%',
-                                style: TextStyle(
-                                  color: textMuted(context),
-                                  fontSize: 12,
-                                ),
-                              ),
-                              const SizedBox(width: 4),
-                              InkWell(
-                                onTap: () => setState(() {
-                                  _coverDomains.removeAt(index);
-                                  _recalculateWeights();
-                                }),
-                                child: const Padding(
-                                  padding: EdgeInsets.all(4),
-                                  child: Icon(
-                                    Icons.close,
-                                    size: 16,
-                                    color: Colors.red,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        );
-                      }),
-                      
-                      if (_coverDomains.isEmpty)
-                        const Padding(
-                          padding: EdgeInsets.symmetric(vertical: 8),
-                          child: Text(
-                            'No domains added. Add at least one.',
-                            style: TextStyle(color: Colors.orange, fontSize: 12),
-                          ),
-                        ),
-                    ],
-                  ),
-                ),
-              ),
-              
-              const SizedBox(height: 16),
-              Card(
-                child: Column(
-                  children: [
-                    SwitchListTile(
-                      secondary: const Text('🔋', style: TextStyle(fontSize: 20)),
-                      title: Text(
-                        'Battery-Aware Mode',
-                        style: TextStyle(color: textSecondary(context)),
-                      ),
-                      subtitle: Text(
-                        'Reduce cover traffic when battery is low',
-                        style: TextStyle(color: textMuted(context), fontSize: 12),
-                      ),
-                      value: _batteryAwareEnabled,
-                      onChanged: (v) => setState(() => _batteryAwareEnabled = v),
-                    ),
-                    Divider(
-                      height: 1,
-                      color: accentColor(context).withOpacity(0.1),
-                    ),
-                    SwitchListTile(
-                      secondary: const Text('💾', style: TextStyle(fontSize: 20)),
-                      title: Text(
-                        'Data Saver Mode',
-                        style: TextStyle(color: textSecondary(context)),
-                      ),
-                      subtitle: Text(
-                        'Halve cover rate to save bandwidth',
-                        style: TextStyle(color: textMuted(context), fontSize: 12),
-                      ),
-                      value: _dataSaverEnabled,
-                      onChanged: (v) => setState(() => _dataSaverEnabled = v),
-                    ),
-                  ],
-                ),
-              ),
-            ],
+            if (_coverEnabled) ..._buildCoverSection(),
 
-            // DNS Fallback
             const SizedBox(height: 32),
             _buildToggleSection(
               '🔌 DNS Fallback',
@@ -717,88 +266,8 @@ class _AddServerScreenState extends State<AddServerScreen> {
               (v) => setState(() => _dnsFallbackEnabled = v),
             ),
 
-            if (_dnsFallbackEnabled) ...[
-              const SizedBox(height: 16),
-              Card(
-                child: Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'DNS Fallback Configuration',
-                        style: TextStyle(
-                          fontWeight: FontWeight.w600,
-                          color: textSecondary(context),
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-                      
-                      DropdownButtonFormField<String>(
-                        value: _dnsFallbackMode,
-                        decoration: const InputDecoration(
-                          labelText: 'Fallback Mode',
-                          prefixIcon: Icon(Icons.settings_input_antenna),
-                        ),
-                        items: const [
-                          DropdownMenuItem(
-                            value: 'auto',
-                            child: Text('🔄 Auto (Switch on TLS fail)'),
-                          ),
-                          DropdownMenuItem(
-                            value: 'manual',
-                            child: Text('📍 Manual (Always use DNS)'),
-                          ),
-                        ],
-                        onChanged: (v) => setState(() => _dnsFallbackMode = v!),
-                      ),
-                      
-                      const SizedBox(height: 16),
-                      TextFormField(
-                        controller: _dnsDomainController,
-                        decoration: const InputDecoration(
-                          labelText: 'DNS Tunnel Domain (optional)',
-                          hintText: 'tunnel.yourdomain.com',
-                          prefixIcon: Icon(Icons.dns),
-                          helperText: 'Your authoritative DNS domain for tunneling',
-                        ),
-                        keyboardType: TextInputType.url,
-                      ),
-                      
-                      const SizedBox(height: 12),
-                      Container(
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: Colors.orange.withOpacity(0.1),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Row(
-                          children: [
-                            const Icon(
-                              Icons.warning_amber,
-                              color: Colors.orange,
-                              size: 20,
-                            ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: Text(
-                                'DNS fallback has reduced speed (~50 Kbps). Use only when TLS is blocked.',
-                                style: TextStyle(
-                                  color: textMuted(context),
-                                  fontSize: 12,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ],
+            if (_dnsFallbackEnabled) ..._buildDNSSection(),
 
-            // Advanced Settings
             const SizedBox(height: 32),
             ExpansionTile(
               leading: Icon(Icons.tune, color: textMuted(context)),
@@ -814,7 +283,7 @@ class _AddServerScreenState extends State<AddServerScreen> {
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 16),
                   child: TextFormField(
-                    controller: _listenPortController,
+                    controller: _socksPortController,
                     decoration: const InputDecoration(
                       labelText: 'Local SOCKS5 Port',
                       hintText: '1080',
@@ -827,7 +296,6 @@ class _AddServerScreenState extends State<AddServerScreen> {
               ],
             ),
 
-            // Save Button
             const SizedBox(height: 32),
             FilledButton(
               onPressed: _save,
@@ -845,8 +313,6 @@ class _AddServerScreenState extends State<AddServerScreen> {
       ),
     );
   }
-
-  // Helper Widgets
 
   Widget _buildSectionHeader(String title) {
     return Row(
@@ -896,69 +362,396 @@ class _AddServerScreenState extends State<AddServerScreen> {
     );
   }
 
-  Widget _quickAddChip(String domain) {
-    final exists = _coverDomains.any(
-      (d) => d.domain == domain || d.domain == 'www.$domain',
-    );
-    return ActionChip(
-      avatar: Icon(
-        exists ? Icons.check : Icons.add,
-        size: 16,
-        color: exists ? Colors.green : accentColor(context),
+  List<Widget> _buildSNISection() {
+    return [
+      const SizedBox(height: 16),
+      Card(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'SNI Configuration',
+                style: TextStyle(
+                  fontWeight: FontWeight.w600,
+                  color: textSecondary(context),
+                ),
+              ),
+              const SizedBox(height: 16),
+              
+              DropdownButtonFormField<String>(
+                value: _sniMode,
+                decoration: const InputDecoration(
+                  labelText: 'Selection Mode',
+                  prefixIcon: Icon(Icons.shuffle),
+                ),
+                items: const [
+                  DropdownMenuItem(value: 'random', child: Text('🎲 Random')),
+                  DropdownMenuItem(value: 'weighted', child: Text('⚖️ Weighted (Recommended)')),
+                  DropdownMenuItem(value: 'sequential', child: Text('🔄 Sequential')),
+                  DropdownMenuItem(value: 'single', child: Text('📍 Single (No Rotation)')),
+                ],
+                onChanged: (v) => setState(() => _sniMode = v!),
+              ),
+              
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: _sniDomainController,
+                      decoration: const InputDecoration(
+                        hintText: 'e.g. www.google.com',
+                        prefixIcon: Icon(Icons.public, size: 20),
+                        isDense: true,
+                      ),
+                      keyboardType: TextInputType.url,
+                      onSubmitted: (_) => _addSNIDomain(),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  IconButton.filled(
+                    onPressed: _addSNIDomain,
+                    icon: const Icon(Icons.add),
+                  ),
+                ],
+              ),
+              
+              const SizedBox(height: 12),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  _quickAddSNIChip('www.google.com'),
+                  _quickAddSNIChip('www.microsoft.com'),
+                  _quickAddSNIChip('github.com'),
+                  _quickAddSNIChip('www.cloudflare.com'),
+                  _quickAddSNIChip('stackoverflow.com'),
+                  _quickAddSNIChip('learn.microsoft.com'),
+                ],
+              ),
+              
+              if (_sniDomains.isNotEmpty) ...[
+                const SizedBox(height: 16),
+                Divider(color: accentColor(context).withOpacity(0.1)),
+                const SizedBox(height: 8),
+                
+                Text(
+                  'Active SNI Domains:',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w600,
+                    fontSize: 13,
+                    color: textSecondary(context),
+                  ),
+                ),
+                const SizedBox(height: 8),
+
+                ..._sniDomains.asMap().entries.map((entry) {
+                  final index = entry.key;
+                  final domain = entry.value;
+                  
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 4),
+                    child: Row(
+                      children: [
+                        Icon(
+                          domain.fallback ? Icons.shield : 
+                          domain.checkHealth ? Icons.check_circle : Icons.circle_outlined,
+                          size: 16,
+                          color: domain.fallback ? Colors.blue :
+                                 domain.checkHealth ? Colors.green : Colors.grey,
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            domain.domain,
+                            style: TextStyle(fontSize: 14, color: textSecondary(context)),
+                          ),
+                        ),
+                        
+                        if (domain.fallback)
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: Colors.blue.withOpacity(0.2),
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            child: const Text('Fallback', style: TextStyle(fontSize: 10, color: Colors.blue)),
+                          ),
+                        
+                        if (domain.checkHealth && !domain.fallback)
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: Colors.green.withOpacity(0.2),
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            child: const Text('Health', style: TextStyle(fontSize: 10, color: Colors.green)),
+                          ),
+                        
+                        const SizedBox(width: 8),
+                        InkWell(
+                          onTap: () => setState(() {
+                            _sniDomains.removeAt(index);
+                            _recalculateSNIWeights();
+                          }),
+                          child: const Padding(
+                            padding: EdgeInsets.all(4),
+                            child: Icon(Icons.close, size: 16, color: Colors.red),
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                }).toList(),
+              ],
+              
+              if (_sniDomains.isEmpty)
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 8),
+                  child: Text(
+                    'No SNI domains added yet.',
+                    style: TextStyle(color: Colors.orange, fontSize: 12),
+                  ),
+                ),
+            ],
+          ),
+        ),
       ),
+    ];
+  }
+
+  List<Widget> _buildCoverSection() {
+    return [
+      const SizedBox(height: 16),
+      Card(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Cover Domains',
+                style: TextStyle(fontWeight: FontWeight.w600, color: textSecondary(context)),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                'Add websites you normally visit',
+                style: TextStyle(color: textMuted(context), fontSize: 12),
+              ),
+              const SizedBox(height: 16),
+              
+              Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: _domainController,
+                      decoration: const InputDecoration(
+                        hintText: 'e.g. google.com',
+                        prefixIcon: Icon(Icons.public, size: 20),
+                        isDense: true,
+                      ),
+                      keyboardType: TextInputType.url,
+                      onSubmitted: (_) => _addDomain(),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  IconButton.filled(
+                    onPressed: _addDomain,
+                    icon: const Icon(Icons.add),
+                  ),
+                ],
+              ),
+              
+              const SizedBox(height: 12),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  _quickAddChip('google.com'),
+                  _quickAddChip('microsoft.com'),
+                  _quickAddChip('github.com'),
+                  _quickAddChip('stackoverflow.com'),
+                  _quickAddChip('cloudflare.com'),
+                  _quickAddChip('youtube.com'),
+                ],
+              ),
+              
+              if (_coverDomains.isNotEmpty) ...[
+                const SizedBox(height: 16),
+                Divider(color: accentColor(context).withOpacity(0.1)),
+                const SizedBox(height: 8),
+                
+                Text(
+                  'Active Cover Domains:',
+                  style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13, color: textSecondary(context)),
+                ),
+                const SizedBox(height: 8),
+                
+                ..._coverDomains.asMap().entries.map((entry) {
+                  final index = entry.key;
+                  final domain = entry.value;
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 4),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.check_circle, size: 16, color: Colors.green),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(domain.domain, style: TextStyle(fontSize: 14, color: textSecondary(context))),
+                        ),
+                        Text('${domain.weight}%', style: TextStyle(color: textMuted(context), fontSize: 12)),
+                        const SizedBox(width: 4),
+                        InkWell(
+                          onTap: () => setState(() {
+                            _coverDomains.removeAt(index);
+                            _recalculateWeights();
+                          }),
+                          child: const Padding(
+                            padding: EdgeInsets.all(4),
+                            child: Icon(Icons.close, size: 16, color: Colors.red),
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                }).toList(),
+              ],
+              
+              if (_coverDomains.isEmpty)
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 8),
+                  child: Text('No domains added yet.', style: TextStyle(color: Colors.orange, fontSize: 12)),
+                ),
+            ],
+          ),
+        ),
+      ),
+      
+      const SizedBox(height: 16),
+      Card(
+        child: Column(
+          children: [
+            SwitchListTile(
+              secondary: const Text('🔋', style: TextStyle(fontSize: 20)),
+              title: Text('Battery-Aware Mode', style: TextStyle(color: textSecondary(context))),
+              subtitle: Text('Reduce cover traffic when battery is low', style: TextStyle(color: textMuted(context), fontSize: 12)),
+              value: _batteryAwareEnabled,
+              onChanged: (v) => setState(() => _batteryAwareEnabled = v),
+            ),
+            Divider(height: 1, color: accentColor(context).withOpacity(0.1)),
+            SwitchListTile(
+              secondary: const Text('💾', style: TextStyle(fontSize: 20)),
+              title: Text('Data Saver Mode', style: TextStyle(color: textSecondary(context))),
+              subtitle: Text('Halve cover rate to save bandwidth', style: TextStyle(color: textMuted(context), fontSize: 12)),
+              value: _dataSaverEnabled,
+              onChanged: (v) => setState(() => _dataSaverEnabled = v),
+            ),
+          ],
+        ),
+      ),
+    ];
+  }
+
+  List<Widget> _buildDNSSection() {
+    return [
+      const SizedBox(height: 16),
+      Card(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('DNS Fallback Configuration', style: TextStyle(fontWeight: FontWeight.w600, color: textSecondary(context))),
+              const SizedBox(height: 16),
+              
+              DropdownButtonFormField<String>(
+                value: _dnsFallbackMode,
+                decoration: const InputDecoration(
+                  labelText: 'Fallback Mode',
+                  prefixIcon: Icon(Icons.settings_input_antenna),
+                ),
+                items: const [
+                  DropdownMenuItem(value: 'auto', child: Text('🔄 Auto (Switch on TLS fail)')),
+                  DropdownMenuItem(value: 'manual', child: Text('📍 Manual (Always use DNS)')),
+                ],
+                onChanged: (v) => setState(() => _dnsFallbackMode = v!),
+              ),
+              
+              const SizedBox(height: 16),
+              TextFormField(
+                controller: _dnsDomainController,
+                decoration: const InputDecoration(
+                  labelText: 'DNS Tunnel Domain (optional)',
+                  hintText: 'tunnel.yourdomain.com',
+                  prefixIcon: Icon(Icons.dns),
+                  helperText: 'Your authoritative DNS domain for tunneling',
+                ),
+                keyboardType: TextInputType.url,
+              ),
+              
+              const SizedBox(height: 12),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.orange.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.warning_amber, color: Colors.orange, size: 20),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        'DNS fallback has reduced speed (~50 Kbps). Use only when TLS is blocked.',
+                        style: TextStyle(color: textMuted(context), fontSize: 12),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    ];
+  }
+
+  Widget _quickAddChip(String domain) {
+    final exists = _coverDomains.any((d) => d.domain == domain || d.domain == 'www.$domain');
+    return ActionChip(
+      avatar: Icon(exists ? Icons.check : Icons.add, size: 16, color: exists ? Colors.green : accentColor(context)),
       label: Text(domain, style: const TextStyle(fontSize: 12)),
-      onPressed: exists
-          ? null
-          : () => setState(() {
-                _coverDomains.add(CoverDomain(domain: domain));
-                _recalculateWeights();
-              }),
+      onPressed: exists ? null : () => setState(() {
+        _coverDomains.add(CoverDomain(domain: domain));
+        _recalculateWeights();
+      }),
     );
   }
 
   Widget _quickAddSNIChip(String domain) {
     final exists = _sniDomains.any((d) => d.domain == domain);
-    final isFallbackDomain = [
-      'www.cloudflare.com',
-      'www.microsoft.com',
-    ].contains(domain);
+    final isFallbackDomain = ['www.cloudflare.com', 'www.microsoft.com'].contains(domain);
     return ActionChip(
-      avatar: Icon(
-        exists ? Icons.check : Icons.add,
-        size: 16,
-        color: exists ? Colors.green : accentColor(context),
-      ),
+      avatar: Icon(exists ? Icons.check : Icons.add, size: 16, color: exists ? Colors.green : accentColor(context)),
       label: Text(domain, style: const TextStyle(fontSize: 12)),
-      onPressed: exists
-          ? null
-          : () => setState(() {
-                _sniDomains.add(SNIDomain(
-                  domain: domain,
-                  checkHealth: !isFallbackDomain,
-                  fallback: isFallbackDomain,
-                ));
-                _recalculateSNIWeights();
-              }),
+      onPressed: exists ? null : () => setState(() {
+        _sniDomains.add(SNIDomain(domain: domain, checkHealth: !isFallbackDomain, fallback: isFallbackDomain));
+        _recalculateSNIWeights();
+      }),
     );
   }
-
-  // Helper Methods
 
   void _addDomain() {
     final domain = _domainController.text.trim().toLowerCase();
     if (domain.isEmpty) return;
 
-    String clean = domain
-        .replaceAll('https://', '')
-        .replaceAll('http://', '');
-    if (clean.endsWith('/')) {
-      clean = clean.substring(0, clean.length - 1);
-    }
+    String clean = domain.replaceAll('https://', '').replaceAll('http://', '');
+    if (clean.endsWith('/')) clean = clean.substring(0, clean.length - 1);
 
     if (_coverDomains.any((d) => d.domain == clean)) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('$clean already exists')),
-      );
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$clean already exists')));
       return;
     }
 
@@ -973,17 +766,11 @@ class _AddServerScreenState extends State<AddServerScreen> {
     final domain = _sniDomainController.text.trim().toLowerCase();
     if (domain.isEmpty) return;
 
-    String clean = domain
-        .replaceAll('https://', '')
-        .replaceAll('http://', '');
-    if (clean.endsWith('/')) {
-      clean = clean.substring(0, clean.length - 1);
-    }
+    String clean = domain.replaceAll('https://', '').replaceAll('http://', '');
+    if (clean.endsWith('/')) clean = clean.substring(0, clean.length - 1);
 
     if (_sniDomains.any((d) => d.domain == clean)) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('$clean already exists')),
-      );
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$clean already exists')));
       return;
     }
 
@@ -1015,46 +802,10 @@ class _AddServerScreenState extends State<AddServerScreen> {
   void _save() {
     if (!_formKey.currentState!.validate()) return;
 
-    if (_coverEnabled && _coverDomains.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Add at least one cover domain'),
-          backgroundColor: Colors.orange,
-        ),
-      );
-      return;
-    }
-
-    if (_sniEnabled && _sniDomains.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Add at least one SNI domain'),
-          backgroundColor: Colors.orange,
-        ),
-      );
-      return;
-    }
-
-    if (_sniEnabled && _sniDomains.any((d) => d.checkHealth)) {
-      final hasFallback = _sniDomains.any((d) => d.fallback);
-      if (!hasFallback) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-              'At least one domain should be marked as fallback when health check is enabled',
-            ),
-            backgroundColor: Colors.orange,
-            duration: Duration(seconds: 5),
-          ),
-        );
-        return;
-      }
-    }
-
     final provider = context.read<AppProvider>();
     final psk = _pskController.text.trim();
     final pin = _pinController.text.trim();
-    final listenPort = int.tryParse(_listenPortController.text.trim()) ?? 1080;
+    final socksPort = int.tryParse(_socksPortController.text.trim()) ?? 1080;
 
     if (isEditing) {
       provider.updateServer(
@@ -1064,7 +815,7 @@ class _AddServerScreenState extends State<AddServerScreen> {
           port: int.parse(_portController.text.trim()),
           psk: psk,
           certPin: pin.isEmpty ? null : pin,
-          listenPort: listenPort,
+          socksPort: socksPort,
           protocol: _protocol,
           coverEnabled: _coverEnabled,
           coverDomains: List.from(_coverDomains),
@@ -1085,7 +836,7 @@ class _AddServerScreenState extends State<AddServerScreen> {
         port: int.parse(_portController.text.trim()),
         psk: psk,
         certPin: pin.isEmpty ? null : pin,
-        listenPort: listenPort,
+        socksPort: socksPort,
         protocol: _protocol,
         coverEnabled: _coverEnabled,
         coverDomains: List.from(_coverDomains),
