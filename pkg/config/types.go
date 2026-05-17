@@ -8,6 +8,7 @@ import (
 type ServerConfig struct {
 	Version  int            `json:"version"`
 	Server   ServerInfo     `json:"server"`
+	SocksPort int           `json:"socks_port,omitempty"`
 	SNI      SNIConfig      `json:"sni,omitempty"`
 	Cover    CoverConfig    `json:"cover,omitempty"`
 	DNS      DNSConfig      `json:"dns,omitempty"`
