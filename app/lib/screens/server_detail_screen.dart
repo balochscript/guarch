@@ -42,7 +42,6 @@ class _ServerDetailScreenState extends State<ServerDetailScreen> {
       body: ListView(
         padding: const EdgeInsets.all(24),
         children: [
-          // Header
           Center(
             child: Text(server.pingEmoji, style: const TextStyle(fontSize: 64)),
           ),
@@ -68,7 +67,6 @@ class _ServerDetailScreenState extends State<ServerDetailScreen> {
             ),
           ),
 
-          // Connection Info
           const SizedBox(height: 32),
           _sectionTitle(context, '🎯 Connection'),
           _infoTile(context, 'Address', server.address, Icons.dns),
@@ -76,11 +74,10 @@ class _ServerDetailScreenState extends State<ServerDetailScreen> {
           _infoTile(
             context,
             'SOCKS5 Port',
-            server.listenPort.toString(),
+            server.socksPort.toString(),
             Icons.settings_ethernet,
           ),
 
-          // Latency Tests
           const SizedBox(height: 24),
           _sectionTitle(context, '⏱️ Latency'),
 
@@ -163,7 +160,6 @@ class _ServerDetailScreenState extends State<ServerDetailScreen> {
             ),
           ),
 
-          // Test buttons
           const SizedBox(height: 12),
           Row(
             children: [
@@ -200,7 +196,6 @@ class _ServerDetailScreenState extends State<ServerDetailScreen> {
             ],
           ),
 
-          // Security
           const SizedBox(height: 24),
           _sectionTitle(context, '🔐 Security'),
 
@@ -281,7 +276,6 @@ class _ServerDetailScreenState extends State<ServerDetailScreen> {
             ),
           ),
 
-          // Advanced Features
           const SizedBox(height: 24),
           _sectionTitle(context, '🎯 Advanced Features'),
 
@@ -349,7 +343,6 @@ class _ServerDetailScreenState extends State<ServerDetailScreen> {
             ),
           ),
 
-          // Cover Domains
           if (server.coverEnabled) ...[
             const SizedBox(height: 24),
             _sectionTitle(context, '🎭 Cover Domains'),
@@ -374,7 +367,6 @@ class _ServerDetailScreenState extends State<ServerDetailScreen> {
             ),
           ],
 
-          // SNI Domains
           if (server.sniEnabled) ...[
             const SizedBox(height: 24),
             _sectionTitle(context, '🔄 SNI Domains'),
@@ -401,7 +393,6 @@ class _ServerDetailScreenState extends State<ServerDetailScreen> {
                 ),
           ],
 
-          // Actions
           const SizedBox(height: 32),
           Row(
             children: [
@@ -448,7 +439,6 @@ class _ServerDetailScreenState extends State<ServerDetailScreen> {
             ],
           ),
 
-          // Warnings
           if (server.psk.isEmpty) ...[
             const SizedBox(height: 24),
             Card(
@@ -492,8 +482,6 @@ class _ServerDetailScreenState extends State<ServerDetailScreen> {
       ),
     );
   }
-
-  // Helper Widgets
 
   Widget _sectionTitle(BuildContext context, String title) {
     return Padding(
@@ -580,8 +568,6 @@ class _ServerDetailScreenState extends State<ServerDetailScreen> {
     return '${diff.inDays}d ago';
   }
 
-  // Test Actions
-
   Future<void> _runTCPing(BuildContext context) async {
     setState(() => _isTesting = true);
 
@@ -635,8 +621,6 @@ class _ServerDetailScreenState extends State<ServerDetailScreen> {
       );
     }
   }
-
-  // QR Code Dialog
 
   void _showQRCode(BuildContext context, ServerConfig server) {
     final uri = server.toShareString();
