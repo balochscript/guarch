@@ -8,7 +8,7 @@ class ServerConfig {
   int port;
   String psk;
   String? certPin;
-  int listenPort;
+  int socksPort;
   String protocol;
   bool coverEnabled;
   List<CoverDomain> coverDomains;
@@ -45,11 +45,11 @@ class ServerConfig {
     this.port = 8443,
     this.psk = '',
     this.certPin,
-    this.listenPort = 1080,
+    this.socksPort = 1080,
     this.protocol = 'guarch',
-    this.coverEnabled = true,
+    this.coverEnabled = false,
     List<CoverDomain>? coverDomains,
-    this.sniEnabled = true,
+    this.sniEnabled = false,
     this.sniMode = 'weighted',
     List<SNIDomain>? sniDomains,
     this.dnsFallbackEnabled = false,
@@ -68,8 +68,8 @@ class ServerConfig {
     this.isActive = false,
     DateTime? createdAt,
     this.metadata,
-  })  : coverDomains = coverDomains ?? defaultCoverDomains(),
-        sniDomains = sniDomains ?? defaultSNIDomains(),
+  })  : coverDomains = coverDomains ?? [],
+        sniDomains = sniDomains ?? [],
         dnsFallbackServers = dnsFallbackServers ?? ['8.8.8.8:53', '1.1.1.1:53'],
         createdAt = createdAt ?? DateTime.now();
 
@@ -143,7 +143,7 @@ class ServerConfig {
       ['guarch', 'grouk', 'zhip'].contains(protocol);
 
   Map<String, dynamic> toJson() {
-    return {
+    final json = {
       'version': 1,
       'id': id,
       'server': {
@@ -151,42 +151,54 @@ class ServerConfig {
         'address': '$address:$port',
         'protocol': protocol,
         'psk': psk,
-        'cert_pin': certPin,
+        if (certPin != null) 'cert_pin': certPin,
       },
-      'sni': {
-        'enabled': sniEnabled,
+      'socks_port': socksPort,
+      'is_active': isActive,
+      if (ping != null) 'ping': ping,
+      if (realDelay != null) 'real_delay': realDelay,
+      if (lastTested != null) 'last_tested': lastTested!.toIso8601String(),
+      'created_at': createdAt.toIso8601String(),
+    };
+
+    if (sniEnabled && sniDomains.isNotEmpty) {
+      json['sni'] = {
+        'enabled': true,
         'mode': sniMode,
         'rotation_interval': '5m',
         'domains': sniDomains.map((d) => d.toJson()).toList(),
-      },
-      'cover_traffic': {
-        'enabled': coverEnabled,
+      };
+    }
+
+    if (coverEnabled && coverDomains.isNotEmpty) {
+      json['cover_traffic'] = {
+        'enabled': true,
         'mode': shapingPattern,
         'domains': coverDomains.map((d) => d.toJson()).toList(),
-        'battery_aware': {
-          'enabled': batteryAwareEnabled,
-          'low_battery_threshold': 30,
+        'adaptive': {
+          'enabled': true,
+          'battery_aware': batteryAwareEnabled,
+          'data_saver_mode': dataSaverEnabled,
         },
-        'data_saver': {
-          'enabled': dataSaverEnabled,
-        },
-      },
-      'dns_fallback': {
-        'enabled': dnsFallbackEnabled,
+      };
+    }
+
+    if (dnsFallbackEnabled) {
+      json['dns_fallback'] = {
+        'enabled': true,
         'mode': dnsFallbackMode,
         'domain': dnsFallbackDomain,
         'servers': dnsFallbackServers,
         'timeout': '${dnsFallbackTimeout}s',
         'switch_threshold': dnsFallbackSwitchThreshold,
-      },
-      if (metadata != null) 'metadata': metadata!.toJson(),
-      'listen_port': listenPort,
-      'is_active': isActive,
-      'ping': ping,
-      'real_delay': realDelay,
-      'last_tested': lastTested?.toIso8601String(),
-      'created_at': createdAt.toIso8601String(),
-    };
+      };
+    }
+
+    if (metadata != null) {
+      json['metadata'] = metadata!.toJson();
+    }
+
+    return json;
   }
 
   factory ServerConfig.fromJson(Map<String, dynamic> json) {
@@ -204,6 +216,8 @@ class ServerConfig {
       port = int.tryParse(parts[1]) ?? port;
     }
 
+    final socksPort = json['socks_port'] ?? json['listen_port'] ?? 1080;
+
     return ServerConfig(
       id: json['id'] ?? DateTime.now().millisecondsSinceEpoch.toString(),
       name: server['name'] ?? 'Server',
@@ -211,23 +225,34 @@ class ServerConfig {
       port: port,
       psk: server['psk'] ?? json['psk'] ?? '',
       certPin: server['cert_pin'] ?? json['cert_pin'],
-      listenPort: json['listen_port'] ?? 1080,
+      socksPort: socksPort,
       protocol: server['protocol'] ?? json['protocol'] ?? 'guarch',
-      coverEnabled: cover['enabled'] ?? json['cover_enabled'] ?? true,
-      coverDomains: _parseCoverDomains(cover['domains'] ?? json['cover_domains']),
-      sniEnabled: sni['enabled'] ?? true,
+      
+      coverEnabled: cover['enabled'] == true,
+      coverDomains: cover['enabled'] == true 
+          ? _parseCoverDomains(cover['domains'] ?? json['cover_domains'])
+          : [],
+      
+      sniEnabled: sni['enabled'] == true,
       sniMode: sni['mode'] ?? 'weighted',
-      sniDomains: _parseSNIDomains(sni['domains']),
-      dnsFallbackEnabled: dnsFallback['enabled'] ?? false,
+      sniDomains: sni['enabled'] == true
+          ? _parseSNIDomains(sni['domains'])
+          : [],
+      
+      dnsFallbackEnabled: dnsFallback['enabled'] == true,
       dnsFallbackMode: dnsFallback['mode'] ?? 'auto',
       dnsFallbackDomain: dnsFallback['domain'] ?? 'tunnel.example.com',
       dnsFallbackServers: (dnsFallback['servers'] as List?)?.cast<String>() ?? ['8.8.8.8:53', '1.1.1.1:53'],
-      dnsFallbackTimeout: dnsFallback['timeout'] != null ? int.tryParse(dnsFallback['timeout'].toString().replaceAll('s', '')) ?? 5 : 5,
+      dnsFallbackTimeout: dnsFallback['timeout'] != null 
+          ? int.tryParse(dnsFallback['timeout'].toString().replaceAll('s', '')) ?? 5 
+          : 5,
       dnsFallbackSwitchThreshold: dnsFallback['switch_threshold'] ?? 3,
-      batteryAwareEnabled: cover['battery_aware']?['enabled'] ?? true,
-      dataSaverEnabled: cover['data_saver']?['enabled'] ?? false,
+      
+      batteryAwareEnabled: cover['adaptive']?['battery_aware'] ?? true,
+      dataSaverEnabled: cover['adaptive']?['data_saver_mode'] ?? false,
       shapingPattern: cover['mode'] ?? json['shaping_pattern'] ?? 'web_browsing',
       maxPadding: json['max_padding'] ?? 1024,
+      
       ping: json['ping'],
       realDelay: json['real_delay'],
       lastTested: json['last_tested'] != null
@@ -244,15 +269,23 @@ class ServerConfig {
   }
 
   static List<CoverDomain> _parseCoverDomains(dynamic data) {
-    if (data == null) return defaultCoverDomains();
-    if (data is! List) return defaultCoverDomains();
-    return data.map((d) => CoverDomain.fromJson(d)).toList();
+    if (data == null) return [];
+    if (data is! List) return [];
+    try {
+      return data.map((d) => CoverDomain.fromJson(d)).toList();
+    } catch (e) {
+      return [];
+    }
   }
 
   static List<SNIDomain> _parseSNIDomains(dynamic data) {
-    if (data == null) return defaultSNIDomains();
-    if (data is! List) return defaultSNIDomains();
-    return data.map((d) => SNIDomain.fromJson(d)).toList();
+    if (data == null) return [];
+    if (data is! List) return [];
+    try {
+      return data.map((d) => SNIDomain.fromJson(d)).toList();
+    } catch (e) {
+      return [];
+    }
   }
 
   String toShareString() {
@@ -293,7 +326,7 @@ class ServerConfig {
     int? port,
     String? psk,
     String? certPin,
-    int? listenPort,
+    int? socksPort,
     String? protocol,
     bool? coverEnabled,
     List<CoverDomain>? coverDomains,
@@ -323,7 +356,7 @@ class ServerConfig {
       port: port ?? this.port,
       psk: psk ?? this.psk,
       certPin: certPin ?? this.certPin,
-      listenPort: listenPort ?? this.listenPort,
+      socksPort: socksPort ?? this.socksPort,
       protocol: protocol ?? this.protocol,
       coverEnabled: coverEnabled ?? this.coverEnabled,
       coverDomains: coverDomains ?? this.coverDomains,
@@ -348,58 +381,6 @@ class ServerConfig {
       metadata: metadata ?? this.metadata,
     );
   }
-
-  static List<CoverDomain> defaultCoverDomains() {
-    return [
-      CoverDomain(domain: 'www.google.com', weight: 30, paths: ['/', '/search']),
-      CoverDomain(domain: 'www.microsoft.com', weight: 20, paths: ['/', '/en-us']),
-      CoverDomain(domain: 'github.com', weight: 15, paths: ['/', '/explore']),
-      CoverDomain(domain: 'stackoverflow.com', weight: 15, paths: ['/', '/questions']),
-      CoverDomain(domain: 'www.cloudflare.com', weight: 10, paths: ['/', '/learning']),
-      CoverDomain(domain: 'learn.microsoft.com', weight: 10, paths: ['/', '/en-us/docs']),
-    ];
-  }
-
-  static List<SNIDomain> defaultSNIDomains() {
-    return [
-      SNIDomain(
-        domain: 'www.google.com',
-        weight: 30,
-        checkHealth: true,
-        fallback: false,
-      ),
-      SNIDomain(
-        domain: 'www.microsoft.com',
-        weight: 20,
-        checkHealth: true,
-        fallback: false,
-      ),
-      SNIDomain(
-        domain: 'github.com',
-        weight: 15,
-        checkHealth: true,
-        fallback: false,
-      ),
-      SNIDomain(
-        domain: 'www.cloudflare.com',
-        weight: 15,
-        checkHealth: false,
-        fallback: true,
-      ),
-      SNIDomain(
-        domain: 'stackoverflow.com',
-        weight: 10,
-        checkHealth: true,
-        fallback: false,
-      ),
-      SNIDomain(
-        domain: 'learn.microsoft.com',
-        weight: 10,
-        checkHealth: false,
-        fallback: true,
-      ),
-    ];
-  }
 }
 
 class CoverDomain {
@@ -417,8 +398,8 @@ class CoverDomain {
         'domain': domain,
         'weight': weight,
         'paths': paths,
-        'min_interval': '2s',
-        'max_interval': '8s',
+        'interval_min': '2s',
+        'interval_max': '8s',
       };
 
   factory CoverDomain.fromJson(Map<String, dynamic> json) {
