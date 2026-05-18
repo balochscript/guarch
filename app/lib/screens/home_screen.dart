@@ -85,15 +85,17 @@ class _HomeTab extends StatelessWidget {
                 ConnectionButton(
                   status: status,
                   onTap: () {
-                    if (server == null) {
+                    if (status == VpnStatus.error) {
+                      provider.disconnect();
+                    } else if (server == null) {
                       ScaffoldMessenger.of(context).showSnackBar(
                         const SnackBar(
                           content: Text('Please add and select a server first'),
                         ),
                       );
-                      return;
+                    } else {
+                      provider.toggleConnection();
                     }
-                    provider.toggleConnection();
                   },
                 ),
                 const SizedBox(height: 16),
@@ -146,9 +148,6 @@ class _HomeTab extends StatelessWidget {
             ],
           ),
         ),
-        // ══════════════════════════════════════════════
-        // 🐛 Debug Button (только если debugMode = true)
-        // ══════════════════════════════════════════════
         if (provider.debugModeEnabled)
           IconButton(
             icon: const Icon(Icons.bug_report, color: Colors.orange, size: 28),
@@ -162,7 +161,7 @@ class _HomeTab extends StatelessWidget {
     );
   }
 
-    Widget _buildServerInfo(
+  Widget _buildServerInfo(
       BuildContext context, dynamic server, AppProvider provider) {
     if (server == null) {
       return Card(
@@ -284,7 +283,6 @@ class _HomeTab extends StatelessWidget {
             isThreeLine: true,
           ),
           
-          // Metadata footer
           if (server.metadata != null)
             _buildMetadataFooter(context, server.metadata),
         ],
@@ -313,7 +311,6 @@ class _HomeTab extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Announcement
           if (hasAnnouncement)
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -338,7 +335,6 @@ class _HomeTab extends StatelessWidget {
               ],
             ),
           
-          // Quota
           if (hasQuota) ...[
             if (hasAnnouncement) const SizedBox(height: 10),
             Row(
@@ -375,7 +371,6 @@ class _HomeTab extends StatelessWidget {
             ),
           ],
           
-          // Expiry
           if (hasExpiry) ...[
             if (hasAnnouncement || hasQuota) const SizedBox(height: 8),
             Row(
@@ -423,7 +418,7 @@ class _HomeTab extends StatelessWidget {
         color = textPrimary(context);
         break;
       case VpnStatus.error:
-        text = 'Guarch Failed';
+        text = '❌ Failed - Tap to Stop VPN';
         color = Colors.red;
         break;
     }
@@ -445,7 +440,6 @@ class _HomeTab extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Cover Traffic
             Row(
               children: [
                 const Text('🎭', style: TextStyle(fontSize: 20)),
@@ -482,7 +476,6 @@ class _HomeTab extends StatelessWidget {
               ],
             ),
 
-            // SNI Rotation
             if (stats.currentSNI.isNotEmpty) ...[
               const SizedBox(height: 12),
               Divider(color: accentColor(context).withOpacity(0.1)),
@@ -516,7 +509,6 @@ class _HomeTab extends StatelessWidget {
               ),
             ],
 
-            // DNS Fallback Warning
             if (stats.dnsFallbackUsed) ...[
               const SizedBox(height: 12),
               Divider(color: accentColor(context).withOpacity(0.1)),
@@ -550,7 +542,6 @@ class _HomeTab extends StatelessWidget {
               ),
             ],
 
-            // Battery & Data Saver
             if (provider.batteryLevel < 30 ||
                 provider.dataSaverEnabled) ...[
               const SizedBox(height: 12),
