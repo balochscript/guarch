@@ -98,7 +98,6 @@ class _ConnectionButtonState extends State<ConnectionButton>
           return Stack(
             alignment: Alignment.center,
             children: [
-              // Outer glow (only when connecting)
               if (isConnecting)
                 Container(
                   width: size * _pulseAnimation.value,
@@ -109,7 +108,6 @@ class _ConnectionButtonState extends State<ConnectionButton>
                   ),
                 ),
 
-              // Main button
               ScaleTransition(
                 scale: isConnecting ? _scaleAnimation : const AlwaysStoppedAnimation(1.0),
                 child: Container(
@@ -148,7 +146,6 @@ class _ConnectionButtonState extends State<ConnectionButton>
                 ),
               ),
 
-              // Status emoji overlay
               if (isConnected)
                 Positioned(
                   bottom: 0,
@@ -165,6 +162,27 @@ class _ConnectionButtonState extends State<ConnectionButton>
                     ),
                     child: const Text(
                       '🎯',
+                      style: TextStyle(fontSize: 20),
+                    ),
+                  ),
+                ),
+
+              if (isError)
+                Positioned(
+                  bottom: 0,
+                  right: 0,
+                  child: Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: Colors.red,
+                      shape: BoxShape.circle,
+                      border: Border.all(
+                        color: Colors.white,
+                        width: 3,
+                      ),
+                    ),
+                    child: const Text(
+                      '❌',
                       style: TextStyle(fontSize: 20),
                     ),
                   ),
