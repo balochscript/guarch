@@ -26,25 +26,18 @@ class AppProvider extends ChangeNotifier {
   StreamSubscription? _sniSub;
   StreamSubscription? _dnsSub;
 
-  // Battery and Data Saver
   int _batteryLevel = 100;
   bool _dataSaverEnabled = false;
 
-  // ════════════════════════════════════════════════
-  // Debug Mode (v1.0.1)
-  // ════════════════════════════════════════════════
   bool _debugModeEnabled = false;
   bool get debugModeEnabled => _debugModeEnabled;
 
-  // ════════════════════════════════════════════════
-  // Advanced Settings (v1.0.1)
-  // ════════════════════════════════════════════════
-  int _connectionTimeout = 15; // seconds
+  int _connectionTimeout = 15;
   int _maxRetryAttempts = 3;
-  int _retryDelay = 5; // seconds
-  int _handshakeTimeout = 30; // seconds
-  int _keepAliveInterval = 30; // seconds
-  int _bufferSize = 32768; // bytes
+  int _retryDelay = 5;
+  int _handshakeTimeout = 30;
+  int _keepAliveInterval = 30;
+  int _bufferSize = 32768;
 
   int get connectionTimeout => _connectionTimeout;
   int get maxRetryAttempts => _maxRetryAttempts;
@@ -53,7 +46,6 @@ class AppProvider extends ChangeNotifier {
   int get keepAliveInterval => _keepAliveInterval;
   int get bufferSize => _bufferSize;
 
-  // Getters
   List<ServerConfig> get servers => _servers;
   VpnStatus get status => _status;
   ConnectionStats get stats => _stats;
@@ -72,10 +64,6 @@ class AppProvider extends ChangeNotifier {
     }
   }
 
-  // ═══════════════════════════════════════════════════════════════
-  // Initialization
-  // ═══════════════════════════════════════════════════════════════
-
   Future<void> init() async {
     FlutterLog.d('Provider', '=== init START (v1.0.1) ===');
     
@@ -86,7 +74,6 @@ class AppProvider extends ChangeNotifier {
       _batteryLevel = _prefs.getInt('battery_level') ?? 100;
       _dataSaverEnabled = _prefs.getBool('data_saver') ?? false;
       
-      // Load advanced settings
       _debugModeEnabled = _prefs.getBool('debug_mode') ?? false;
       _connectionTimeout = _prefs.getInt('connection_timeout') ?? 15;
       _maxRetryAttempts = _prefs.getInt('max_retry_attempts') ?? 3;
@@ -108,7 +95,6 @@ class AppProvider extends ChangeNotifier {
       FlutterLog.e('Provider', 'Engine init FAILED', e);
     }
 
-    // Status stream
     _statusSub = _engine.statusStream.listen((status) {
       FlutterLog.d('Provider', 'Status event: $status');
       switch (status) {
@@ -144,11 +130,9 @@ class AppProvider extends ChangeNotifier {
       }
     });
 
-    // Stats stream
     _statsSub = _engine.statsStream.listen((data) {
       _stats = ConnectionStats.fromJson(data);
       
-      // Update duration from connectTime if available
       if (_connectTime != null && _status == VpnStatus.connected) {
         _stats = _stats.copyWith(
           duration: DateTime.now().difference(_connectTime!),
@@ -158,14 +142,12 @@ class AppProvider extends ChangeNotifier {
       notifyListeners();
     });
 
-    // Log stream
     _logSub = _engine.logStream.listen((msg) {
       FlutterLog.d('EngineLog', msg);
       _addLog(msg);
       notifyListeners();
     });
 
-    // Error stream
     _errorSub = _engine.errorStream.listen((error) {
       FlutterLog.e('Engine', 'Error event: $error');
       _addLog('⚠️ Error: $error');
@@ -173,21 +155,9 @@ class AppProvider extends ChangeNotifier {
       if (_status == VpnStatus.connecting) {
         _status = VpnStatus.error;
         notifyListeners();
-        
-        // Auto-retry DNS fallback if enabled
-        Future.delayed(const Duration(seconds: 2), () {
-          if (activeServer?.dnsFallbackEnabled == true) {
-            _addLog('🔄 Retrying with DNS fallback...');
-            notifyListeners();
-          } else {
-            _status = VpnStatus.disconnected;
-            notifyListeners();
-          }
-        });
       }
     });
 
-    // SNI rotation stream
     _sniSub = _engine.sniStream.listen((newSNI) {
       FlutterLog.d('Provider', 'SNI rotated: $newSNI');
       _addLog('🔄 SNI: $newSNI');
@@ -198,7 +168,6 @@ class AppProvider extends ChangeNotifier {
       notifyListeners();
     });
 
-    // DNS fallback stream
     _dnsSub = _engine.dnsFallbackStream.listen((enabled) {
       FlutterLog.d('Provider', 'DNS fallback: $enabled');
       if (enabled) {
@@ -210,7 +179,6 @@ class AppProvider extends ChangeNotifier {
       notifyListeners();
     });
 
-    // Auto-ping servers
     if (_servers.isNotEmpty) {
       _addLog('📡 Auto-pinging ${_servers.length} servers...');
       notifyListeners();
@@ -219,10 +187,6 @@ class AppProvider extends ChangeNotifier {
 
     FlutterLog.d('Provider', '=== init DONE ===');
   }
-
-  // ═══════════════════════════════════════════════════════════════
-  // Server Management
-  // ═══════════════════════════════════════════════════════════════
 
   void _loadServers() {
     try {
@@ -252,7 +216,6 @@ class AppProvider extends ChangeNotifier {
     _addLog('➕ Server added: ${server.name} (${server.fullAddress})');
     notifyListeners();
     
-    // Auto-ping new server
     pingServer(server).then((ping) {
       final index = _servers.indexWhere((s) => s.id == server.id);
       if (index >= 0) {
@@ -301,10 +264,6 @@ class AppProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  // ═══════════════════════════════════════════════════════════════
-  // Connection Control
-  // ═══════════════════════════════════════════════════════════════
-
   Future<void> connect() async {
     FlutterLog.d('Provider', '=== connect() ===');
 
@@ -333,7 +292,6 @@ class AppProvider extends ChangeNotifier {
       return;
     }
 
-    // Set status to connecting immediately
     _status = VpnStatus.connecting;
     _addLog('🏹 Connecting to ${server.name}...');
     _addLog('📡 Protocol: ${server.protocolLabel}');
@@ -359,10 +317,8 @@ class AppProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
-      // Load config from server
       final configJson = server.toJson();
       
-      // Add advanced settings to config
       configJson['connection_timeout'] = _connectionTimeout;
       configJson['max_retry_attempts'] = _maxRetryAttempts;
       configJson['retry_delay'] = _retryDelay;
@@ -370,7 +326,6 @@ class AppProvider extends ChangeNotifier {
       configJson['keep_alive_interval'] = _keepAliveInterval;
       configJson['buffer_size'] = _bufferSize;
       
-      // Connect through engine
       final success = await _engine.connectWithConfig(
         jsonEncode(configJson),
       ).timeout(
@@ -396,18 +351,11 @@ class AppProvider extends ChangeNotifier {
         if (!_engine.isNativeAvailable) {
           _addLog('⚠️ Native engine not available');
         }
-        
-        notifyListeners();
-        await Future.delayed(const Duration(seconds: 2));
-        _status = VpnStatus.disconnected;
       }
     } catch (e) {
       FlutterLog.e('Provider', '  Connect FAILED', e);
       _addLog('❌ Error: $e');
       _status = VpnStatus.error;
-      notifyListeners();
-      await Future.delayed(const Duration(seconds: 2));
-      _status = VpnStatus.disconnected;
     }
 
     notifyListeners();
@@ -416,7 +364,7 @@ class AppProvider extends ChangeNotifier {
   Future<void> disconnect() async {
     FlutterLog.d('Provider', '=== disconnect() ===');
     
-    if (_status != VpnStatus.connected && _status != VpnStatus.connecting) {
+    if (_status == VpnStatus.disconnected) {
       return;
     }
 
@@ -451,10 +399,6 @@ class AppProvider extends ChangeNotifier {
     }
   }
 
-  // ═══════════════════════════════════════════════════════════════
-  // Battery & Data Saver
-  // ═══════════════════════════════════════════════════════════════
-
   Future<void> setBatteryLevel(int level) async {
     _batteryLevel = level;
     await _prefs.setInt('battery_level', level);
@@ -481,10 +425,6 @@ class AppProvider extends ChangeNotifier {
     
     notifyListeners();
   }
-
-  // ═══════════════════════════════════════════════════════════════
-  // Debug Mode & Advanced Settings
-  // ═══════════════════════════════════════════════════════════════
 
   Future<void> toggleDebugMode() async {
     _debugModeEnabled = !_debugModeEnabled;
@@ -535,11 +475,6 @@ class AppProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  // ═══════════════════════════════════════════════════════════════
-  // Ping & Real Delay Testing
-  // ═══════════════════════════════════════════════════════════════
-
-  /// TCP Ping: Simple socket connection test
   Future<int> pingServer(ServerConfig server) async {
     _addLog('📡 TCP Ping: ${server.name}...');
     notifyListeners();
@@ -556,7 +491,6 @@ class AppProvider extends ChangeNotifier {
     return ping;
   }
 
-  /// Real Delay Test: Full VPN handshake + packet round-trip
   Future<int> testRealDelay(ServerConfig server) async {
     _addLog('⏱️ Real Delay Test: ${server.name}...');
     notifyListeners();
@@ -573,24 +507,19 @@ class AppProvider extends ChangeNotifier {
     return delay;
   }
 
-  /// Test all servers (TCP Ping + optional Real Delay)
   Future<void> pingAllServers({bool includeRealDelay = false}) async {
     final testType = includeRealDelay ? 'TCP + Real Delay' : 'TCP Ping';
     _addLog('📡 Testing ${_servers.length} servers ($testType)...');
     notifyListeners();
     
     for (var i = 0; i < _servers.length; i++) {
-      // Step 1: TCP Ping (fast)
       final ping = await pingServer(_servers[i]);
       
-      // Step 2: Real Delay (slow, optional)
       int? realDelay;
       if (includeRealDelay && ping > 0) {
-        // Only test real delay if TCP ping succeeded
         realDelay = await testRealDelay(_servers[i]);
       }
       
-      // Update server with results
       _servers[i] = _servers[i].copyWith(
         ping: ping,
         realDelay: realDelay,
@@ -598,7 +527,6 @@ class AppProvider extends ChangeNotifier {
       );
       notifyListeners();
       
-      // Small delay between tests to avoid overwhelming network
       if (i < _servers.length - 1) {
         await Future.delayed(const Duration(milliseconds: 500));
       }
@@ -609,21 +537,17 @@ class AppProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Test a single server (both TCP + Real Delay)
   Future<void> testServer(ServerConfig server) async {
     _addLog('🔍 Full test: ${server.name}...');
     notifyListeners();
     
-    // TCP Ping
     final ping = await pingServer(server);
     
-    // Real Delay (only if TCP succeeded)
     int? realDelay;
     if (ping > 0) {
       realDelay = await testRealDelay(server);
     }
     
-    // Update server
     final index = _servers.indexWhere((s) => s.id == server.id);
     if (index >= 0) {
       _servers[index] = _servers[index].copyWith(
@@ -641,10 +565,6 @@ class AppProvider extends ChangeNotifier {
       _addLog('❌ ${server.name}: Test failed');
     }
   }
-
-  // ═══════════════════════════════════════════════════════════════
-  // Import / Export
-  // ═══════════════════════════════════════════════════════════════
 
   void importConfig(String data) {
     try {
@@ -684,19 +604,11 @@ class AppProvider extends ChangeNotifier {
     return encoder.convert(server.toJson());
   }
 
-  // ═══════════════════════════════════════════════════════════════
-  // Theme
-  // ═══════════════════════════════════════════════════════════════
-
   void toggleTheme() {
     _isDarkMode = !_isDarkMode;
     _prefs.setBool('dark_mode', _isDarkMode);
     notifyListeners();
   }
-
-  // ═══════════════════════════════════════════════════════════════
-  // Statistics Timer
-  // ═══════════════════════════════════════════════════════════════
 
   void _startStatsTimer() {
     _statsTimer?.cancel();
@@ -715,10 +627,6 @@ class AppProvider extends ChangeNotifier {
     _statsTimer = null;
   }
 
-  // ═══════════════════════════════════════════════════════════════
-  // Logging
-  // ═══════════════════════════════════════════════════════════════
-
   void _addLog(String message) {
     final time = DateTime.now().toString().substring(11, 19);
     _logs.insert(0, '[$time] $message');
@@ -732,10 +640,6 @@ class AppProvider extends ChangeNotifier {
     _addLog('🗑️ Logs cleared');
     notifyListeners();
   }
-
-  // ═══════════════════════════════════════════════════════════════
-  // Dispose
-  // ═══════════════════════════════════════════════════════════════
 
   @override
   void dispose() {
