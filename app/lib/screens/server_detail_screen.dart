@@ -343,6 +343,8 @@ class _ServerDetailScreenState extends State<ServerDetailScreen> {
             ),
           ),
 
+          if (server.metadata != null) ..._buildMetadataSection(context, server.metadata!),
+
           if (server.coverEnabled) ...[
             const SizedBox(height: 24),
             _sectionTitle(context, '🎭 Cover Domains'),
@@ -481,6 +483,201 @@ class _ServerDetailScreenState extends State<ServerDetailScreen> {
         ],
       ),
     );
+  }
+  List<Widget> _buildMetadataSection(BuildContext context, Metadata metadata) {
+    return [
+      const SizedBox(height: 24),
+      _sectionTitle(context, '📋 Service Info'),
+      
+      if (metadata.country != null)
+        _infoTile(context, 'Location', metadata.country!, Icons.location_on),
+      
+      if (metadata.ispHint != null)
+        _infoTile(context, 'Provider', metadata.ispHint!, Icons.cloud),
+      
+      if (metadata.expiresAt != null)
+        Card(
+          color: metadata.isExpired 
+              ? Colors.red.withOpacity(0.1) 
+              : null,
+          child: ListTile(
+            leading: Icon(
+              metadata.isExpired ? Icons.error : Icons.calendar_today,
+              size: 20,
+              color: metadata.isExpired ? Colors.red : accentColor(context),
+            ),
+            title: Text(
+              'Expires',
+              style: TextStyle(fontSize: 13, color: textMuted(context)),
+            ),
+            trailing: Text(
+              metadata.expiryText,
+              style: TextStyle(
+                fontWeight: FontWeight.w600,
+                color: metadata.isExpired ? Colors.red : textSecondary(context),
+              ),
+            ),
+          ),
+        ),
+      
+      if (metadata.quota != null && !metadata.quota!.unlimited) ...[
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Icon(Icons.data_usage, size: 20, color: accentColor(context)),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        'Data Quota',
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                          color: textSecondary(context),
+                        ),
+                      ),
+                    ),
+                    Text(
+                      '${metadata.quota!.usagePercent.toStringAsFixed(0)}%',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        color: metadata.quota!.progressColor,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(4),
+                  child: LinearProgressIndicator(
+                    value: metadata.quota!.usagePercent / 100,
+                    backgroundColor: Colors.grey.shade300,
+                    valueColor: AlwaysStoppedAnimation<Color>(
+                      metadata.quota!.progressColor,
+                    ),
+                    minHeight: 8,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      'Used: ${metadata.quota!.usedFormatted}',
+                      style: TextStyle(fontSize: 11, color: textMuted(context)),
+                    ),
+                    Text(
+                      'Remaining: ${metadata.quota!.remainingFormatted}',
+                      style: TextStyle(fontSize: 11, color: textMuted(context)),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
+      
+      if (metadata.announcement != null && 
+          metadata.announcement!.enabled &&
+          metadata.announcement!.text != null)
+        Card(
+          color: metadata.announcement!.color.withOpacity(0.1),
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  metadata.announcement!.icon,
+                  style: const TextStyle(fontSize: 24),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Announcement',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w600,
+                          color: metadata.announcement!.color,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        metadata.announcement!.text!,
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: textSecondary(context),
+                          height: 1.4,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      
+      if (metadata.notes != null && metadata.notes!.isNotEmpty)
+        Card(
+          child: ListTile(
+            leading: Icon(Icons.notes, size: 20, color: accentColor(context)),
+            title: Text(
+              'Notes',
+              style: TextStyle(fontSize: 13, color: textMuted(context)),
+            ),
+            subtitle: Text(
+              metadata.notes!,
+              style: TextStyle(fontSize: 12, color: textSecondary(context)),
+            ),
+          ),
+        ),
+      
+      if (metadata.tags != null && metadata.tags!.isNotEmpty)
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Icon(Icons.label, size: 18, color: accentColor(context)),
+                    const SizedBox(width: 8),
+                    Text(
+                      'Tags',
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        color: textMuted(context),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: metadata.tags!.map((tag) {
+                    return Chip(
+                      label: Text(tag, style: const TextStyle(fontSize: 11)),
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    );
+                  }).toList(),
+                ),
+              ],
+            ),
+          ),
+        ),
+    ];
   }
 
   Widget _sectionTitle(BuildContext context, String title) {
