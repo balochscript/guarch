@@ -171,7 +171,7 @@ class ServerConfig {
     }
 
     if (coverEnabled && coverDomains.isNotEmpty) {
-      json['cover_traffic'] = {
+      json['cover'] = {
         'enabled': true,
         'mode': shapingPattern,
         'domains': coverDomains.map((d) => d.toJson()).toList(),
@@ -184,13 +184,13 @@ class ServerConfig {
     }
 
     if (dnsFallbackEnabled) {
-      json['dns_fallback'] = {
+      json['dns'] = {
         'enabled': true,
-        'mode': dnsFallbackMode,
         'domain': dnsFallbackDomain,
         'servers': dnsFallbackServers,
-        'timeout': '${dnsFallbackTimeout}s',
+        'auto_switch': true,
         'switch_threshold': dnsFallbackSwitchThreshold,
+        'timeout': '${dnsFallbackTimeout}s',
       };
     }
 
@@ -204,8 +204,8 @@ class ServerConfig {
   factory ServerConfig.fromJson(Map<String, dynamic> json) {
     final server = json['server'] as Map<String, dynamic>? ?? json;
     final sni = json['sni'] as Map<String, dynamic>? ?? {};
-    final cover = json['cover_traffic'] as Map<String, dynamic>? ?? json['cover'] ?? {};
-    final dnsFallback = json['dns_fallback'] as Map<String, dynamic>? ?? {};
+    final cover = json['cover'] ?? json['cover_traffic'] ?? {};
+    final dns = json['dns'] ?? json['dns_fallback'] ?? {};
 
     String address = server['address'] ?? json['address'] ?? '';
     int port = server['port'] ?? json['port'] ?? 8443;
@@ -239,14 +239,14 @@ class ServerConfig {
           ? _parseSNIDomains(sni['domains'])
           : [],
       
-      dnsFallbackEnabled: dnsFallback['enabled'] == true,
-      dnsFallbackMode: dnsFallback['mode'] ?? 'auto',
-      dnsFallbackDomain: dnsFallback['domain'] ?? 'tunnel.example.com',
-      dnsFallbackServers: (dnsFallback['servers'] as List?)?.cast<String>() ?? ['8.8.8.8:53', '1.1.1.1:53'],
-      dnsFallbackTimeout: dnsFallback['timeout'] != null 
-          ? int.tryParse(dnsFallback['timeout'].toString().replaceAll('s', '')) ?? 5 
+      dnsFallbackEnabled: dns['enabled'] == true,
+      dnsFallbackMode: dns['mode'] ?? 'auto',
+      dnsFallbackDomain: dns['domain'] ?? 'tunnel.example.com',
+      dnsFallbackServers: (dns['servers'] as List?)?.cast<String>() ?? ['8.8.8.8:53', '1.1.1.1:53'],
+      dnsFallbackTimeout: dns['timeout'] != null 
+          ? int.tryParse(dns['timeout'].toString().replaceAll('s', '')) ?? 5 
           : 5,
-      dnsFallbackSwitchThreshold: dnsFallback['switch_threshold'] ?? 3,
+      dnsFallbackSwitchThreshold: dns['switch_threshold'] ?? 3,
       
       batteryAwareEnabled: cover['adaptive']?['battery_aware'] ?? true,
       dataSaverEnabled: cover['adaptive']?['data_saver_mode'] ?? false,
