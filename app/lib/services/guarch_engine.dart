@@ -527,16 +527,17 @@ class GuarchEngine {
           'psk': server.psk,
           'cert_pin': server.certPin ?? '',
         },
+        'socks_port': 1080,
         'sni': {
           'enabled': false,
         },
-        'cover_traffic': {
+        'cover': {
+          'enabled': false,
+          'mode': 'balanced',
+        },
+        'dns': {
           'enabled': false,
         },
-        'dns_fallback': {
-          'enabled': false,
-        },
-        'listen_port': 1080,
       };
       
       final configJson = jsonEncode(testConfig);
@@ -586,8 +587,11 @@ class GuarchEngine {
           'psk': psk,
         },
         'sni': {'enabled': false},
-        'cover_traffic': {'enabled': false},
-        'dns_fallback': {'enabled': false},
+        'cover': {
+          'enabled': false,
+          'mode': 'balanced',
+        },
+        'dns': {'enabled': false},
       };
       
       final result = await _channel.invokeMethod(
