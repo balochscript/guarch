@@ -12,40 +12,32 @@ import (
 	"guarch/pkg/core/sni"
 	"guarch/pkg/cover"
 	"guarch/pkg/mux"
+	"guarch/pkg/protocol"
 	"guarch/pkg/socks5"
 	"guarch/pkg/transport"
 )
 
-// ═══════════════════════════════════════════════════════════
-// Engine - هسته اصلی که همه ماژول‌ها رو مدیریت می‌کنه
-// ═══════════════════════════════════════════════════════════
-
-// Engine موتور اصلی Guarch
 type Engine struct {
 	config       *config.ServerConfig
 	configMgr    *config.Manager
 	
-	// Modules
 	sniManager   *sni.Manager
 	coverManager *cover.Manager
+	connector    *Connector
 	
-	// Runtime state
 	ctx          context.Context
 	cancel       context.CancelFunc
 	wg           sync.WaitGroup
 	
-	// Stats
 	startTime    time.Time
 	connections  uint64
 }
 
-// NewEngine ساخت engine جدید
 func NewEngine(cfg *config.ServerConfig) (*Engine, error) {
 	if cfg == nil {
 		return nil, fmt.Errorf("engine: config is nil")
 	}
 	
-	// Validation
 	validator := config.NewValidator()
 	if err := validator.Validate(cfg); err != nil {
 		return nil, fmt.Errorf("engine: invalid config: %w", err)
@@ -56,12 +48,12 @@ func NewEngine(cfg *config.ServerConfig) (*Engine, error) {
 	e := &Engine{
 		config:    cfg,
 		configMgr: config.NewManager(cfg),
+		connector: NewConnector(cfg),
 		ctx:       ctx,
 		cancel:    cancel,
 		startTime: time.Now(),
 	}
 	
-	// Initialize modules
 	if err := e.initModules(); err != nil {
 		return nil, fmt.Errorf("engine: init modules: %w", err)
 	}
@@ -69,11 +61,9 @@ func NewEngine(cfg *config.ServerConfig) (*Engine, error) {
 	return e, nil
 }
 
-// initModules مقداردهی اولیه ماژول‌ها
 func (e *Engine) initModules() error {
 	var err error
 	
-	// SNI Manager
 	if e.config.SNI.Enabled {
 		sniCfg := &sni.Config{
 			Enabled:             e.config.SNI.Enabled,
@@ -93,7 +83,6 @@ func (e *Engine) initModules() error {
 			sniCfg.Mode, len(sniCfg.Domains))
 	}
 	
-	// Cover Traffic Manager
 	if e.config.Cover.Enabled {
 		coverCfg := &cover.Config{
 			Enabled:       e.config.Cover.Enabled,
@@ -102,9 +91,8 @@ func (e *Engine) initModules() error {
 			IdleTraffic:   e.config.Cover.Adaptive.Enabled,
 		}
 		
-		// Adaptive cover
 		modeCfg := &cover.ModeConfig{
-			MaxPadding: 1024, // از mode settings بگیریم
+			MaxPadding: 1024,
 		}
 		adaptive := cover.NewAdaptiveCover(modeCfg)
 		
@@ -117,18 +105,15 @@ func (e *Engine) initModules() error {
 	return nil
 }
 
-// Start شروع engine
 func (e *Engine) Start() error {
 	log.Println("[engine] starting...")
 	
-	// Start SNI manager
 	if e.sniManager != nil {
 		if err := e.sniManager.Start(e.ctx); err != nil {
 			return fmt.Errorf("start sni: %w", err)
 		}
 	}
 	
-	// Start cover manager
 	if e.coverManager != nil {
 		e.coverManager.Start(e.ctx)
 	}
@@ -137,7 +122,6 @@ func (e *Engine) Start() error {
 	return nil
 }
 
-// Stop متوقف کردن engine
 func (e *Engine) Stop() {
 	log.Println("[engine] stopping...")
 	
@@ -156,7 +140,31 @@ func (e *Engine) Stop() {
 	log.Println("[engine] stopped")
 }
 
-// GetSNI دریافت SNI فعلی
+func (e *Engine) DialServer(ctx context.Context) (net.Conn, error) {
+	if e.sniManager != nil {
+		sni := e.sniManager.Get()
+		e.connector.SetSNI(sni)
+		log.Printf("[engine] using SNI: %s", sni)
+	}
+
+	if e.config.Transport != nil && len(e.config.Transport.FallbackOrder) > 0 {
+		return e.connector.DialWithFallback(ctx)
+	}
+
+	return e.connector.Dial(ctx)
+}
+
+func (e *Engine) WrapSecure(rawConn net.Conn) (*transport.SecureConn, error) {
+	psk := []byte(e.config.Server.PSK)
+	
+	handshakeCfg := &transport.HandshakeConfig{
+		PSK:     psk,
+		Timeout: 30 * time.Second,
+	}
+
+	return transport.PerformHandshake(rawConn, handshakeCfg, false)
+}
+
 func (e *Engine) GetSNI() string {
 	if e.sniManager == nil {
 		return ""
@@ -164,7 +172,6 @@ func (e *Engine) GetSNI() string {
 	return e.sniManager.Get()
 }
 
-// Stats آمار engine
 func (e *Engine) Stats() EngineStats {
 	stats := EngineStats{
 		Uptime:      time.Since(e.startTime),
@@ -182,17 +189,12 @@ func (e *Engine) Stats() EngineStats {
 	return stats
 }
 
-// EngineStats آمار engine
 type EngineStats struct {
 	Uptime      time.Duration
 	Connections uint64
 	SNI         sni.Stats
 	Cover       *cover.Stats
 }
-
-// ═══════════════════════════════════════════════════════════
-// Helper: Config Conversion
-// ═══════════════════════════════════════════════════════════
 
 func convertSNIDomains(domains []config.SNIDomain) []sni.Domain {
 	result := make([]sni.Domain, len(domains))
