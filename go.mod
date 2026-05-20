@@ -3,6 +3,7 @@ module guarch
 go 1.24
 
 require (
+	github.com/gorilla/websocket v1.5.1
 	github.com/miekg/dns v1.1.72
 	github.com/quic-go/quic-go v0.59.0
 	golang.org/x/crypto v0.46.0
