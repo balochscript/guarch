@@ -6,16 +6,17 @@ import (
 )
 
 type ServerConfig struct {
-	Version  int            `json:"version"`
-	Server   ServerInfo     `json:"server"`
-	SocksPort int           `json:"socks_port,omitempty"`
-	SNI      SNIConfig      `json:"sni,omitempty"`
-	Cover    CoverConfig    `json:"cover,omitempty"`
-	DNS      DNSConfig      `json:"dns,omitempty"`
-	UTLS     UTLSConfig     `json:"utls,omitempty"`
-	Fragment FragmentConfig `json:"fragmentation,omitempty"`
-	Modes    ModesConfig    `json:"modes,omitempty"`
-	Metadata Metadata       `json:"metadata,omitempty"`
+	Version   int              `json:"version"`
+	Server    ServerInfo       `json:"server"`
+	Transport *TransportConfig `json:"transport,omitempty"`
+	SocksPort int              `json:"socks_port,omitempty"`
+	SNI       SNIConfig        `json:"sni,omitempty"`
+	Cover     CoverConfig      `json:"cover,omitempty"`
+	DNS       DNSConfig        `json:"dns,omitempty"`
+	UTLS      UTLSConfig       `json:"utls,omitempty"`
+	Fragment  FragmentConfig   `json:"fragmentation,omitempty"`
+	Modes     ModesConfig      `json:"modes,omitempty"`
+	Metadata  Metadata         `json:"metadata,omitempty"`
 }
 
 type ServerInfo struct {
@@ -24,6 +25,18 @@ type ServerInfo struct {
 	Protocol string `json:"protocol"`
 	PSK      string `json:"psk"`
 	CertPin  string `json:"cert_pin,omitempty"`
+}
+
+type TransportConfig struct {
+	Type             string            `json:"type"`
+	Host             string            `json:"host,omitempty"`
+	Port             int               `json:"port,omitempty"`
+	Path             string            `json:"path,omitempty"`
+	UseTLS           bool              `json:"use_tls"`
+	Headers          map[string]string `json:"headers,omitempty"`
+	DialTimeout      int               `json:"dial_timeout,omitempty"`
+	HandshakeTimeout int               `json:"handshake_timeout,omitempty"`
+	FallbackOrder    []string          `json:"fallback_order,omitempty"`
 }
 
 type SNIConfig struct {
@@ -44,10 +57,10 @@ type SNIDomain struct {
 }
 
 type CoverConfig struct {
-	Enabled  bool            `json:"enabled"`
-	Mode     string          `json:"mode"`
-	Domains  []CoverDomain   `json:"domains"`
-	Adaptive AdaptiveConfig  `json:"adaptive,omitempty"`
+	Enabled  bool           `json:"enabled"`
+	Mode     string         `json:"mode"`
+	Domains  []CoverDomain  `json:"domains"`
+	Adaptive AdaptiveConfig `json:"adaptive,omitempty"`
 }
 
 type CoverDomain struct {
@@ -153,17 +166,17 @@ func (d *Duration) UnmarshalJSON(b []byte) error {
 	if err := json.Unmarshal(b, &s); err != nil {
 		return err
 	}
-	
+
 	if s == "" {
 		d.Duration = 0
 		return nil
 	}
-	
+
 	dur, err := time.ParseDuration(s)
 	if err != nil {
 		return err
 	}
-	
+
 	d.Duration = dur
 	return nil
 }
