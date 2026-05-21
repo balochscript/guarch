@@ -1,0 +1,149 @@
+{
+  "version": 1,
+  "server": {
+    "name": "Iran Whitelist Bypass",
+    "address": "YOUR_SERVER_IP:8443",
+    "protocol": "guarch",
+    "psk": "YOUR_HEX_ENCODED_PSK_MIN_32_CHARS",
+    "cert_pin": ""
+  },
+  
+  "transport": {
+    "type": "websocket",
+    "host": "digikala.com",
+    "port": 443,
+    "path": "/api/v1/tunnel",
+    "use_tls": true,
+    "headers": {
+      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+    },
+    "fallback_order": ["http2", "dns"],
+    "dial_timeout": 30,
+    "handshake_timeout": 15
+  },
+  
+  "sni": {
+    "enabled": true,
+    "mode": "weighted",
+    "domains": [
+      {
+        "domain": "digikala.com",
+        "weight": 30,
+        "check_health": true
+      },
+      {
+        "domain": "aparat.com",
+        "weight": 25,
+        "check_health": true
+      },
+      {
+        "domain": "snapp.ir",
+        "weight": 20,
+        "check_health": true
+      },
+      {
+        "domain": "divar.ir",
+        "weight": 15,
+        "check_health": true
+      },
+      {
+        "domain": "shaparak.ir",
+        "weight": 10,
+        "fallback": true
+      }
+    ],
+    "rotation_interval": "3m",
+    "health_check_interval": "30s",
+    "health_check_timeout": "5s"
+  },
+  
+  "cover": {
+    "enabled": true,
+    "mode": "stealth",
+    "domains": [
+      {
+        "domain": "digikala.com",
+        "paths": ["/", "/search", "/product-list", "/incredible-offers"],
+        "weight": 35,
+        "interval_min": "2s",
+        "interval_max": "8s"
+      },
+      {
+        "domain": "aparat.com",
+        "paths": ["/", "/video", "/categories", "/live"],
+        "weight": 30,
+        "interval_min": "3s",
+        "interval_max": "10s"
+      },
+      {
+        "domain": "snapp.ir",
+        "paths": ["/", "/services", "/about"],
+        "weight": 20,
+        "interval_min": "4s",
+        "interval_max": "12s"
+      },
+      {
+        "domain": "divar.ir",
+        "paths": ["/", "/s/tehran", "/s/mashhad"],
+        "weight": 15,
+        "interval_min": "3s",
+        "interval_max": "10s"
+      }
+    ],
+    "adaptive": {
+      "enabled": true,
+      "battery_aware": true,
+      "data_saver_mode": false,
+      "idle_threshold": "50KB/min",
+      "light_threshold": "500KB/min",
+      "medium_threshold": "5MB/min"
+    }
+  },
+  
+  "dns": {
+    "enabled": true,
+    "domain": "tunnel.example.com",
+    "servers": ["8.8.8.8:53", "1.1.1.1:53", "208.67.222.222:53"],
+    "auto_switch": true,
+    "switch_threshold": 3,
+    "timeout": "5s"
+  },
+  
+  "utls": {
+    "enabled": true,
+    "fingerprint": "chrome_auto",
+    "options": ["chrome_120", "edge_120", "firefox_121"]
+  },
+  
+  "fragmentation": {
+    "enabled": false
+  },
+  
+  "modes": {
+    "stealth": {
+      "cover_rate": "high",
+      "padding": 1024,
+      "sni_rotation": "fast",
+      "dns_fallback": true
+    },
+    "balanced": {
+      "cover_rate": "medium",
+      "padding": 256,
+      "sni_rotation": "normal",
+      "dns_fallback": true
+    },
+    "fast": {
+      "cover_rate": "low",
+      "padding": 64,
+      "sni_rotation": "slow",
+      "dns_fallback": false
+    }
+  },
+  
+  "metadata": {
+    "country": "IR",
+    "isp_hint": "MCI/Irancell/TCI",
+    "notes": "Whitelist bypass using Iranian allowed domains (digikala, aparat, snapp, divar)",
+    "tags": ["iran", "whitelist", "websocket", "stealth", "recommended"]
+  }
+}
