@@ -13,10 +13,6 @@ import (
 	"time"
 )
 
-// ═══════════════════════════════════════════════════════════
-// Crypto-secure random helpers
-// ═══════════════════════════════════════════════════════════
-
 func cryptoRandIntn(n int) int {
 	if n <= 0 {
 		return 0
@@ -40,10 +36,6 @@ func cryptoRandDuration(min, max time.Duration) time.Duration {
 	return min + time.Duration(val.Int64())
 }
 
-// ═══════════════════════════════════════════════════════════
-// Manager
-// ═══════════════════════════════════════════════════════════
-
 type Manager struct {
 	config   *Config
 	stats    *Stats
@@ -54,7 +46,6 @@ type Manager struct {
 	wg       sync.WaitGroup
 }
 
-// NewManager ساخت manager جدید
 func NewManager(cfg *Config, adaptive *AdaptiveCover) *Manager {
 	if cfg == nil {
 		cfg = NewConfig()
@@ -78,7 +69,6 @@ func NewManager(cfg *Config, adaptive *AdaptiveCover) *Manager {
 	}
 }
 
-// NewManagerWithClient ساخت manager با HTTP client دلخواه
 func NewManagerWithClient(cfg *Config, client *http.Client, adaptive *AdaptiveCover) *Manager {
 	if cfg == nil {
 		cfg = NewConfig()
@@ -92,44 +82,79 @@ func NewManagerWithClient(cfg *Config, client *http.Client, adaptive *AdaptiveCo
 }
 
 func (m *Manager) Start(ctx context.Context) {
-    m.mu.Lock()
-    
-    // ═══════════════════════════════════════════════════════════
-    // ✅ CHECK: اگه cover traffic غیرفعاله، شروع نکن
-    // ═══════════════════════════════════════════════════════════
-    if !m.config.Enabled {
-        m.mu.Unlock()
-        log.Println("[cover] disabled in config, not starting")
-        return
-    }
-    
-    // ═══════════════════════════════════════════════════════════
-    // ✅ CHECK: اگه قبلاً running هست، دوباره start نکن
-    // ═══════════════════════════════════════════════════════════
-    if m.running {
-        m.mu.Unlock()
-        log.Println("[cover] already running")
-        return
-    }
-    
-    m.running = true
-    m.mu.Unlock()
+	m.mu.Lock()
+	
+	if !m.config.Enabled {
+		m.mu.Unlock()
+		log.Println("[cover] disabled in config, not starting")
+		return
+	}
+	
+	if m.running {
+		m.mu.Unlock()
+		log.Println("[cover] already running")
+		return
+	}
+	
+	m.running = true
+	m.mu.Unlock()
 
-    log.Printf("[cover] starting cover traffic with %d domains", len(m.config.Domains))
-    // ═══════════════════════════════════════════════════════════
-    // 🚀 START WORKERS: هر domain یه goroutine می‌گیره
-    // این worker ها به صورت مداوم به domain درخواست میفرستن
-    // ═══════════════════════════════════════════════════════════
-    for i, domain := range m.config.Domains {
-        m.wg.Add(1)
-        go m.domainWorker(ctx, domain, i)
-    }
+	log.Printf("[cover] starting cover traffic with %d domains", len(m.config.Domains))
+	
+	if m.config.TransportHost != "" {
+		log.Printf("[cover] transport host detected: %s", m.config.TransportHost)
+		log.Println("[cover] warm-up: sending initial requests to transport host...")
+		m.warmUpTransportHost(ctx)
+	}
+	
+	for i, domain := range m.config.Domains {
+		m.wg.Add(1)
+		go m.domainWorker(ctx, domain, i)
+	}
 }
 
-// domainWorker worker برای هر domain
+func (m *Manager) warmUpTransportHost(ctx context.Context) {
+	if m.config.TransportHost == "" {
+		return
+	}
+	
+	warmupCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	
+	for i := 0; i < 3; i++ {
+		url := fmt.Sprintf("https://%s/", m.config.TransportHost)
+		
+		req, err := http.NewRequestWithContext(warmupCtx, "GET", url, nil)
+		if err != nil {
+			continue
+		}
+		
+		req.Header.Set("User-Agent", randomUserAgent())
+		req.Header.Set("Accept", randomAcceptHeader())
+		req.Header.Set("Accept-Language", randomAcceptLanguage())
+		
+		resp, err := m.client.Do(req)
+		if err != nil {
+			log.Printf("[cover] warm-up request %d failed: %v", i+1, err)
+			continue
+		}
+		
+		io.Copy(io.Discard, io.LimitReader(resp.Body, 4096))
+		resp.Body.Close()
+		
+		log.Printf("[cover] warm-up request %d/3 completed", i+1)
+		
+		if i < 2 {
+			time.Sleep(time.Duration(500+cryptoRandIntn(1000)) * time.Millisecond)
+		}
+	}
+	
+	log.Println("[cover] warm-up complete")
+}
+
 func (m *Manager) domainWorker(ctx context.Context, dc DomainConfig, index int) {
 	defer m.wg.Done()
-	// تاخیر اولیه تصادفی
+	
 	initDelay := cryptoRandDuration(0, 5*time.Second)
 	initTimer := time.NewTimer(initDelay)
 	select {
@@ -149,7 +174,6 @@ func (m *Manager) domainWorker(ctx context.Context, dc DomainConfig, index int) 
 		default:
 		}
 
-		// بررسی adaptive mode
 		if m.adaptive != nil {
 			activeDomains := m.adaptive.GetActiveDomains()
 			if index >= activeDomains {
@@ -164,7 +188,6 @@ func (m *Manager) domainWorker(ctx context.Context, dc DomainConfig, index int) 
 			}
 		}
 
-		// 5% احتمال skip
 		if cryptoRandIntn(100) < 5 {
 			skipTimer := time.NewTimer(cryptoRandDuration(2*time.Second, 10*time.Second))
 			select {
@@ -176,10 +199,8 @@ func (m *Manager) domainWorker(ctx context.Context, dc DomainConfig, index int) 
 			continue
 		}
 
-		// ارسال request
 		m.sendRequest(ctx, dc)
 
-		// محاسبه interval
 		interval := m.coverInterval(dc)
 
 		intervalTimer := time.NewTimer(interval)
@@ -192,11 +213,9 @@ func (m *Manager) domainWorker(ctx context.Context, dc DomainConfig, index int) 
 	}
 }
 
-// coverInterval محاسبه interval بین request ها
 func (m *Manager) coverInterval(dc DomainConfig) time.Duration {
 	var min, max time.Duration
 	
-	// اگه adaptive فعاله، از اون استفاده کن
 	if m.adaptive != nil {
 		min, max = m.adaptive.GetCoverInterval()
 	} else {
@@ -204,29 +223,27 @@ func (m *Manager) coverInterval(dc DomainConfig) time.Duration {
 		max = dc.MaxInterval
 	}
 
-	// Heavy-tailed distribution
 	r := cryptoRandIntn(100)
 	switch {
-	case r < 15: // 15% fast bursts
+	case r < 15:
 		short := min / 4
 		if short < 200*time.Millisecond {
 			short = 200 * time.Millisecond
 		}
 		return cryptoRandDuration(short, min)
 		
-	case r < 25: // 10% long pauses
+	case r < 25:
 		long := max * 3
 		if long > 2*time.Minute {
 			long = 2 * time.Minute
 		}
 		return cryptoRandDuration(max, long)
 		
-	default: // 75% normal
+	default:
 		return cryptoRandDuration(min, max)
 	}
 }
 
-// sendRequest ارسال یک HTTP request
 func (m *Manager) sendRequest(ctx context.Context, dc DomainConfig) {
 	if len(dc.Paths) == 0 {
 		m.stats.RecordError()
@@ -242,7 +259,6 @@ func (m *Manager) sendRequest(ctx context.Context, dc DomainConfig) {
 		return
 	}
 
-	// Headers
 	req.Header.Set("User-Agent", randomUserAgent())
 	req.Header.Set("Accept", randomAcceptHeader())
 	req.Header.Set("Accept-Language", randomAcceptLanguage())
@@ -268,7 +284,6 @@ func (m *Manager) sendRequest(ctx context.Context, dc DomainConfig) {
 		req.Header.Set("Sec-Fetch-User", "?1")
 	}
 
-	// ارسال request
 	resp, err := m.client.Do(req)
 	if err != nil {
 		m.stats.RecordError()
@@ -276,7 +291,6 @@ func (m *Manager) sendRequest(ctx context.Context, dc DomainConfig) {
 	}
 	defer resp.Body.Close()
 
-	// خواندن محدود response
 	readLimit := int64(10*1024 + cryptoRandIntn(90*1024))
 	written, err := io.Copy(io.Discard, io.LimitReader(resp.Body, readLimit))
 	if err != nil {
@@ -289,7 +303,6 @@ func (m *Manager) sendRequest(ctx context.Context, dc DomainConfig) {
 	m.stats.RecordRecv(size)
 }
 
-// SendOne ارسال یک request واحد
 func (m *Manager) SendOne() {
 	if len(m.config.Domains) == 0 {
 		return
@@ -301,7 +314,6 @@ func (m *Manager) SendOne() {
 	m.sendRequest(context.Background(), *dc)
 }
 
-// pickDomain انتخاب domain بر اساس weight
 func (m *Manager) pickDomain() *DomainConfig {
 	if len(m.config.Domains) == 0 {
 		return nil
@@ -329,43 +341,29 @@ func (m *Manager) pickDomain() *DomainConfig {
 	return &dc
 }
 
-// Stats دریافت آمار
 func (m *Manager) Stats() *Stats {
 	return m.stats
 }
 
-// Adaptive دریافت adaptive cover
 func (m *Manager) Adaptive() *AdaptiveCover {
 	return m.adaptive
 }
 
 func (m *Manager) Stop() {
-    // ═══════════════════════════════════════════════════════════
-    // 🛑 GRACEFUL SHUTDOWN:
-    // 1. منتظر میمونیم تا همه worker ها تمام بشن
-    // 2. بعد flag رو false میکنیم
-    // ═══════════════════════════════════════════════════════════
-    m.wg.Wait()
-    
-    // ═══════════════════════════════════════════════════════════
-    // 🔧 FIXED: حالا running رو false کن
-    // ═══════════════════════════════════════════════════════════
-    m.mu.Lock()
-    m.running = false
-    m.mu.Unlock()
-    
-    log.Println("[cover] stopped")
+	m.wg.Wait()
+	
+	m.mu.Lock()
+	m.running = false
+	m.mu.Unlock()
+	
+	log.Println("[cover] stopped")
 }
 
 func (m *Manager) IsRunning() bool {
-    m.mu.RLock()
-    defer m.mu.RUnlock()
-    return m.running
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.running
 }
-
-// ═══════════════════════════════════════════════════════════
-// Header helpers
-// ═══════════════════════════════════════════════════════════
 
 func randomUserAgent() string {
 	agents := []string{
