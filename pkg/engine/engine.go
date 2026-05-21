@@ -27,6 +27,9 @@ type Engine struct {
     
     startTime    time.Time
     connections  uint64
+    
+    probeOnce    sync.Once
+    probeResult  *NetworkStatus
 }
 
 func NewEngine(cfg *config.ServerConfig) (*Engine, error) {
@@ -87,6 +90,10 @@ func (e *Engine) initModules() error {
             IdleTraffic:   e.config.Cover.Adaptive.Enabled,
         }
         
+        if e.config.Transport != nil && e.config.Transport.Host != "" {
+            coverCfg.TransportHost = e.config.Transport.Host
+        }
+        
         modeCfg := &cover.ModeConfig{
             MaxPadding: 1024,
         }
@@ -136,11 +143,43 @@ func (e *Engine) Stop() {
     log.Println("[engine] stopped")
 }
 
+func (e *Engine) probeNetworkOnce(ctx context.Context) {
+    e.probeOnce.Do(func() {
+        if e.config.Transport != nil && e.config.Transport.Type != "direct" {
+            log.Printf("[engine] skipping probe (non-direct transport: %s)", e.config.Transport.Type)
+            return
+        }
+        
+        log.Println("[engine] probing network connectivity...")
+        status := e.connector.ProbeNetwork(ctx)
+        e.probeResult = &status
+        
+        if status.DirectBlocked {
+            log.Printf("[engine] ⚠️  direct connection blocked, suggested: %s", status.SuggestedTransport)
+            
+            if e.config.Transport == nil || len(e.config.Transport.FallbackOrder) == 0 {
+                log.Println("[engine] ⚠️  no fallback configured, connection may fail")
+            }
+        } else {
+            log.Println("[engine] ✅ direct connection available")
+        }
+    })
+}
+
 func (e *Engine) DialServer(ctx context.Context) (net.Conn, error) {
+    e.probeNetworkOnce(ctx)
+    
     if e.sniManager != nil {
         sni := e.sniManager.Get()
         e.connector.SetSNI(sni)
         log.Printf("[engine] using SNI: %s", sni)
+    }
+
+    if e.probeResult != nil && e.probeResult.DirectBlocked {
+        if e.config.Transport != nil && len(e.config.Transport.FallbackOrder) > 0 {
+            log.Println("[engine] using fallback due to blocked network")
+            return e.connector.DialWithFallback(ctx)
+        }
     }
 
     if e.config.Transport != nil && len(e.config.Transport.FallbackOrder) > 0 {
