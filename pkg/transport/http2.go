@@ -1,7 +1,6 @@
 package transport
 
 import (
-        "bufio"
         "context"
         "crypto/tls"
         "fmt"
