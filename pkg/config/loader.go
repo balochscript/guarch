@@ -21,15 +21,30 @@ func NewLoader() *Loader {
 
 func (l *Loader) LoadFromJSON(data []byte) (*ServerConfig, error) {
 	var cfg ServerConfig
+	
 	if err := json.Unmarshal(data, &cfg); err != nil {
-		return nil, fmt.Errorf("config: parse JSON: %w", err)
+		if IsLegacyClientFormat(data) {
+			legacyCfg, err := ParseLegacyClient(data)
+			if err != nil {
+				return nil, fmt.Errorf("config: parse legacy client: %w", err)
+			}
+			cfg = *legacyCfg
+		} else if IsLegacyServerFormat(data) {
+			legacyCfg, err := ParseLegacyServer(data)
+			if err != nil {
+				return nil, fmt.Errorf("config: parse legacy server: %w", err)
+			}
+			cfg = *legacyCfg
+		} else {
+			return nil, fmt.Errorf("config: parse JSON: %w", err)
+		}
 	}
+	
+	l.applyDefaults(&cfg)
 	
 	if err := l.validator.Validate(&cfg); err != nil {
 		return nil, fmt.Errorf("config: validation: %w", err)
 	}
-	
-	l.applyDefaults(&cfg)
 	
 	return &cfg, nil
 }
@@ -59,16 +74,22 @@ func (l *Loader) LoadFromURI(uri string) (*ServerConfig, error) {
 		}
 	}
 	
-	cfg, err := l.LoadFromJSON(jsonData)
-	if err != nil {
-		return nil, err
+	var rawCfg ServerConfig
+	if err := json.Unmarshal(jsonData, &rawCfg); err != nil {
+		return nil, fmt.Errorf("config: parse URI payload: %w", err)
 	}
 	
-	if cfg.Server.Protocol == "" {
-		cfg.Server.Protocol = protocol
+	if rawCfg.Server.Protocol == "" {
+		rawCfg.Server.Protocol = protocol
 	}
 	
-	return cfg, nil
+	l.applyDefaults(&rawCfg)
+	
+	if err := l.validator.Validate(&rawCfg); err != nil {
+		return nil, fmt.Errorf("config: validation: %w", err)
+	}
+	
+	return &rawCfg, nil
 }
 
 func (l *Loader) ExportToURI(cfg *ServerConfig) (string, error) {
@@ -118,6 +139,21 @@ func (l *Loader) applyDefaults(cfg *ServerConfig) {
 
 	if cfg.SocksPort == 0 {
 		cfg.SocksPort = 1080
+	}
+	
+	if cfg.Transport != nil {
+		if cfg.Transport.Type == "" {
+			cfg.Transport.Type = "direct"
+		}
+		if cfg.Transport.Port == 0 {
+			cfg.Transport.Port = 443
+		}
+		if cfg.Transport.DialTimeout == 0 {
+			cfg.Transport.DialTimeout = 30
+		}
+		if cfg.Transport.HandshakeTimeout == 0 {
+			cfg.Transport.HandshakeTimeout = 15
+		}
 	}
 	
 	if cfg.SNI.Enabled {
@@ -170,9 +206,6 @@ func (l *Loader) applyDefaults(cfg *ServerConfig) {
 	}
 	
 	if cfg.DNS.Enabled {
-		if len(cfg.DNS.Servers) == 0 {
-			cfg.DNS.Servers = []string{"8.8.8.8:53", "1.1.1.1:53"}
-		}
 		if cfg.DNS.SwitchThreshold == 0 {
 			cfg.DNS.SwitchThreshold = 3
 		}
