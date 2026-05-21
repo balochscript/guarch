@@ -12,6 +12,8 @@ func GetPreset(name string) (*ServerConfig, bool) {
 		base = IranStealthPreset()
 	case "iran_balanced":
 		base = IranBalancedPreset()
+	case "iran_whitelist":
+		base = IranWhitelistPreset()
 	case "global_stealth":
 		base = GlobalStealthPreset()
 	case "global_balanced":
@@ -35,6 +37,7 @@ func ListPresets() []string {
 	return []string{
 		"iran_stealth",
 		"iran_balanced",
+		"iran_whitelist",
 		"global_stealth",
 		"global_balanced",
 		"minimal",
@@ -196,6 +199,138 @@ func IranBalancedPreset() *ServerConfig {
 	cfg.Metadata.Tags = []string{"iran", "balanced", "recommended"}
 	
 	return cfg
+}
+
+func IranWhitelistPreset() *ServerConfig {
+	return &ServerConfig{
+		Version: 1,
+		Server: ServerInfo{
+			Name:     "Iran Whitelist Bypass",
+			Address:  "YOUR_SERVER:8443",
+			Protocol: "guarch",
+			PSK:      "REPLACE_WITH_YOUR_PSK",
+			CertPin:  "",
+		},
+		
+		Transport: &TransportConfig{
+			Type:   "websocket",
+			Host:   "digikala.com",
+			Port:   443,
+			Path:   "/api/v1/tunnel",
+			UseTLS: true,
+			Headers: map[string]string{
+				"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+			},
+			FallbackOrder:    []string{"http2", "dns"},
+			DialTimeout:      30,
+			HandshakeTimeout: 15,
+		},
+		
+		SNI: SNIConfig{
+			Enabled: true,
+			Mode:    "weighted",
+			Domains: []SNIDomain{
+				{Domain: "digikala.com", Weight: 30, CheckHealth: true},
+				{Domain: "aparat.com", Weight: 25, CheckHealth: true},
+				{Domain: "snapp.ir", Weight: 20, CheckHealth: true},
+				{Domain: "divar.ir", Weight: 15, CheckHealth: true},
+				{Domain: "shaparak.ir", Weight: 10, Fallback: true},
+			},
+			RotationInterval:    Duration{3 * time.Minute},
+			HealthCheckInterval: Duration{30 * time.Second},
+			HealthCheckTimeout:  Duration{5 * time.Second},
+		},
+		
+		Cover: CoverConfig{
+			Enabled: true,
+			Mode:    "stealth",
+			Domains: []CoverDomain{
+				{
+					Domain: "digikala.com",
+					Paths:  []string{"/", "/search", "/product-list", "/incredible-offers"},
+					Weight: 35,
+					IntervalMin: Duration{2 * time.Second},
+					IntervalMax: Duration{8 * time.Second},
+				},
+				{
+					Domain: "aparat.com",
+					Paths:  []string{"/", "/video", "/categories", "/live"},
+					Weight: 30,
+					IntervalMin: Duration{3 * time.Second},
+					IntervalMax: Duration{10 * time.Second},
+				},
+				{
+					Domain: "snapp.ir",
+					Paths:  []string{"/", "/services", "/about"},
+					Weight: 20,
+					IntervalMin: Duration{4 * time.Second},
+					IntervalMax: Duration{12 * time.Second},
+				},
+				{
+					Domain: "divar.ir",
+					Paths:  []string{"/", "/s/tehran", "/s/mashhad"},
+					Weight: 15,
+					IntervalMin: Duration{3 * time.Second},
+					IntervalMax: Duration{10 * time.Second},
+				},
+			},
+			Adaptive: AdaptiveConfig{
+				Enabled:         true,
+				BatteryAware:    true,
+				DataSaverMode:   false,
+				IdleThreshold:   "50KB/min",
+				LightThreshold:  "500KB/min",
+				MediumThreshold: "5MB/min",
+			},
+		},
+		
+		DNS: DNSConfig{
+			Enabled:         true,
+			Domain:          "tunnel.example.com",
+			Servers:         []string{"8.8.8.8:53", "1.1.1.1:53", "208.67.222.222:53"},
+			AutoSwitch:      true,
+			SwitchThreshold: 3,
+			Timeout:         Duration{5 * time.Second},
+		},
+		
+		UTLS: UTLSConfig{
+			Enabled:     true,
+			Fingerprint: "chrome_auto",
+			Options:     []string{"chrome_120", "edge_120", "firefox_121"},
+		},
+		
+		Fragment: FragmentConfig{
+			Enabled: false,
+		},
+		
+		Modes: ModesConfig{
+			Stealth: ModeSettings{
+				CoverRate:   "high",
+				Padding:     1024,
+				SNIRotation: "fast",
+				DNSFallback: true,
+			},
+			Balanced: ModeSettings{
+				CoverRate:   "medium",
+				Padding:     256,
+				SNIRotation: "normal",
+				DNSFallback: true,
+			},
+			Fast: ModeSettings{
+				CoverRate:   "low",
+				Padding:     64,
+				SNIRotation: "slow",
+				DNSFallback: false,
+			},
+		},
+		
+		Metadata: Metadata{
+			Country: "IR",
+			ISPHint: "MCI/Irancell/TCI",
+			Notes:   "Whitelist bypass using Iranian allowed domains (digikala, aparat, snapp, divar)",
+			Tags:    []string{"iran", "whitelist", "websocket", "stealth", "recommended"},
+		},
+	}
 }
 
 func GlobalStealthPreset() *ServerConfig {
@@ -385,6 +520,8 @@ func CreateIranConfig(serverAddr, psk string, mode string) *ServerConfig {
 		cfg = IranStealthPreset()
 	case "balanced":
 		cfg = IranBalancedPreset()
+	case "whitelist":
+		cfg = IranWhitelistPreset()
 	default:
 		cfg = IranBalancedPreset()
 	}
