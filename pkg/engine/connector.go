@@ -146,7 +146,7 @@ func (c *Connector) getTransportConfig() *transport.Config {
             Type:             "direct",
             Host:             host,
             Port:             port,
-            UseTLS:           true,
+            UseTLS:           false,
             FallbackOrder:    []string{},
             DialTimeout:      30 * time.Second,
             HandshakeTimeout: 15 * time.Second,
