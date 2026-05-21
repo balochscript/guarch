@@ -165,13 +165,17 @@ func (c *Connector) getTransportConfig() *transport.Config {
         port = 443
     }
     
-    dialTimeout := tc.DialTimeout
-    if dialTimeout == 0 {
+    var dialTimeout time.Duration
+    if tc.DialTimeout > 0 {
+        dialTimeout = time.Duration(tc.DialTimeout) * time.Second
+    } else {
         dialTimeout = 30 * time.Second
     }
     
-    handshakeTimeout := tc.HandshakeTimeout
-    if handshakeTimeout == 0 {
+    var handshakeTimeout time.Duration
+    if tc.HandshakeTimeout > 0 {
+        handshakeTimeout = time.Duration(tc.HandshakeTimeout) * time.Second
+    } else {
         handshakeTimeout = 15 * time.Second
     }
     
