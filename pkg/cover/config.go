@@ -1,4 +1,3 @@
-// pkg/cover/config.go
 package cover
 
 import (
@@ -6,11 +5,6 @@ import (
 	"time"
 )
 
-// ═══════════════════════════════════════════════════════════
-// Core Types
-// ═══════════════════════════════════════════════════════════
-
-// DomainConfig تنظیمات یک domain برای cover traffic
 type DomainConfig struct {
 	Domain      string        `json:"domain"`
 	Paths       []string      `json:"paths"`
@@ -19,24 +13,18 @@ type DomainConfig struct {
 	MaxInterval time.Duration `json:"max_interval"`
 }
 
-// Config تنظیمات cover traffic
 type Config struct {
 	Enabled       bool           `json:"enabled"`
 	Domains       []DomainConfig `json:"domains"`
 	MaxConcurrent int            `json:"max_concurrent"`
 	IdleTraffic   bool           `json:"idle_traffic"`
+	TransportHost string         `json:"-"`
 }
 
-// ModeConfig تنظیمات mode (برای adaptive و shaping)
 type ModeConfig struct {
 	MaxPadding int
 }
 
-// ═══════════════════════════════════════════════════════════
-// 🔥 REMOVED: DefaultConfig() - دیگه هارد کد نمی‌کنیم!
-// ═══════════════════════════════════════════════════════════
-
-// NewConfig ساخت config خالی با مقادیر پیش‌فرض
 func NewConfig() *Config {
 	return &Config{
 		Enabled:       false,
@@ -46,11 +34,6 @@ func NewConfig() *Config {
 	}
 }
 
-// ═══════════════════════════════════════════════════════════
-// Validation
-// ═══════════════════════════════════════════════════════════
-
-// Validate بررسی معتبر بودن config
 func (c *Config) Validate() error {
 	if !c.Enabled {
 		return nil
@@ -75,11 +58,6 @@ func (c *Config) Validate() error {
 	return nil
 }
 
-// ═══════════════════════════════════════════════════════════
-// Helper: Apply defaults
-// ═══════════════════════════════════════════════════════════
-
-// ApplyDefaults اعمال مقادیر پیش‌فرض
 func (c *Config) ApplyDefaults() {
 	if c.MaxConcurrent == 0 {
 		c.MaxConcurrent = 3
