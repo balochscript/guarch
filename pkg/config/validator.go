@@ -23,6 +23,12 @@ func (v *Validator) Validate(cfg *ServerConfig) error {
 		return fmt.Errorf("server: %w", err)
 	}
 	
+	if cfg.Transport != nil {
+		if err := v.validateTransport(cfg.Transport); err != nil {
+			return fmt.Errorf("transport: %w", err)
+		}
+	}
+	
 	if cfg.SNI.Enabled {
 		if err := v.validateSNI(&cfg.SNI); err != nil {
 			return fmt.Errorf("sni: %w", err)
@@ -71,15 +77,21 @@ func (v *Validator) validateServerInfo(info *ServerInfo) error {
 	
 	host, port, err := net.SplitHostPort(info.Address)
 	if err != nil {
-		return fmt.Errorf("invalid address format: %w", err)
-	}
-	
-	if host == "" {
-		return fmt.Errorf("host is empty")
-	}
-	
-	if port == "" {
-		return fmt.Errorf("port is empty")
+		if strings.HasPrefix(info.Address, ":") {
+			port = strings.TrimPrefix(info.Address, ":")
+			if port == "" {
+				return fmt.Errorf("port is empty")
+			}
+		} else {
+			return fmt.Errorf("invalid address format: %w", err)
+		}
+	} else {
+		if host == "" {
+			return fmt.Errorf("host is empty")
+		}
+		if port == "" {
+			return fmt.Errorf("port is empty")
+		}
 	}
 	
 	validProtocols := map[string]bool{
@@ -98,6 +110,40 @@ func (v *Validator) validateServerInfo(info *ServerInfo) error {
 	
 	if len(info.PSK) < 16 {
 		return fmt.Errorf("PSK too short (minimum 16 characters)")
+	}
+	
+	return nil
+}
+
+func (v *Validator) validateTransport(tc *TransportConfig) error {
+	validTypes := map[string]bool{
+		"direct":    true,
+		"websocket": true,
+		"ws":        true,
+		"http2":     true,
+		"dns":       true,
+	}
+	
+	if !validTypes[tc.Type] {
+		return fmt.Errorf("invalid type: %s (must be direct/websocket/http2/dns)", tc.Type)
+	}
+	
+	if tc.Port < 0 || tc.Port > 65535 {
+		return fmt.Errorf("invalid port: %d", tc.Port)
+	}
+	
+	if tc.DialTimeout < 0 {
+		return fmt.Errorf("dial_timeout cannot be negative")
+	}
+	
+	if tc.HandshakeTimeout < 0 {
+		return fmt.Errorf("handshake_timeout cannot be negative")
+	}
+	
+	for i, fallback := range tc.FallbackOrder {
+		if !validTypes[fallback] {
+			return fmt.Errorf("fallback_order[%d]: invalid transport type: %s", i, fallback)
+		}
 	}
 	
 	return nil
@@ -151,7 +197,7 @@ func (v *Validator) validateSNI(sni *SNIConfig) error {
 	}
 	
 	if hasHealthCheck && !hasFallback {
-		return fmt.Errorf("health check enabled but no fallback domain defined (at least one domain should have fallback=true)")
+		return fmt.Errorf("health check enabled but no fallback domain defined")
 	}
 	
 	return nil
@@ -224,18 +270,16 @@ func (v *Validator) validateDNS(dns *DNSConfig) error {
 		return fmt.Errorf("invalid domain: %s", dns.Domain)
 	}
 	
-	if len(dns.Servers) == 0 {
-		return fmt.Errorf("no DNS servers specified")
-	}
-	
-	for i, srv := range dns.Servers {
-		if _, _, err := net.SplitHostPort(srv); err != nil {
-			return fmt.Errorf("server %d: invalid format: %w", i, err)
-		}
-	}
-	
 	if dns.SwitchThreshold < 0 {
 		return fmt.Errorf("negative switch threshold")
+	}
+	
+	if len(dns.Servers) > 0 {
+		for i, srv := range dns.Servers {
+			if _, _, err := net.SplitHostPort(srv); err != nil {
+				return fmt.Errorf("server %d: invalid format: %w", i, err)
+			}
+		}
 	}
 	
 	return nil
@@ -342,7 +386,7 @@ func (v *Validator) validateMetadata(meta *Metadata) error {
 		}
 		
 		if time.Now().After(expiry) {
-			return fmt.Errorf("config has expired!")
+			return fmt.Errorf("config has expired")
 		}
 	}
 	
