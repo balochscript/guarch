@@ -1,29 +1,29 @@
-// pkg/config/presets.go
 package config
 
 import (
 	"time"
 )
 
-// Presets تنظیمات از پیش آماده
-var Presets = map[string]*ServerConfig{
-	"iran_stealth":   IranStealthPreset(),
-	"iran_balanced":  IranBalancedPreset(),
-	"global_stealth": GlobalStealthPreset(),
-	"global_balanced": GlobalBalancedPreset(),
-	"minimal":        MinimalPreset(),
-}
-
-// GetPreset دریافت preset با نام
 func GetPreset(name string) (*ServerConfig, bool) {
-	preset, ok := Presets[name]
-	if !ok {
+	var base *ServerConfig
+	
+	switch name {
+	case "iran_stealth":
+		base = IranStealthPreset()
+	case "iran_balanced":
+		base = IranBalancedPreset()
+	case "global_stealth":
+		base = GlobalStealthPreset()
+	case "global_balanced":
+		base = GlobalBalancedPreset()
+	case "minimal":
+		base = MinimalPreset()
+	default:
 		return nil, false
 	}
 	
-	// Clone کردن تا original تغییر نکنه
 	loader := NewLoader()
-	cloned, err := loader.Clone(preset)
+	cloned, err := loader.Clone(base)
 	if err != nil {
 		return nil, false
 	}
@@ -31,20 +31,16 @@ func GetPreset(name string) (*ServerConfig, bool) {
 	return cloned, true
 }
 
-// ListPresets لیست همه preset ها
 func ListPresets() []string {
-	names := make([]string, 0, len(Presets))
-	for name := range Presets {
-		names = append(names, name)
+	return []string{
+		"iran_stealth",
+		"iran_balanced",
+		"global_stealth",
+		"global_balanced",
+		"minimal",
 	}
-	return names
 }
 
-// ═══════════════════════════════════════════════════════════
-// Iran Presets (بهینه شده برای ایران)
-// ═══════════════════════════════════════════════════════════
-
-// IranStealthPreset حداکثر مخفی‌کاری برای ایران
 func IranStealthPreset() *ServerConfig {
 	return &ServerConfig{
 		Version: 1,
@@ -60,13 +56,10 @@ func IranStealthPreset() *ServerConfig {
 			Enabled: true,
 			Mode:    "weighted",
 			Domains: []SNIDomain{
-				// سایت‌های محبوب ایرانی
 				{Domain: "digikala.com", Weight: 25, CheckHealth: true},
 				{Domain: "aparat.com", Weight: 20, CheckHealth: true},
 				{Domain: "snapp.ir", Weight: 15, CheckHealth: true},
 				{Domain: "divar.ir", Weight: 15, CheckHealth: true},
-				
-				// Fallback به سایت‌های بین‌المللی
 				{Domain: "cloudflare.com", Weight: 10, Fallback: true},
 				{Domain: "microsoft.com", Weight: 10, Fallback: true},
 				{Domain: "apple.com", Weight: 5, Fallback: true},
@@ -184,24 +177,19 @@ func IranStealthPreset() *ServerConfig {
 	}
 }
 
-// IranBalancedPreset تعادل بین سرعت و امنیت برای ایران
 func IranBalancedPreset() *ServerConfig {
 	cfg := IranStealthPreset()
 	
-	// تغییرات برای balanced mode
 	cfg.Server.Name = "Iran Balanced Server"
 	cfg.Cover.Mode = "balanced"
 	
-	// کاهش cover traffic
 	for i := range cfg.Cover.Domains {
 		cfg.Cover.Domains[i].IntervalMin.Duration *= 2
 		cfg.Cover.Domains[i].IntervalMax.Duration *= 2
 	}
 	
-	// کاهش SNI rotation
 	cfg.SNI.RotationInterval.Duration = 5 * time.Minute
 	
-	// فعال کردن data saver
 	cfg.Cover.Adaptive.DataSaverMode = true
 	
 	cfg.Metadata.Notes = "Balanced mode for Iranian networks - good speed and stealth"
@@ -210,11 +198,6 @@ func IranBalancedPreset() *ServerConfig {
 	return cfg
 }
 
-// ═══════════════════════════════════════════════════════════
-// Global Presets (بین‌المللی)
-// ═══════════════════════════════════════════════════════════
-
-// GlobalStealthPreset حداکثر مخفی‌کاری (بین‌المللی)
 func GlobalStealthPreset() *ServerConfig {
 	return &ServerConfig{
 		Version: 1,
@@ -285,7 +268,7 @@ func GlobalStealthPreset() *ServerConfig {
 		},
 		
 		DNS: DNSConfig{
-			Enabled:         false, // معمولاً در شبکه‌های بین‌المللی نیاز نیست
+			Enabled:         false,
 			Domain:          "tunnel.example.com",
 			Servers:         []string{"8.8.8.8:53", "1.1.1.1:53"},
 			AutoSwitch:      false,
@@ -328,14 +311,12 @@ func GlobalStealthPreset() *ServerConfig {
 	}
 }
 
-// GlobalBalancedPreset تعادل برای شبکه‌های بین‌المللی
 func GlobalBalancedPreset() *ServerConfig {
 	cfg := GlobalStealthPreset()
 	
 	cfg.Server.Name = "Global Balanced Server"
 	cfg.Cover.Mode = "balanced"
 	
-	// کاهش cover traffic
 	for i := range cfg.Cover.Domains {
 		cfg.Cover.Domains[i].Weight /= 2
 		if cfg.Cover.Domains[i].Weight < 5 {
@@ -351,11 +332,6 @@ func GlobalBalancedPreset() *ServerConfig {
 	return cfg
 }
 
-// ═══════════════════════════════════════════════════════════
-// Minimal Preset (حداقل overhead)
-// ═══════════════════════════════════════════════════════════
-
-// MinimalPreset حداقل تنظیمات (سرعت بالا)
 func MinimalPreset() *ServerConfig {
 	return &ServerConfig{
 		Version: 1,
@@ -401,11 +377,6 @@ func MinimalPreset() *ServerConfig {
 	}
 }
 
-// ═══════════════════════════════════════════════════════════
-// Helper Functions
-// ═══════════════════════════════════════════════════════════
-
-// CreateIranConfig ساخت config برای ایران با تنظیمات دلخواه
 func CreateIranConfig(serverAddr, psk string, mode string) *ServerConfig {
 	var cfg *ServerConfig
 	
@@ -424,7 +395,6 @@ func CreateIranConfig(serverAddr, psk string, mode string) *ServerConfig {
 	return cfg
 }
 
-// CreateGlobalConfig ساخت config بین‌المللی
 func CreateGlobalConfig(serverAddr, psk string, mode string) *ServerConfig {
 	var cfg *ServerConfig
 	
