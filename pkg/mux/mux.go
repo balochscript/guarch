@@ -25,17 +25,15 @@ const (
 
 	muxHeaderSize = 5
 	
-	// 🆕 NEW: محدودیت‌ها
-	DefaultMaxStreams     = 1000         // حداکثر تعداد stream همزمان
-	DefaultStreamBuffer   = 256          // اندازه buffer هر stream
-	DefaultAcceptTimeout  = 30 * time.Second
+	DefaultMaxStreams     = 1000
+	DefaultStreamBuffer   = 256
+	DefaultAcceptTimeout  = 5 * time.Minute
 	DefaultOpenTimeout    = 10 * time.Second
 	DefaultReadTimeout    = 60 * time.Second
 	DefaultWriteTimeout   = 30 * time.Second
 	DefaultMaxChunkSize   = 32768
 )
 
-// 🆕 NEW: MuxConfig تنظیمات mux
 type MuxConfig struct {
 	MaxStreams    int
 	StreamBuffer  int
@@ -45,7 +43,6 @@ type MuxConfig struct {
 	WriteTimeout  time.Duration
 }
 
-// 🆕 NEW: DefaultMuxConfig تنظیمات پیش‌فرض
 func DefaultMuxConfig() *MuxConfig {
 	return &MuxConfig{
 		MaxStreams:    DefaultMaxStreams,
@@ -67,20 +64,17 @@ type Mux struct {
 	sendMu    sync.Mutex
 	isServer  bool
 	
-	// 🆕 NEW: تنظیمات و آمار
 	config       *MuxConfig
-	streamCount  atomic.Int32  // تعداد stream های فعال
-	totalStreams atomic.Uint64 // تعداد کل stream های ساخته شده
+	streamCount  atomic.Int32
+	totalStreams atomic.Uint64
 	bytesSent    atomic.Uint64
 	bytesRecv    atomic.Uint64
 }
 
-// 🆕 IMPROVED: NewMux با config
 func NewMux(sc *transport.SecureConn, isServer bool) *Mux {
 	return NewMuxWithConfig(sc, isServer, DefaultMuxConfig())
 }
 
-// 🆕 NEW: NewMuxWithConfig ساخت mux با config دلخواه
 func NewMuxWithConfig(sc *transport.SecureConn, isServer bool, cfg *MuxConfig) *Mux {
 	if cfg == nil {
 		cfg = DefaultMuxConfig()
@@ -144,10 +138,8 @@ func (m *Mux) handleMuxFrame(data []byte) {
 
 	switch cmd {
 	case cmdOpen:
-		// 🆕 ADDED: بررسی محدودیت stream
 		if m.streamCount.Load() >= int32(m.config.MaxStreams) {
 			log.Printf("[mux] reject stream %d: max streams reached (%d)", streamID, m.config.MaxStreams)
-			// ارسال cmdClose
 			m.sendFrame(cmdClose, streamID, nil)
 			return
 		}
@@ -163,7 +155,7 @@ func (m *Mux) handleMuxFrame(data []byte) {
 		case m.acceptCh <- s:
 		case <-m.closeCh:
 			return
-		case <-time.After(5 * time.Second): // 🆕 timeout
+		case <-time.After(5 * time.Second):
 			log.Printf("[mux] accept queue full, dropping stream %d", streamID)
 			s.Close()
 		}
@@ -172,7 +164,6 @@ func (m *Mux) handleMuxFrame(data []byte) {
 		if val, ok := m.streams.Load(streamID); ok {
 			s := val.(*Stream)
 			if !s.closed.Load() {
-				// 🆕 ADDED: آمار
 				m.bytesRecv.Add(uint64(len(payload)))
 				s.bytesRecv.Add(uint64(len(payload)))
 				
@@ -184,7 +175,7 @@ func (m *Mux) handleMuxFrame(data []byte) {
 				case <-s.doneCh:
 				case <-m.closeCh:
 					return
-				case <-time.After(m.config.WriteTimeout): // 🆕 timeout
+				case <-time.After(m.config.WriteTimeout):
 					log.Printf("[mux] stream %d read buffer full, dropping packet", streamID)
 				}
 			}
@@ -203,13 +194,12 @@ func (m *Mux) handleMuxFrame(data []byte) {
 		m.sendFrame(cmdPong, streamID, nil)
 
 	case cmdPong:
-		// پاسخ ping دریافت شد
 	}
 }
 
 func (m *Mux) keepAlive() {
 	for {
-		jitter := time.Duration(randomMuxInt(25000, 35000)) * time.Millisecond
+		jitter := time.Duration(randomMuxInt(10000, 15000)) * time.Millisecond
 		timer := time.NewTimer(jitter)
 		select {
 		case <-m.closeCh:
@@ -234,7 +224,6 @@ func (m *Mux) sendFrame(cmd byte, streamID uint32, payload []byte) error {
 		copy(frame[muxHeaderSize:], payload)
 	}
 	
-	// 🆕 ADDED: آمار
 	if cmd == cmdData {
 		m.bytesSent.Add(uint64(len(payload)))
 	}
@@ -242,12 +231,10 @@ func (m *Mux) sendFrame(cmd byte, streamID uint32, payload []byte) error {
 	return m.sc.Send(frame)
 }
 
-// 🆕 IMPROVED: OpenStream با timeout
 func (m *Mux) OpenStream() (*Stream, error) {
 	return m.OpenStreamWithTimeout(m.config.OpenTimeout)
 }
 
-// 🆕 NEW: OpenStreamWithTimeout
 func (m *Mux) OpenStreamWithTimeout(timeout time.Duration) (*Stream, error) {
 	select {
 	case <-m.closeCh:
@@ -255,7 +242,6 @@ func (m *Mux) OpenStreamWithTimeout(timeout time.Duration) (*Stream, error) {
 	default:
 	}
 	
-	// 🆕 ADDED: بررسی محدودیت
 	if m.streamCount.Load() >= int32(m.config.MaxStreams) {
 		return nil, fmt.Errorf("mux: max streams reached (%d)", m.config.MaxStreams)
 	}
@@ -276,12 +262,10 @@ func (m *Mux) OpenStreamWithTimeout(timeout time.Duration) (*Stream, error) {
 	return s, nil
 }
 
-// 🆕 IMPROVED: AcceptStream با timeout
 func (m *Mux) AcceptStream() (*Stream, error) {
 	return m.AcceptStreamWithTimeout(m.config.AcceptTimeout)
 }
 
-// 🆕 NEW: AcceptStreamWithTimeout
 func (m *Mux) AcceptStreamWithTimeout(timeout time.Duration) (*Stream, error) {
 	select {
 	case s, ok := <-m.acceptCh:
@@ -301,7 +285,6 @@ func (m *Mux) Close() error {
 		log.Printf("[mux] closing (active streams: %d)", m.streamCount.Load())
 		close(m.closeCh)
 		
-		// 🆕 IMPROVED: graceful shutdown
 		m.streams.Range(func(key, val any) bool {
 			s := val.(*Stream)
 			s.markClosed()
@@ -324,7 +307,6 @@ func (m *Mux) IsClosed() bool {
 	}
 }
 
-// 🆕 NEW: Stats آمار mux
 func (m *Mux) Stats() MuxStats {
 	return MuxStats{
 		ActiveStreams: int(m.streamCount.Load()),
@@ -334,7 +316,6 @@ func (m *Mux) Stats() MuxStats {
 	}
 }
 
-// 🆕 NEW: MuxStats
 type MuxStats struct {
 	ActiveStreams int
 	TotalStreams  uint64
@@ -342,7 +323,6 @@ type MuxStats struct {
 	BytesRecv     uint64
 }
 
-// 🆕 NEW: ListStreams لیست stream های فعال
 func (m *Mux) ListStreams() []uint32 {
 	var ids []uint32
 	m.streams.Range(func(key, val any) bool {
@@ -351,10 +331,6 @@ func (m *Mux) ListStreams() []uint32 {
 	})
 	return ids
 }
-
-// ═══════════════════════════════════════
-// Stream (بهبود یافته)
-// ═══════════════════════════════════════
 
 type Stream struct {
 	id     uint32
@@ -367,7 +343,6 @@ type Stream struct {
 	readBuf  []byte
 	doneOnce sync.Once
 	
-	// 🆕 NEW: آمار و تنظیمات
 	bytesSent    atomic.Uint64
 	bytesRecv    atomic.Uint64
 	created      time.Time
@@ -379,7 +354,6 @@ func newStream(id uint32, m *Mux) *Stream {
 	return newStreamWithConfig(id, m, m.config)
 }
 
-// 🆕 NEW: newStreamWithConfig
 func newStreamWithConfig(id uint32, m *Mux, cfg *MuxConfig) *Stream {
 	return &Stream{
 		id:           id,
@@ -392,7 +366,6 @@ func newStreamWithConfig(id uint32, m *Mux, cfg *MuxConfig) *Stream {
 	}
 }
 
-// 🆕 IMPROVED: Read با timeout
 func (s *Stream) Read(p []byte) (int, error) {
 	s.readMu.Lock()
 	if len(s.readBuf) > 0 {
@@ -426,7 +399,6 @@ func (s *Stream) Read(p []byte) (int, error) {
 	}
 }
 
-// 🆕 IMPROVED: Write با آمار
 func (s *Stream) Write(p []byte) (int, error) {
 	if s.closed.Load() {
 		return 0, io.ErrClosedPipe
@@ -446,7 +418,6 @@ func (s *Stream) Write(p []byte) (int, error) {
 			return sent, err
 		}
 		
-		// 🆕 ADDED: آمار
 		s.bytesSent.Add(uint64(len(chunk)))
 		
 		sent = end
@@ -477,7 +448,6 @@ func (s *Stream) ID() uint32 {
 	return s.id
 }
 
-// 🆕 NEW: SetReadDeadline
 func (s *Stream) SetReadDeadline(t time.Time) error {
 	if t.IsZero() {
 		s.readTimeout = 0
@@ -487,7 +457,6 @@ func (s *Stream) SetReadDeadline(t time.Time) error {
 	return nil
 }
 
-// 🆕 NEW: SetWriteDeadline
 func (s *Stream) SetWriteDeadline(t time.Time) error {
 	if t.IsZero() {
 		s.writeTimeout = 0
@@ -497,14 +466,12 @@ func (s *Stream) SetWriteDeadline(t time.Time) error {
 	return nil
 }
 
-// 🆕 NEW: SetDeadline
 func (s *Stream) SetDeadline(t time.Time) error {
 	s.SetReadDeadline(t)
 	s.SetWriteDeadline(t)
 	return nil
 }
 
-// 🆕 NEW: Stats آمار stream
 func (s *Stream) Stats() StreamStats {
 	return StreamStats{
 		ID:        s.id,
@@ -515,7 +482,6 @@ func (s *Stream) Stats() StreamStats {
 	}
 }
 
-// 🆕 NEW: StreamStats
 type StreamStats struct {
 	ID        uint32
 	BytesSent uint64
@@ -523,10 +489,6 @@ type StreamStats struct {
 	Age       time.Duration
 	Closed    bool
 }
-
-// ═══════════════════════════════════════
-// RelayStream (بدون تغییر)
-// ═══════════════════════════════════════
 
 func RelayStream(stream *Stream, conn net.Conn) {
 	ch := make(chan error, 2)
@@ -570,10 +532,6 @@ func RelayStream(stream *Stream, conn net.Conn) {
 	conn.Close()
 	<-ch
 }
-
-// ═══════════════════════════════════════
-// Helper
-// ═══════════════════════════════════════
 
 func randomMuxInt(min, max int) int {
 	if max <= min {
