@@ -23,15 +23,13 @@ const (
 	maxEncryptedSize = 1024 * 1024
 	maxSendSize      = maxEncryptedSize
 
-	keyRotationMsgThreshold  uint64 = 1 << 30  // 1 میلیارد پیام
-	keyRotationByteThreshold uint64 = 64 << 30 // 64 گیگابایت
+	keyRotationMsgThreshold  uint64 = 1 << 30
+	keyRotationByteThreshold uint64 = 64 << 30
 	
-	// 🆕 NEW: تنظیمات timeout
 	defaultHandshakeTimeout = 30 * time.Second
 	defaultReadTimeout      = 60 * time.Second
 	defaultWriteTimeout     = 30 * time.Second
 	
-	// 🆕 NEW: تنظیمات replay window
 	defaultReplayWindowSize = 64
 )
 
@@ -55,7 +53,6 @@ func putLenBuf(b []byte) {
 	}
 }
 
-// SecureConn یک اتصال رمزنگاری شده با PSK authentication
 type SecureConn struct {
 	raw         net.Conn
 	sendCipher  *crypto.AEADCipher
@@ -64,7 +61,6 @@ type SecureConn struct {
 	sendMu      sync.Mutex
 	recvMu      sync.Mutex
 	
-	// 🆕 CHANGED: استفاده از ReplayWindow به جای simple lastSeqNum
 	replayWindow *protocol.ReplayWindow
 	
 	sendMsgCount  atomic.Uint64
@@ -72,38 +68,32 @@ type SecureConn struct {
 	sendByteCount atomic.Uint64
 	recvByteCount atomic.Uint64
 	
-	// 🆕 NEW: timeout settings
 	readTimeout  time.Duration
 	writeTimeout time.Duration
 	
-	// 🆕 NEW: connection metadata
 	isServer     bool
 	peerAddr     net.Addr
 	established  time.Time
 
-	maxPadding     int  //
+	maxPadding     int
 	paddingEnabled bool
 }
 
-// HandshakeConfig پیکربندی handshake
 type HandshakeConfig struct {
 	PSK              []byte
-	HandshakeTimeout time.Duration // 🆕 NEW
-	ReadTimeout      time.Duration // 🆕 NEW
-	WriteTimeout     time.Duration // 🆕 NEW
-	ReplayWindowSize uint32        // 🆕 NEW
-	MaxPadding     int  
+	HandshakeTimeout time.Duration
+	ReadTimeout      time.Duration
+	WriteTimeout     time.Duration
+	ReplayWindowSize uint32
+	MaxPadding     int
 	PaddingEnabled bool
 }
 
-// Handshake انجام PSK handshake و ایجاد SecureConn
-// ✅ بهبود یافته: اضافه شده obfuscation برای جلوگیری از DPI fingerprinting
 func Handshake(raw net.Conn, isServer bool, cfg *HandshakeConfig) (*SecureConn, error) {
 	if cfg == nil {
 		cfg = &HandshakeConfig{}
 	}
 
-	// تنظیم مقادیر پیش‌فرض
 	if len(cfg.PSK) == 0 {
 		return nil, fmt.Errorf("guarch: PSK is required for secure handshake")
 	}
@@ -120,14 +110,12 @@ func Handshake(raw net.Conn, isServer bool, cfg *HandshakeConfig) (*SecureConn, 
 		cfg.ReplayWindowSize = defaultReplayWindowSize
 	}
 
-	// تنظیم timeout برای handshake
 	deadline := time.Now().Add(cfg.HandshakeTimeout)
 	if err := raw.SetDeadline(deadline); err != nil {
 		return nil, fmt.Errorf("guarch: set handshake deadline: %w", err)
 	}
 	defer raw.SetDeadline(time.Time{})
 
-	// تولید keypair
 	kp, err := crypto.GenerateKeyPair()
 	if err != nil {
 		return nil, fmt.Errorf("guarch: keygen: %w", err)
@@ -135,45 +123,40 @@ func Handshake(raw net.Conn, isServer bool, cfg *HandshakeConfig) (*SecureConn, 
 	defer kp.Zeroize()
 
 	var peerPub []byte
-
-	// ═══════════════════════════════════════════════════════════
-	// ✅ اصلاح: تبادل obfuscated public keys
-	// الگو: [2B padLen][padding][32B key]
-	// ═══════════════════════════════════════════════════════════
 	
 	if isServer {
-		// 1️⃣ Server دریافت client key با padding
 		peerPub, err = receiveObfuscatedKey(raw)
 		if err != nil {
+			if err == io.EOF {
+				return nil, io.EOF
+			}
 			return nil, fmt.Errorf("guarch: read client key: %w", err)
 		}
 		
-		// 2️⃣ Server ارسال server key با padding
 		if err := sendObfuscatedKey(raw, kp.PublicKey[:]); err != nil {
 			return nil, fmt.Errorf("guarch: send server key: %w", err)
 		}
 		
 	} else {
-		// 1️⃣ Client ارسال client key با padding
 		if err := sendObfuscatedKey(raw, kp.PublicKey[:]); err != nil {
 			return nil, fmt.Errorf("guarch: send client key: %w", err)
 		}
 		
-		// 2️⃣ Client دریافت server key با padding
 		peerPub, err = receiveObfuscatedKey(raw)
 		if err != nil {
+			if err == io.EOF {
+				return nil, io.EOF
+			}
 			return nil, fmt.Errorf("guarch: read server key: %w", err)
 		}
 	}
 
-	// محاسبه shared secret
 	sharedRaw, err := kp.SharedSecret(peerPub)
 	if err != nil {
 		return nil, fmt.Errorf("guarch: shared secret: %w", err)
 	}
 	defer crypto.ZeroizeBytes(sharedRaw)
 
-	// استخراج کلیدهای جداگانه برای send و recv
 	sendInfo := "guarch-client-send-v1"
 	recvInfo := "guarch-server-send-v1"
 	if isServer {
@@ -193,14 +176,12 @@ func Handshake(raw net.Conn, isServer bool, cfg *HandshakeConfig) (*SecureConn, 
 	}
 	defer crypto.ZeroizeBytes(recvKey)
 
-	// کلید authentication
 	authKey, err := crypto.DeriveKey(sharedRaw, cfg.PSK, []byte("guarch-auth-v1"))
 	if err != nil {
 		return nil, fmt.Errorf("guarch: auth key: %w", err)
 	}
 	defer crypto.ZeroizeBytes(authKey)
 
-	// ساخت cipherها
 	sendCipher, err := crypto.NewAEADCipher(sendKey)
 	if err != nil {
 		return nil, fmt.Errorf("guarch: send cipher: %w", err)
@@ -211,7 +192,6 @@ func Handshake(raw net.Conn, isServer bool, cfg *HandshakeConfig) (*SecureConn, 
 		return nil, fmt.Errorf("guarch: recv cipher: %w", err)
 	}
 
-	// ساخت replay window
 	replayWindow := protocol.NewReplayWindow(cfg.ReplayWindowSize)
 
 	sc := &SecureConn{
@@ -228,7 +208,6 @@ func Handshake(raw net.Conn, isServer bool, cfg *HandshakeConfig) (*SecureConn, 
 		paddingEnabled: cfg.PaddingEnabled,
 	}
 
-	// PSK authentication
 	if err := sc.authenticate(isServer, authKey); err != nil {
 		return nil, err
 	}
@@ -236,29 +215,18 @@ func Handshake(raw net.Conn, isServer bool, cfg *HandshakeConfig) (*SecureConn, 
 	return sc, nil
 }
 
-// ═══════════════════════════════════════════════════════════
-// ✅ توابع کمکی جدید برای obfuscation
-// ═══════════════════════════════════════════════════════════
-
-// sendObfuscatedKey ارسال public key با random padding
-// Format: [2 bytes: padLen][padding][32 bytes: key]
 func sendObfuscatedKey(w io.Writer, key []byte) error {
 	if len(key) != crypto.PublicKeySize {
 		return fmt.Errorf("guarch: invalid key size: %d", len(key))
 	}
 	
-	// ═══════════════════════════════════════════════════════════
-	// تولید random padding (32-160 bytes)
-	// این باعث میشه هر handshake سایز متفاوتی داشته باشه
-	// ═══════════════════════════════════════════════════════════
-	padLen := uint16(cryptoRandIntn(128) + 32)  // 32-160 bytes
+	padLen := uint16(cryptoRandIntn(128) + 32)
 	padding := make([]byte, padLen)
 	
 	if _, err := rand.Read(padding); err != nil {
 		return fmt.Errorf("guarch: padding random: %w", err)
 	}
 	
-	// ارسال: [2B length][padding][32B key]
 	lenBuf := make([]byte, 2)
 	binary.BigEndian.PutUint16(lenBuf, padLen)
 	
@@ -275,31 +243,27 @@ func sendObfuscatedKey(w io.Writer, key []byte) error {
 	return nil
 }
 
-// receiveObfuscatedKey دریافت public key با random padding
-// Format: [2 bytes: padLen][padding][32 bytes: key]
 func receiveObfuscatedKey(r io.Reader) ([]byte, error) {
-	// 1️⃣ خواندن padding length
 	lenBuf := make([]byte, 2)
-	if _, err := io.ReadFull(r, lenBuf); err != nil {
+	n, err := io.ReadFull(r, lenBuf)
+	if err != nil {
+		if err == io.EOF && n == 0 {
+			return nil, io.EOF
+		}
 		return nil, fmt.Errorf("guarch: read pad length: %w", err)
 	}
 	
 	padLen := binary.BigEndian.Uint16(lenBuf)
 	
-	// ═══════════════════════════════════════════════════════════
-	// Validation: جلوگیری از حملات DoS با padding خیلی بزرگ
-	// ═══════════════════════════════════════════════════════════
 	if padLen < 32 || padLen > 256 {
 		return nil, fmt.Errorf("guarch: invalid padding length: %d (must be 32-256)", padLen)
 	}
 	
-	// 2️⃣ خواندن و دور انداختن padding (نیازی به ذخیره نیست)
 	padding := make([]byte, padLen)
 	if _, err := io.ReadFull(r, padding); err != nil {
 		return nil, fmt.Errorf("guarch: read padding: %w", err)
 	}
 	
-	// 3️⃣ خواندن key اصلی
 	key := make([]byte, crypto.PublicKeySize)
 	if _, err := io.ReadFull(r, key); err != nil {
 		return nil, fmt.Errorf("guarch: read key: %w", err)
@@ -308,7 +272,6 @@ func receiveObfuscatedKey(r io.Reader) ([]byte, error) {
 	return key, nil
 }
 
-// cryptoRandIntn تولید عدد تصادفی crypto-secure
 func cryptoRandIntn(n int) int {
 	if n <= 0 {
 		return 0
@@ -317,7 +280,6 @@ func cryptoRandIntn(n int) int {
 	max := big.NewInt(int64(n))
 	val, err := rand.Int(rand.Reader, max)
 	if err != nil {
-		// fallback به crypto/rand.Read
 		b := make([]byte, 4)
 		rand.Read(b)
 		return int(binary.BigEndian.Uint32(b)) % n
@@ -326,10 +288,8 @@ func cryptoRandIntn(n int) int {
 	return int(val.Int64())
 }
 
-// authenticate تایید PSK با HMAC
 func (sc *SecureConn) authenticate(isServer bool, key []byte) error {
 	if isServer {
-		// سرور: دریافت client auth
 		authData, err := sc.Recv()
 		if err != nil {
 			return fmt.Errorf("guarch: auth read: %w", err)
@@ -338,17 +298,14 @@ func (sc *SecureConn) authenticate(isServer bool, key []byte) error {
 		if !hmac.Equal(authData, expected) {
 			return protocol.ErrAuthFailed
 		}
-		// ارسال server auth
 		serverAuth := computeAuthMAC(key, "server")
 		return sc.Send(serverAuth)
 	}
 
-	// کلاینت: ارسال client auth
 	clientAuth := computeAuthMAC(key, "client")
 	if err := sc.Send(clientAuth); err != nil {
 		return err
 	}
-	// دریافت server auth
 	authData, err := sc.Recv()
 	if err != nil {
 		return fmt.Errorf("guarch: auth read: %w", err)
@@ -360,19 +317,16 @@ func (sc *SecureConn) authenticate(isServer bool, key []byte) error {
 	return nil
 }
 
-// SendSeqNum برگرداندن sequence number فعلی send
 func (sc *SecureConn) SendSeqNum() uint32 {
 	return atomic.LoadUint32(&sc.sendSeq)
 }
 
-// computeAuthMAC محاسبه HMAC برای authentication
 func computeAuthMAC(key []byte, role string) []byte {
 	mac := hmac.New(sha256.New, key)
 	mac.Write([]byte("guarch-auth-v1-" + role))
 	return mac.Sum(nil)
 }
 
-// checkSendKeyUsage بررسی محدودیت استفاده از کلید send
 func (sc *SecureConn) checkSendKeyUsage(dataLen int) error {
 	msgs := sc.sendMsgCount.Add(1)
 	bytes := sc.sendByteCount.Add(uint64(dataLen))
@@ -388,7 +342,6 @@ func (sc *SecureConn) checkSendKeyUsage(dataLen int) error {
 	return nil
 }
 
-// checkRecvKeyUsage بررسی محدودیت استفاده از کلید recv
 func (sc *SecureConn) checkRecvKeyUsage(dataLen int) error {
 	msgs := sc.recvMsgCount.Add(1)
 	bytes := sc.recvByteCount.Add(uint64(dataLen))
@@ -402,7 +355,6 @@ func (sc *SecureConn) checkRecvKeyUsage(dataLen int) error {
 	return nil
 }
 
-// sendRaw ارسال یک packet رمز شده
 func (sc *SecureConn) sendRaw(pkt *protocol.Packet) error {
 	data, err := pkt.Marshal()
 	if err != nil {
@@ -428,7 +380,6 @@ func (sc *SecureConn) sendRaw(pkt *protocol.Packet) error {
 		return err
 	}
 
-	// 🆕 ADDED: تنظیم write timeout
 	if sc.writeTimeout > 0 {
 		sc.raw.SetWriteDeadline(time.Now().Add(sc.writeTimeout))
 		defer sc.raw.SetWriteDeadline(time.Time{})
@@ -444,14 +395,12 @@ func (sc *SecureConn) sendRaw(pkt *protocol.Packet) error {
 	return err
 }
 
-// SendPacket ارسال یک packet
 func (sc *SecureConn) SendPacket(pkt *protocol.Packet) error {
 	sc.sendMu.Lock()
 	defer sc.sendMu.Unlock()
 	return sc.sendRaw(pkt)
 }
 
-// Send encrypts and sends data with smart padding
 func (sc *SecureConn) Send(data []byte) error {
 	sc.sendMu.Lock()
 	defer sc.sendMu.Unlock()
@@ -462,9 +411,7 @@ func (sc *SecureConn) Send(data []byte) error {
 	var pkt *protocol.Packet
 	var err error
 	
-	// Use smart padding if enabled
 	if sc.paddingEnabled && sc.maxPadding > 0 {
-		// Calculate padding using SmartPadder logic
 		padder := cover.NewSmartPadder(sc.maxPadding, nil)
 		paddingSize := padder.Calculate(len(data))
 		targetSize := protocol.HeaderSize + len(data) + paddingSize
@@ -480,13 +427,10 @@ func (sc *SecureConn) Send(data []byte) error {
 	return sc.sendRaw(pkt)
 }
 
-// RecvPacket دریافت یک packet
-// 🆕 بهبود یافته: استفاده از ReplayWindow به جای simple check
 func (sc *SecureConn) RecvPacket() (*protocol.Packet, error) {
 	sc.recvMu.Lock()
 	defer sc.recvMu.Unlock()
 
-	// 🆕 ADDED: تنظیم read timeout
 	if sc.readTimeout > 0 {
 		sc.raw.SetReadDeadline(time.Now().Add(sc.readTimeout))
 		defer sc.raw.SetReadDeadline(time.Time{})
@@ -526,7 +470,6 @@ func (sc *SecureConn) RecvPacket() (*protocol.Packet, error) {
 		return nil, err
 	}
 
-	// 🆕 IMPROVED: استفاده از ReplayWindow برای replay protection
 	if pkt.Type == protocol.PacketTypeData && pkt.SeqNum > 0 {
 		if err := sc.replayWindow.Check(pkt.SeqNum); err != nil {
 			return nil, fmt.Errorf("guarch: %w", err)
@@ -536,7 +479,6 @@ func (sc *SecureConn) RecvPacket() (*protocol.Packet, error) {
 	return pkt, nil
 }
 
-// Recv دریافت data (از DATA packet)
 func (sc *SecureConn) Recv() ([]byte, error) {
 	pkt, err := sc.RecvPacket()
 	if err != nil {
@@ -548,34 +490,28 @@ func (sc *SecureConn) Recv() ([]byte, error) {
 	return pkt.Payload, nil
 }
 
-// Close بستن اتصال
 func (sc *SecureConn) Close() error {
 	return sc.raw.Close()
 }
 
-// RemoteAddr آدرس طرف مقابل
 func (sc *SecureConn) RemoteAddr() net.Addr {
 	return sc.peerAddr
 }
 
-// LocalAddr آدرس محلی
 func (sc *SecureConn) LocalAddr() net.Addr {
 	return sc.raw.LocalAddr()
 }
 
-// NeedsRotation چک کردن نیاز به key rotation
 func (sc *SecureConn) NeedsRotation() bool {
 	warn := keyRotationMsgThreshold * 90 / 100
 	return sc.sendMsgCount.Load() > warn || sc.recvMsgCount.Load() > warn
 }
 
-// KeyUsageStats آمار استفاده از کلید
 func (sc *SecureConn) KeyUsageStats() (sendMsgs, recvMsgs, sendBytes, recvBytes uint64) {
 	return sc.sendMsgCount.Load(), sc.recvMsgCount.Load(),
 		sc.sendByteCount.Load(), sc.recvByteCount.Load()
 }
 
-// 🆕 NEW FUNCTION: دریافت اطلاعات اتصال
 func (sc *SecureConn) ConnectionInfo() ConnectionInfo {
 	sendM, recvM, sendB, recvB := sc.KeyUsageStats()
 	return ConnectionInfo{
@@ -592,7 +528,6 @@ func (sc *SecureConn) ConnectionInfo() ConnectionInfo {
 	}
 }
 
-// 🆕 NEW TYPE: اطلاعات اتصال
 type ConnectionInfo struct {
 	IsServer      bool
 	PeerAddr      string
@@ -606,7 +541,6 @@ type ConnectionInfo struct {
 	NeedsRotation bool
 }
 
-// 🆕 NEW FUNCTION: ریست کردن replay window (برای reconnect)
 func (sc *SecureConn) ResetReplayWindow() {
 	sc.recvMu.Lock()
 	defer sc.recvMu.Unlock()
