@@ -22,7 +22,7 @@ func NewDirectTransport(cfg *Config) *DirectTransport {
 func (d *DirectTransport) Dial(ctx context.Context) (net.Conn, error) {
 	address := fmt.Sprintf("%s:%d", d.config.Host, d.config.Port)
 	
-	timeout := time.Duration(d.config.DialTimeout) * time.Second
+	timeout := d.config.DialTimeout
 	if timeout == 0 {
 		timeout = 30 * time.Second
 	}
@@ -49,7 +49,7 @@ func (d *DirectTransport) Dial(ctx context.Context) (net.Conn, error) {
 		
 		tlsConn := tls.Client(conn, tlsConfig)
 		
-		handshakeTimeout := time.Duration(d.config.HandshakeTimeout) * time.Second
+		handshakeTimeout := d.config.HandshakeTimeout
 		if handshakeTimeout == 0 {
 			handshakeTimeout = 15 * time.Second
 		}
