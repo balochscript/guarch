@@ -1,98 +1,101 @@
 package transport
 
 import (
-    "context"
-    "fmt"
-    "net"
-    "time"
+	"context"
+	"fmt"
+	"net"
+	"time"
 
-    "guarch/pkg/core/dns"
+	"guarch/pkg/core/dns"
 )
 
 type DNSTransport struct {
-    config  *Config
-    wrapper *dns.StreamWrapper
-    client  *dns.Client
+	config  *Config
+	wrapper *dns.StreamWrapper
+	client  *dns.Client
 }
 
 func NewDNSTransport(cfg *Config) *DNSTransport {
-    return &DNSTransport{
-        config: cfg,
-    }
+	return &DNSTransport{
+		config: cfg,
+	}
 }
 
 func (d *DNSTransport) Dial(ctx context.Context) (net.Conn, error) {
-    if d.config.Host == "" {
-        return nil, fmt.Errorf("dns transport: domain not specified")
-    }
+	if d.config.Host == "" {
+		return nil, fmt.Errorf("dns transport: domain not specified")
+	}
 
-    servers := []string{"8.8.8.8:53", "1.1.1.1:53"}
+	servers := d.config.DNSServers
+	if len(servers) == 0 {
+		servers = []string{"8.8.8.8:53", "1.1.1.1:53"}
+	}
 
-    dnsCfg := &dns.ClientConfig{
-        Domain:     d.config.Host,
-        DNSServers: servers,
-        Timeout:    10 * time.Second,
-    }
+	dnsCfg := &dns.ClientConfig{
+		Domain:     d.config.Host,
+		DNSServers: servers,
+		Timeout:    10 * time.Second,
+	}
 
-    client, err := dns.NewClient(dnsCfg)
-    if err != nil {
-        return nil, fmt.Errorf("dns transport: client creation failed: %w", err)
-    }
+	client, err := dns.NewClient(dnsCfg)
+	if err != nil {
+		return nil, fmt.Errorf("dns transport: client creation failed: %w", err)
+	}
 
-    sessionID := uint32(time.Now().Unix())
+	sessionID := uint32(time.Now().Unix())
 
-    streamCfg := dns.DefaultStreamConfig()
-    wrapper := dns.NewStreamWrapperWithConfig(client, sessionID, streamCfg)
+	streamCfg := dns.DefaultStreamConfig()
+	wrapper := dns.NewStreamWrapperWithConfig(client, sessionID, streamCfg)
 
-    d.client = client
-    d.wrapper = wrapper
+	d.client = client
+	d.wrapper = wrapper
 
-    return &dnsConn{wrapper: wrapper}, nil
+	return &dnsConn{wrapper: wrapper}, nil
 }
 
 func (d *DNSTransport) Name() string {
-    return "dns"
+	return "dns"
 }
 
 func (d *DNSTransport) Close() error {
-    if d.wrapper != nil {
-        return d.wrapper.Close()
-    }
-    return nil
+	if d.wrapper != nil {
+		return d.wrapper.Close()
+	}
+	return nil
 }
 
 type dnsConn struct {
-    wrapper *dns.StreamWrapper
+	wrapper *dns.StreamWrapper
 }
 
 func (c *dnsConn) Read(b []byte) (n int, err error) {
-    return c.wrapper.Read(b)
+	return c.wrapper.Read(b)
 }
 
 func (c *dnsConn) Write(b []byte) (n int, err error) {
-    return c.wrapper.Write(b)
+	return c.wrapper.Write(b)
 }
 
 func (c *dnsConn) Close() error {
-    return c.wrapper.Close()
+	return c.wrapper.Close()
 }
 
 func (c *dnsConn) LocalAddr() net.Addr {
-    return &net.TCPAddr{IP: net.IPv4zero, Port: 0}
+	return &net.TCPAddr{IP: net.IPv4zero, Port: 0}
 }
 
 func (c *dnsConn) RemoteAddr() net.Addr {
-    return &net.TCPAddr{IP: net.IPv4zero, Port: 0}
+	return &net.TCPAddr{IP: net.IPv4zero, Port: 0}
 }
 
 func (c *dnsConn) SetDeadline(t time.Time) error {
-    return c.wrapper.SetDeadline(t)
+	return c.wrapper.SetDeadline(t)
 }
 
 func (c *dnsConn) SetReadDeadline(t time.Time) error {
-    return c.wrapper.SetReadDeadline(t)
+	return c.wrapper.SetReadDeadline(t)
 }
 
 func (c *dnsConn) SetWriteDeadline(t time.Time) error {
-    return c.wrapper.SetWriteDeadline(t)
+	return c.wrapper.SetWriteDeadline(t)
 }
