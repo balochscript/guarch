@@ -121,7 +121,7 @@ func (c *Connector) dialWithConfig(ctx context.Context, transportCfg *transport.
 func (c *Connector) wrapTLS(conn net.Conn, serverName string, handshakeTimeout time.Duration) (net.Conn, error) {
 	tlsConfig := &tls.Config{
 		MinVersion:         tls.VersionTLS13,
-		InsecureSkipVerify: c.certPin == "",
+		InsecureSkipVerify: true,
 		ServerName:         serverName,
 	}
 
@@ -134,7 +134,7 @@ func (c *Connector) wrapTLS(conn net.Conn, serverName string, handshakeTimeout t
 			hash := sha256.Sum256(rawCerts[0])
 			got := hex.EncodeToString(hash[:])
 			if got != expectedPin {
-				return fmt.Errorf("certificate PIN mismatch")
+				return fmt.Errorf("certificate PIN mismatch: expected %s, got %s", expectedPin, got)
 			}
 			return nil
 		}
@@ -159,6 +159,7 @@ func (c *Connector) getTransportConfig() *transport.Config {
 			Host:             host,
 			Port:             port,
 			UseTLS:           true,
+			DNSServers:       []string{"8.8.8.8:53", "1.1.1.1:53"},
 			FallbackOrder:    []string{},
 			DialTimeout:      30 * time.Second,
 			HandshakeTimeout: 15 * time.Second,
@@ -179,7 +180,8 @@ func (c *Connector) getTransportConfig() *transport.Config {
 
 	port := tc.Port
 	if port == 0 {
-		port = 443
+		_, portFromAddr := parseAddress(c.config.Server.Address)
+		port = portFromAddr
 	}
 
 	var dialTimeout time.Duration
@@ -201,6 +203,13 @@ func (c *Connector) getTransportConfig() *transport.Config {
 		useTLS = true
 	}
 
+	var dnsServers []string
+	if c.config.DNS != nil && len(c.config.DNS.Servers) > 0 {
+		dnsServers = c.config.DNS.Servers
+	} else {
+		dnsServers = []string{"8.8.8.8:53", "1.1.1.1:53"}
+	}
+
 	return &transport.Config{
 		Type:             typ,
 		Host:             host,
@@ -208,6 +217,7 @@ func (c *Connector) getTransportConfig() *transport.Config {
 		Path:             tc.Path,
 		UseTLS:           useTLS,
 		Headers:          tc.Headers,
+		DNSServers:       dnsServers,
 		FallbackOrder:    tc.FallbackOrder,
 		DialTimeout:      dialTimeout,
 		HandshakeTimeout: handshakeTimeout,
@@ -224,6 +234,7 @@ func (c *Connector) createFallbackConfig(transportType string) *transport.Config
 		Path:             baseCfg.Path,
 		UseTLS:           baseCfg.UseTLS,
 		Headers:          baseCfg.Headers,
+		DNSServers:       baseCfg.DNSServers,
 		FallbackOrder:    baseCfg.FallbackOrder,
 		DialTimeout:      baseCfg.DialTimeout,
 		HandshakeTimeout: baseCfg.HandshakeTimeout,
