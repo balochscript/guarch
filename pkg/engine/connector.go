@@ -76,7 +76,7 @@ func (c *Connector) DialWithFallback(ctx context.Context) (net.Conn, error) {
 }
 
 func (c *Connector) dialWithConfig(ctx context.Context, transportCfg *transport.Config) (net.Conn, error) {
-	log.Printf("[connector] attempting connection via %s transport", transportCfg.Type)
+	log.Printf("[connector] attempting connection via %s transport to %s:%d", transportCfg.Type, transportCfg.Host, transportCfg.Port)
 
 	t, err := c.factory.Create(transportCfg)
 	if err != nil {
@@ -152,8 +152,9 @@ func (c *Connector) wrapTLS(conn net.Conn, serverName string, handshakeTimeout t
 }
 
 func (c *Connector) getTransportConfig() *transport.Config {
+	host, port := parseAddress(c.config.Server.Address)
+
 	if c.config.Transport == nil {
-		host, port := parseAddress(c.config.Server.Address)
 		return &transport.Config{
 			Type:             "direct",
 			Host:             host,
@@ -173,15 +174,14 @@ func (c *Connector) getTransportConfig() *transport.Config {
 		typ = "direct"
 	}
 
-	host := tc.Host
-	if host == "" {
-		host, _ = parseAddress(c.config.Server.Address)
+	cfgHost := tc.Host
+	if cfgHost == "" {
+		cfgHost = host
 	}
 
-	port := tc.Port
-	if port == 0 {
-		_, portFromAddr := parseAddress(c.config.Server.Address)
-		port = portFromAddr
+	cfgPort := tc.Port
+	if cfgPort == 0 {
+		cfgPort = port
 	}
 
 	var dialTimeout time.Duration
@@ -212,8 +212,8 @@ func (c *Connector) getTransportConfig() *transport.Config {
 
 	return &transport.Config{
 		Type:             typ,
-		Host:             host,
-		Port:             port,
+		Host:             cfgHost,
+		Port:             cfgPort,
 		Path:             tc.Path,
 		UseTLS:           useTLS,
 		Headers:          tc.Headers,
