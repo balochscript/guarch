@@ -204,7 +204,7 @@ func (c *Connector) getTransportConfig() *transport.Config {
 	}
 
 	var dnsServers []string
-	if c.config.DNS != nil && len(c.config.DNS.Servers) > 0 {
+	if len(c.config.DNS.Servers) > 0 {
 		dnsServers = c.config.DNS.Servers
 	} else {
 		dnsServers = []string{"8.8.8.8:53", "1.1.1.1:53"}
