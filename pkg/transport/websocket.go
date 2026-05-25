@@ -59,7 +59,7 @@ func (w *WebSocketTransport) Dial(ctx context.Context) (net.Conn, error) {
 	if w.config.UseTLS {
 		dialer.TLSClientConfig = &tls.Config{
 			ServerName:         w.config.Host,
-			InsecureSkipVerify: false,
+			InsecureSkipVerify: true,
 			MinVersion:         tls.VersionTLS12,
 		}
 	}
