@@ -7,6 +7,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
+	"log"
 	"math/big"
 	"net"
 	"sync"
@@ -14,7 +15,6 @@ import (
 	"time"
 
 	"guarch/pkg/crypto"
-	glog "guarch/pkg/log"
 	"guarch/pkg/protocol"
 	"guarch/pkg/cover"
 )
@@ -97,6 +97,14 @@ func Handshake(raw net.Conn, isServer bool, cfg *HandshakeConfig) (*SecureConn, 
 	if len(cfg.PSK) == 0 {
 		return nil, fmt.Errorf("guarch: PSK is required for secure handshake")
 	}
+	
+	role := "CLIENT"
+	if isServer {
+		role = "SERVER"
+	}
+	log.Printf("[handshake:%s] Starting (PSK len: %d, maxPadding: %d, enabled: %v)", 
+		role, len(cfg.PSK), cfg.MaxPadding, cfg.PaddingEnabled)
+	
 	if cfg.HandshakeTimeout == 0 {
 		cfg.HandshakeTimeout = defaultHandshakeTimeout
 	}
@@ -125,30 +133,42 @@ func Handshake(raw net.Conn, isServer bool, cfg *HandshakeConfig) (*SecureConn, 
 	var peerPub []byte
 	
 	if isServer {
+		log.Printf("[handshake:SERVER] waiting for client key...")
 		peerPub, err = receiveObfuscatedKey(raw)
 		if err != nil {
 			if err == io.EOF {
+				log.Printf("[handshake:SERVER] client disconnected during key exchange")
 				return nil, io.EOF
 			}
+			log.Printf("[handshake:SERVER] ❌ failed to receive client key: %v", err)
 			return nil, fmt.Errorf("guarch: read client key: %w", err)
 		}
+		log.Printf("[handshake:SERVER] ✅ client key received, sending server key...")
 		
 		if err := sendObfuscatedKey(raw, kp.PublicKey[:]); err != nil {
+			log.Printf("[handshake:SERVER] ❌ failed to send server key: %v", err)
 			return nil, fmt.Errorf("guarch: send server key: %w", err)
 		}
+		log.Printf("[handshake:SERVER] ✅ server key sent successfully")
 		
 	} else {
+		log.Printf("[handshake:CLIENT] sending client key...")
 		if err := sendObfuscatedKey(raw, kp.PublicKey[:]); err != nil {
+			log.Printf("[handshake:CLIENT] ❌ failed to send key: %v", err)
 			return nil, fmt.Errorf("guarch: send client key: %w", err)
 		}
+		log.Printf("[handshake:CLIENT] ✅ client key sent, waiting for server key...")
 		
 		peerPub, err = receiveObfuscatedKey(raw)
 		if err != nil {
 			if err == io.EOF {
+				log.Printf("[handshake:CLIENT] server disconnected during key exchange")
 				return nil, io.EOF
 			}
+			log.Printf("[handshake:CLIENT] ❌ failed to receive server key: %v", err)
 			return nil, fmt.Errorf("guarch: read server key: %w", err)
 		}
+		log.Printf("[handshake:CLIENT] ✅ server key received successfully")
 	}
 
 	sharedRaw, err := kp.SharedSecret(peerPub)
@@ -208,10 +228,13 @@ func Handshake(raw net.Conn, isServer bool, cfg *HandshakeConfig) (*SecureConn, 
 		paddingEnabled: cfg.PaddingEnabled,
 	}
 
+	log.Printf("[handshake:%s] performing authentication...", role)
 	if err := sc.authenticate(isServer, authKey); err != nil {
+		log.Printf("[handshake:%s] ❌ authentication failed: %v", role, err)
 		return nil, err
 	}
 
+	log.Printf("[handshake:%s] ✅ handshake completed successfully", role)
 	return sc, nil
 }
 
@@ -229,6 +252,8 @@ func sendObfuscatedKey(w io.Writer, key []byte) error {
 	
 	lenBuf := make([]byte, 2)
 	binary.BigEndian.PutUint16(lenBuf, padLen)
+	
+	log.Printf("[handshake] → sending obfuscated key: padLen=%d keySize=%d", padLen, len(key))
 	
 	if _, err := w.Write(lenBuf); err != nil {
 		return err
@@ -255,8 +280,16 @@ func receiveObfuscatedKey(r io.Reader) ([]byte, error) {
 	
 	padLen := binary.BigEndian.Uint16(lenBuf)
 	
+	log.Printf("[handshake] ← received pad length: %d (raw bytes: 0x%02x%02x)", padLen, lenBuf[0], lenBuf[1])
+	
 	if padLen < 32 || padLen > 256 {
-		return nil, fmt.Errorf("guarch: invalid padding length: %d (must be 32-256)", padLen)
+		log.Printf("[handshake] ❌ INVALID PADDING: %d (expected 32-256)", padLen)
+		log.Printf("[handshake] ❌ This likely means:")
+		log.Printf("[handshake]    - PSK mismatch between client and server")
+		log.Printf("[handshake]    - Wrong protocol version")
+		log.Printf("[handshake]    - Network corruption")
+		log.Printf("[handshake]    - Client sent wrong data")
+		return nil, fmt.Errorf("guarch: invalid padding length: %d (must be 32-256) - CHECK PSK!", padLen)
 	}
 	
 	padding := make([]byte, padLen)
@@ -268,6 +301,8 @@ func receiveObfuscatedKey(r io.Reader) ([]byte, error) {
 	if _, err := io.ReadFull(r, key); err != nil {
 		return nil, fmt.Errorf("guarch: read key: %w", err)
 	}
+	
+	log.Printf("[handshake] ✅ successfully received key (size: %d)", len(key))
 	
 	return key, nil
 }
@@ -296,8 +331,11 @@ func (sc *SecureConn) authenticate(isServer bool, key []byte) error {
 		}
 		expected := computeAuthMAC(key, "client")
 		if !hmac.Equal(authData, expected) {
+			log.Printf("[handshake:SERVER] ❌ PSK MISMATCH - client authentication failed")
+			log.Printf("[handshake:SERVER] Expected auth MAC length: %d, Got: %d", len(expected), len(authData))
 			return protocol.ErrAuthFailed
 		}
+		log.Printf("[handshake:SERVER] ✅ client authenticated successfully")
 		serverAuth := computeAuthMAC(key, "server")
 		return sc.Send(serverAuth)
 	}
@@ -312,8 +350,11 @@ func (sc *SecureConn) authenticate(isServer bool, key []byte) error {
 	}
 	expected := computeAuthMAC(key, "server")
 	if !hmac.Equal(authData, expected) {
+		log.Printf("[handshake:CLIENT] ❌ PSK MISMATCH - server authentication failed")
+		log.Printf("[handshake:CLIENT] Expected auth MAC length: %d, Got: %d", len(expected), len(authData))
 		return protocol.ErrAuthFailed
 	}
+	log.Printf("[handshake:CLIENT] ✅ server authenticated successfully")
 	return nil
 }
 
@@ -545,8 +586,4 @@ func (sc *SecureConn) ResetReplayWindow() {
 	sc.recvMu.Lock()
 	defer sc.recvMu.Unlock()
 	sc.replayWindow.Reset()
-}
-
-func init() {
-	_ = glog.LevelInfo
 }
