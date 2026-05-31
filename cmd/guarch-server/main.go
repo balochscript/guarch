@@ -413,6 +413,11 @@ func handleMultiProtocol(rawConn net.Conn, cfg *config.ServerConfig) {
 		return
 	}
 
+	if err := tlsConn.Handshake(); err != nil {
+		log.Printf("[multi-protocol] TLS handshake failed %s: %v", remoteAddr, err)
+		return
+	}
+
 	tlsConn.SetReadDeadline(time.Now().Add(10 * time.Second))
 	
 	br := bufio.NewReader(tlsConn)
