@@ -505,14 +505,18 @@ func computeWebSocketAccept(key string) string {
 }
 
 func handleHTTP2Direct(conn net.Conn, cfg *config.ServerConfig, remoteAddr string) {
+	listener := newSingleUseListener(conn)
+	
 	server := &http.Server{
 		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			defer listener.Close()
+			
 			if r.Header.Get("Content-Type") != "application/octet-stream" {
 				http.Error(w, "Invalid content type", http.StatusBadRequest)
 				return
 			}
 
-			log.Printf("[http2] tunnel from %s", remoteAddr)
+			log.Printf("[http2] tunnel established from %s", remoteAddr)
 
 			flusher, ok := w.(http.Flusher)
 			if !ok {
@@ -533,10 +537,12 @@ func handleHTTP2Direct(conn net.Conn, cfg *config.ServerConfig, remoteAddr strin
 
 			handleGuarchHandshake(h2Conn, cfg, remoteAddr)
 		}),
+		ReadTimeout:  60 * time.Second,
+		WriteTimeout: 60 * time.Second,
 	}
 
 	http2.ConfigureServer(server, &http2.Server{})
-	server.Serve(&singleConnListener{conn: conn})
+	server.Serve(listener)
 }
 
 func serveHTTPDecoy(conn net.Conn) {
@@ -829,25 +835,41 @@ func (bc *bufferedConn) Read(p []byte) (int, error) {
 	return bc.br.Read(p)
 }
 
-type singleConnListener struct {
-	conn net.Conn
-	once sync.Once
+type singleUseListener struct {
+	conn     net.Conn
+	accepted chan struct{}
+	closed   chan struct{}
 }
 
-func (l *singleConnListener) Accept() (net.Conn, error) {
-	var c net.Conn
-	l.once.Do(func() { c = l.conn })
-	if c != nil {
-		return c, nil
+func newSingleUseListener(conn net.Conn) *singleUseListener {
+	return &singleUseListener{
+		conn:     conn,
+		accepted: make(chan struct{}),
+		closed:   make(chan struct{}),
 	}
-	return nil, io.EOF
 }
 
-func (l *singleConnListener) Close() error {
+func (l *singleUseListener) Accept() (net.Conn, error) {
+	select {
+	case <-l.accepted:
+		<-l.closed
+		return nil, io.EOF
+	default:
+		close(l.accepted)
+		return l.conn, nil
+	}
+}
+
+func (l *singleUseListener) Close() error {
+	select {
+	case <-l.closed:
+	default:
+		close(l.closed)
+	}
 	return nil
 }
 
-func (l *singleConnListener) Addr() net.Addr {
+func (l *singleUseListener) Addr() net.Addr {
 	return l.conn.LocalAddr()
 }
 
