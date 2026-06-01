@@ -445,6 +445,11 @@ func isHTTPRequest(data []byte) bool {
 	if len(data) < 4 {
 		return false
 	}
+	
+	if len(data) >= 3 && string(data[:3]) == "PRI" {
+		return true
+	}
+	
 	methods := []string{"GET ", "POST", "PUT ", "HEAD", "DELE", "OPTI", "PATC", "CONN"}
 	prefix := string(data[:4])
 	for _, method := range methods {
@@ -493,7 +498,6 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request, cfg *config.ServerC
 		log.Printf("[websocket] upgrade failed %s: %v", remoteAddr, err)
 		return
 	}
-	defer ws.Close()
 	
 	log.Printf("[websocket] connection established from %s", remoteAddr)
 	
