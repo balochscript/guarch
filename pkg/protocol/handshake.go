@@ -24,7 +24,7 @@ type ConnectRequest struct {
 }
 
 func (cr *ConnectRequest) Address() string {
-	return fmt.Sprintf("%s:%d", cr.Addr, cr.Port)
+    return net.JoinHostPort(cr.Addr, fmt.Sprintf("%d", cr.Port))
 }
 
 func (cr *ConnectRequest) Marshal() ([]byte, error) {
