@@ -3,8 +3,10 @@ package main
 import (
 	"bufio"
 	"context"
+	"crypto/sha1"
 	"crypto/sha256"
 	"crypto/tls"
+	"encoding/base64"
 	"encoding/binary"
 	"encoding/hex"
 	"flag"
@@ -29,7 +31,6 @@ import (
 	"guarch/pkg/protocol"
 	"guarch/pkg/transport"
 	
-	"github.com/gorilla/websocket"
 	"golang.org/x/net/http2"
 )
 
@@ -46,14 +47,6 @@ var (
 	serverPSK     []byte
 	activeWg      sync.WaitGroup
 	maxConns      = make(chan struct{}, 1000)
-	
-	wsUpgrader = websocket.Upgrader{
-		ReadBufferSize:  32768,
-		WriteBufferSize: 32768,
-		CheckOrigin: func(r *http.Request) bool {
-			return true
-		},
-	}
 )
 
 func main() {
@@ -418,27 +411,46 @@ func handleMultiProtocol(rawConn net.Conn, cfg *config.ServerConfig) {
 		return
 	}
 
+	state := tlsConn.ConnectionState()
+	if state.NegotiatedProtocol == "h2" {
+		log.Printf("[multi-protocol] HTTP/2 (ALPN) from %s", remoteAddr)
+		handleHTTP2Direct(tlsConn, cfg, remoteAddr)
+		return
+	}
+
 	tlsConn.SetReadDeadline(time.Now().Add(10 * time.Second))
-	
 	br := bufio.NewReader(tlsConn)
-	firstBytes, err := br.Peek(16)
+	peek, err := br.Peek(16)
 	if err != nil {
 		if err != io.EOF {
 			log.Printf("[multi-protocol] peek failed %s: %v", remoteAddr, err)
 		}
 		return
 	}
-	
 	tlsConn.SetReadDeadline(time.Time{})
 
-	if isHTTPRequest(firstBytes) {
-		log.Printf("[multi-protocol] HTTP detected from %s", remoteAddr)
-		handleHTTP(tlsConn, br, cfg, remoteAddr)
-	} else {
-		log.Printf("[multi-protocol] Direct TLS detected from %s", remoteAddr)
-		wrappedConn := &bufferedConn{Conn: tlsConn, br: br}
-		handleDirectTLS(wrappedConn, cfg, remoteAddr)
+	wrappedConn := &bufferedConn{Conn: tlsConn, br: br}
+
+	if isHTTPRequest(peek) {
+		req, err := http.ReadRequest(br)
+		if err != nil {
+			log.Printf("[multi-protocol] failed to read HTTP request: %v", err)
+			return
+		}
+
+		if req.Header.Get("Upgrade") == "websocket" {
+			log.Printf("[multi-protocol] WebSocket detected from %s", remoteAddr)
+			handleWebSocketDirect(wrappedConn, req, cfg, remoteAddr)
+			return
+		}
+
+		log.Printf("[multi-protocol] HTTP detected from %s (serving decoy)", remoteAddr)
+		serveHTTPDecoy(wrappedConn)
+		return
 	}
+
+	log.Printf("[multi-protocol] Direct TLS detected from %s", remoteAddr)
+	handleGuarchHandshake(wrappedConn, cfg, remoteAddr)
 }
 
 func isHTTPRequest(data []byte) bool {
@@ -460,81 +472,81 @@ func isHTTPRequest(data []byte) bool {
 	return false
 }
 
-func handleHTTP(tlsConn *tls.Conn, br *bufio.Reader, cfg *config.ServerConfig, remoteAddr string) {
-	wrappedConn := &bufferedConn{Conn: tlsConn, br: br}
-	
-	mux := http.ServeMux{}
-	
-	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		if r.Header.Get("Upgrade") == "websocket" {
-			log.Printf("[websocket] upgrade request from %s", remoteAddr)
-			handleWebSocket(w, r, cfg, remoteAddr)
-		} else if r.Method == "POST" && r.ProtoMajor == 2 {
-			log.Printf("[http2] stream request from %s", remoteAddr)
-			handleHTTP2Stream(w, r, cfg, remoteAddr)
-		} else {
-			log.Printf("[http] serving decoy to %s", remoteAddr)
-			w.Header().Set("Server", "nginx/1.24.0")
-			w.Header().Set("Content-Type", "text/html; charset=utf-8")
-			w.WriteHeader(http.StatusOK)
-			w.Write([]byte(decoyServer.GenerateHomePage()))
-		}
-	})
-	
-	server := &http.Server{
-		Handler:      &mux,
-		ReadTimeout:  60 * time.Second,
-		WriteTimeout: 60 * time.Second,
-	}
-	
-	http2.ConfigureServer(server, &http2.Server{})
-	
-	server.Serve(&singleConnListener{conn: wrappedConn})
-}
-
-func handleWebSocket(w http.ResponseWriter, r *http.Request, cfg *config.ServerConfig, remoteAddr string) {
-	ws, err := wsUpgrader.Upgrade(w, r, nil)
-	if err != nil {
-		log.Printf("[websocket] upgrade failed %s: %v", remoteAddr, err)
+func handleWebSocketDirect(conn net.Conn, req *http.Request, cfg *config.ServerConfig, remoteAddr string) {
+	key := req.Header.Get("Sec-WebSocket-Key")
+	if key == "" {
+		log.Printf("[websocket] missing Sec-WebSocket-Key from %s", remoteAddr)
 		return
 	}
-	
+
+	accept := computeWebSocketAccept(key)
+
+	response := "HTTP/1.1 101 Switching Protocols\r\n" +
+		"Upgrade: websocket\r\n" +
+		"Connection: Upgrade\r\n" +
+		"Sec-WebSocket-Accept: " + accept + "\r\n\r\n"
+
+	if _, err := conn.Write([]byte(response)); err != nil {
+		log.Printf("[websocket] failed to send upgrade response: %v", err)
+		return
+	}
+
 	log.Printf("[websocket] connection established from %s", remoteAddr)
-	
-	wsConn := &wsNetConn{conn: ws}
+
+	wsConn := &manualWebSocketConn{conn: conn}
 	handleGuarchHandshake(wsConn, cfg, remoteAddr)
 }
 
-func handleHTTP2Stream(w http.ResponseWriter, r *http.Request, cfg *config.ServerConfig, remoteAddr string) {
-	if r.Header.Get("Content-Type") != "application/octet-stream" {
-		http.Error(w, "Invalid content type", http.StatusBadRequest)
-		return
-	}
-	
-	log.Printf("[http2] tunnel established from %s", remoteAddr)
-	
-	flusher, ok := w.(http.Flusher)
-	if !ok {
-		http.Error(w, "Streaming unsupported", http.StatusInternalServerError)
-		return
-	}
-	
-	w.Header().Set("Content-Type", "application/octet-stream")
-	w.WriteHeader(http.StatusOK)
-	flusher.Flush()
-	
-	h2Conn := &http2NetConn{
-		reader:     r.Body,
-		writer:     &flushWriter{w: w, f: flusher},
-		localAddr:  &addr{s: r.Host},
-		remoteAddr: &addr{s: remoteAddr},
-	}
-	
-	handleGuarchHandshake(h2Conn, cfg, remoteAddr)
+func computeWebSocketAccept(key string) string {
+	h := sha1.New()
+	h.Write([]byte(key))
+	h.Write([]byte("258EAFA5-E914-47DA-95CA-C5AB0DC85B11"))
+	return base64.StdEncoding.EncodeToString(h.Sum(nil))
 }
 
-func handleDirectTLS(conn net.Conn, cfg *config.ServerConfig, remoteAddr string) {
-	handleGuarchHandshake(conn, cfg, remoteAddr)
+func handleHTTP2Direct(conn net.Conn, cfg *config.ServerConfig, remoteAddr string) {
+	server := &http.Server{
+		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.Header.Get("Content-Type") != "application/octet-stream" {
+				http.Error(w, "Invalid content type", http.StatusBadRequest)
+				return
+			}
+
+			log.Printf("[http2] tunnel from %s", remoteAddr)
+
+			flusher, ok := w.(http.Flusher)
+			if !ok {
+				http.Error(w, "Streaming unsupported", http.StatusInternalServerError)
+				return
+			}
+
+			w.Header().Set("Content-Type", "application/octet-stream")
+			w.WriteHeader(http.StatusOK)
+			flusher.Flush()
+
+			h2Conn := &http2NetConn{
+				reader:     r.Body,
+				writer:     &flushWriter{w: w, f: flusher},
+				localAddr:  &addr{s: r.Host},
+				remoteAddr: &addr{s: remoteAddr},
+			}
+
+			handleGuarchHandshake(h2Conn, cfg, remoteAddr)
+		}),
+	}
+
+	http2.ConfigureServer(server, &http2.Server{})
+	server.Serve(&singleConnListener{conn: conn})
+}
+
+func serveHTTPDecoy(conn net.Conn) {
+	response := "HTTP/1.1 200 OK\r\n" +
+		"Server: nginx/1.24.0\r\n" +
+		"Content-Type: text/html; charset=utf-8\r\n" +
+		"Connection: close\r\n\r\n" +
+		decoyServer.GenerateHomePage()
+
+	conn.Write([]byte(response))
 }
 
 func handleGuarchHandshake(raw net.Conn, cfg *config.ServerConfig, remoteAddr string) {
@@ -839,65 +851,132 @@ func (l *singleConnListener) Addr() net.Addr {
 	return l.conn.LocalAddr()
 }
 
-type wsNetConn struct {
-	conn   *websocket.Conn
-	reader io.Reader
-	mu     sync.Mutex
+type manualWebSocketConn struct {
+	conn   net.Conn
+	readMu sync.Mutex
 }
 
-func (wc *wsNetConn) Read(b []byte) (n int, err error) {
-	wc.mu.Lock()
-	defer wc.mu.Unlock()
-	
-	if wc.reader == nil {
-		_, wc.reader, err = wc.conn.NextReader()
-		if err != nil {
+func (m *manualWebSocketConn) Read(p []byte) (n int, err error) {
+	m.readMu.Lock()
+	defer m.readMu.Unlock()
+
+	header := make([]byte, 2)
+	if _, err := io.ReadFull(m.conn, header); err != nil {
+		return 0, err
+	}
+
+	fin := header[0]&0x80 != 0
+	opcode := header[0] & 0x0F
+	masked := header[1]&0x80 != 0
+	payloadLen := int(header[1] & 0x7F)
+
+	if opcode == 0x8 {
+		return 0, io.EOF
+	}
+
+	if payloadLen == 126 {
+		extLen := make([]byte, 2)
+		if _, err := io.ReadFull(m.conn, extLen); err != nil {
+			return 0, err
+		}
+		payloadLen = int(binary.BigEndian.Uint16(extLen))
+	} else if payloadLen == 127 {
+		extLen := make([]byte, 8)
+		if _, err := io.ReadFull(m.conn, extLen); err != nil {
+			return 0, err
+		}
+		payloadLen = int(binary.BigEndian.Uint64(extLen))
+	}
+
+	var maskKey []byte
+	if masked {
+		maskKey = make([]byte, 4)
+		if _, err := io.ReadFull(m.conn, maskKey); err != nil {
 			return 0, err
 		}
 	}
-	
-	n, err = wc.reader.Read(b)
-	if err == io.EOF {
-		wc.reader = nil
-		if n == 0 {
-			return wc.Read(b)
+
+	if payloadLen > len(p) {
+		payloadLen = len(p)
+	}
+
+	n, err = io.ReadFull(m.conn, p[:payloadLen])
+	if err != nil {
+		return n, err
+	}
+
+	if masked {
+		for i := 0; i < n; i++ {
+			p[i] ^= maskKey[i%4]
 		}
 	}
-	return n, err
-}
 
-func (wc *wsNetConn) Write(b []byte) (n int, err error) {
-	err = wc.conn.WriteMessage(websocket.BinaryMessage, b)
-	if err != nil {
-		return 0, err
+	if !fin {
+		return n, nil
 	}
-	return len(b), nil
+
+	return n, nil
 }
 
-func (wc *wsNetConn) Close() error {
-	return wc.conn.Close()
+func (m *manualWebSocketConn) Write(p []byte) (n int, err error) {
+	header := make([]byte, 2)
+	header[0] = 0x82
+
+	payloadLen := len(p)
+	if payloadLen < 126 {
+		header[1] = byte(payloadLen)
+		if _, err := m.conn.Write(header); err != nil {
+			return 0, err
+		}
+	} else if payloadLen < 65536 {
+		header[1] = 126
+		if _, err := m.conn.Write(header); err != nil {
+			return 0, err
+		}
+		extLen := make([]byte, 2)
+		binary.BigEndian.PutUint16(extLen, uint16(payloadLen))
+		if _, err := m.conn.Write(extLen); err != nil {
+			return 0, err
+		}
+	} else {
+		header[1] = 127
+		if _, err := m.conn.Write(header); err != nil {
+			return 0, err
+		}
+		extLen := make([]byte, 8)
+		binary.BigEndian.PutUint64(extLen, uint64(payloadLen))
+		if _, err := m.conn.Write(extLen); err != nil {
+			return 0, err
+		}
+	}
+
+	return m.conn.Write(p)
 }
 
-func (wc *wsNetConn) LocalAddr() net.Addr {
-	return wc.conn.LocalAddr()
+func (m *manualWebSocketConn) Close() error {
+	closeFrame := []byte{0x88, 0x00}
+	m.conn.Write(closeFrame)
+	return m.conn.Close()
 }
 
-func (wc *wsNetConn) RemoteAddr() net.Addr {
-	return wc.conn.RemoteAddr()
+func (m *manualWebSocketConn) LocalAddr() net.Addr {
+	return m.conn.LocalAddr()
 }
 
-func (wc *wsNetConn) SetDeadline(t time.Time) error {
-	wc.conn.SetReadDeadline(t)
-	wc.conn.SetWriteDeadline(t)
-	return nil
+func (m *manualWebSocketConn) RemoteAddr() net.Addr {
+	return m.conn.RemoteAddr()
 }
 
-func (wc *wsNetConn) SetReadDeadline(t time.Time) error {
-	return wc.conn.SetReadDeadline(t)
+func (m *manualWebSocketConn) SetDeadline(t time.Time) error {
+	return m.conn.SetDeadline(t)
 }
 
-func (wc *wsNetConn) SetWriteDeadline(t time.Time) error {
-	return wc.conn.SetWriteDeadline(t)
+func (m *manualWebSocketConn) SetReadDeadline(t time.Time) error {
+	return m.conn.SetReadDeadline(t)
+}
+
+func (m *manualWebSocketConn) SetWriteDeadline(t time.Time) error {
+	return m.conn.SetWriteDeadline(t)
 }
 
 type http2NetConn struct {
