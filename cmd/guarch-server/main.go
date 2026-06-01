@@ -436,7 +436,8 @@ func handleMultiProtocol(rawConn net.Conn, cfg *config.ServerConfig) {
 		handleHTTP(tlsConn, br, cfg, remoteAddr)
 	} else {
 		log.Printf("[multi-protocol] Direct TLS detected from %s", remoteAddr)
-		handleDirectTLS(tlsConn, cfg, remoteAddr)
+		wrappedConn := &bufferedConn{Conn: tlsConn, br: br}
+		handleDirectTLS(wrappedConn, cfg, remoteAddr)
 	}
 }
 
@@ -528,8 +529,8 @@ func handleHTTP2Stream(w http.ResponseWriter, r *http.Request, cfg *config.Serve
 	handleGuarchHandshake(h2Conn, cfg, remoteAddr)
 }
 
-func handleDirectTLS(tlsConn *tls.Conn, cfg *config.ServerConfig, remoteAddr string) {
-	handleGuarchHandshake(tlsConn, cfg, remoteAddr)
+func handleDirectTLS(conn net.Conn, cfg *config.ServerConfig, remoteAddr string) {
+	handleGuarchHandshake(conn, cfg, remoteAddr)
 }
 
 func handleGuarchHandshake(raw net.Conn, cfg *config.ServerConfig, remoteAddr string) {
