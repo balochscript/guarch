@@ -68,14 +68,14 @@ func Handshake(conn net.Conn) (string, error) {
 	var addr string
 
 	switch atyp {
-	case 0x01: // IPv4
+	case 0x01:
 		ip := make([]byte, 4)
 		if _, err := io.ReadFull(conn, ip); err != nil {
 			return "", fmt.Errorf("socks5: read ipv4: %w", err)
 		}
 		addr = net.IP(ip).String()
 
-	case 0x03: // Domain
+	case 0x03:
 		lenBuf := make([]byte, 1)
 		if _, err := io.ReadFull(conn, lenBuf); err != nil {
 			return "", fmt.Errorf("socks5: read domain length: %w", err)
@@ -89,7 +89,7 @@ func Handshake(conn net.Conn) (string, error) {
 		}
 		addr = string(domain)
 
-	case 0x04: // IPv6
+	case 0x04:
 		ip := make([]byte, 16)
 		if _, err := io.ReadFull(conn, ip); err != nil {
 			return "", fmt.Errorf("socks5: read ipv6: %w", err)
@@ -111,7 +111,7 @@ func Handshake(conn net.Conn) (string, error) {
 		return "", fmt.Errorf("socks5: port 0 is not valid")
 	}
 
-	return fmt.Sprintf("%s:%d", addr, port), nil
+	return net.JoinHostPort(addr, fmt.Sprintf("%d", port)), nil
 }
 
 func SendReply(conn net.Conn, status byte) error {
