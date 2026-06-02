@@ -1,3 +1,4 @@
+
 package config
 
 import (
@@ -28,15 +29,20 @@ type ServerInfo struct {
 }
 
 type TransportConfig struct {
-	Type             string            `json:"type"`
-	Host             string            `json:"host,omitempty"`
-	Port             int               `json:"port,omitempty"`
-	Path             string            `json:"path,omitempty"`
-	UseTLS           bool              `json:"use_tls"`
-	Headers          map[string]string `json:"headers,omitempty"`
-	DialTimeout      int               `json:"dial_timeout,omitempty"`
-	HandshakeTimeout int               `json:"handshake_timeout,omitempty"`
-	FallbackOrder    []string          `json:"fallback_order,omitempty"`
+	Type             string                       `json:"type"`
+	Host             string                       `json:"host,omitempty"`
+	Port             int                          `json:"port,omitempty"`
+	Path             string                       `json:"path,omitempty"`
+	UseTLS           bool                         `json:"use_tls"`
+	Headers          map[string]string            `json:"headers,omitempty"`
+	DialTimeout      int                          `json:"dial_timeout,omitempty"`
+	HandshakeTimeout int                          `json:"handshake_timeout,omitempty"`
+	FallbackOrder    []string                     `json:"fallback_order,omitempty"`
+	Experimental     ExperimentalTransportConfig  `json:"experimental,omitempty"`
+}
+
+type ExperimentalTransportConfig struct {
+	EnableHTTP2 bool `json:"enable_http2"`
 }
 
 type SNIConfig struct {
