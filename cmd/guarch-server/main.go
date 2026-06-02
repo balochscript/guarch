@@ -506,17 +506,19 @@ func computeWebSocketAccept(key string) string {
 
 func handleHTTP2Direct(conn net.Conn, cfg *config.ServerConfig, remoteAddr string) {
 	listener := newSingleUseListener(conn)
+	done := make(chan struct{})
 	
 	server := &http.Server{
 		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			defer listener.Close()
+			defer close(done)
 			
 			if r.Header.Get("Content-Type") != "application/octet-stream" {
 				http.Error(w, "Invalid content type", http.StatusBadRequest)
 				return
 			}
 
-			log.Printf("[http2] tunnel established from %s", remoteAddr)
+			log.Printf("[http2] tunnel request from %s", remoteAddr)
 
 			flusher, ok := w.(http.Flusher)
 			if !ok {
@@ -525,24 +527,36 @@ func handleHTTP2Direct(conn net.Conn, cfg *config.ServerConfig, remoteAddr strin
 			}
 
 			w.Header().Set("Content-Type", "application/octet-stream")
+			w.Header().Set("Cache-Control", "no-cache")
 			w.WriteHeader(http.StatusOK)
 			flusher.Flush()
 
-			h2Conn := &http2NetConn{
+			log.Printf("[http2] tunnel established from %s", remoteAddr)
+
+			h2Conn := &http2TunnelConn{
 				reader:     r.Body,
 				writer:     &flushWriter{w: w, f: flusher},
 				localAddr:  &addr{s: r.Host},
 				remoteAddr: &addr{s: remoteAddr},
+				done:       make(chan struct{}),
 			}
 
 			handleGuarchHandshake(h2Conn, cfg, remoteAddr)
 		}),
-		ReadTimeout:  60 * time.Second,
-		WriteTimeout: 60 * time.Second,
+		ReadTimeout:    120 * time.Second,
+		WriteTimeout:   120 * time.Second,
+		MaxHeaderBytes: 1 << 20,
 	}
 
-	http2.ConfigureServer(server, &http2.Server{})
+	http2.ConfigureServer(server, &http2.Server{
+		MaxHandlers:                  1000,
+		MaxConcurrentStreams:         250,
+		MaxReadFrameSize:             1048576,
+		PermitProhibitedCipherSuites: false,
+	})
+	
 	server.Serve(listener)
+	<-done
 }
 
 func serveHTTPDecoy(conn net.Conn) {
@@ -1037,6 +1051,71 @@ func (hc *http2NetConn) SetReadDeadline(t time.Time) error {
 }
 
 func (hc *http2NetConn) SetWriteDeadline(t time.Time) error {
+	return nil
+}
+
+type http2TunnelConn struct {
+	reader     io.ReadCloser
+	writer     io.Writer
+	localAddr  net.Addr
+	remoteAddr net.Addr
+	done       chan struct{}
+	closeOnce  sync.Once
+}
+
+func (hc *http2TunnelConn) Read(b []byte) (n int, err error) {
+	select {
+	case <-hc.done:
+		return 0, io.EOF
+	default:
+	}
+	
+	n, err = hc.reader.Read(b)
+	if err != nil && err != io.EOF {
+		hc.Close()
+	}
+	return n, err
+}
+
+func (hc *http2TunnelConn) Write(b []byte) (n int, err error) {
+	select {
+	case <-hc.done:
+		return 0, io.ErrClosedPipe
+	default:
+	}
+	
+	n, err = hc.writer.Write(b)
+	if err != nil {
+		hc.Close()
+	}
+	return n, err
+}
+
+func (hc *http2TunnelConn) Close() error {
+	hc.closeOnce.Do(func() {
+		close(hc.done)
+		hc.reader.Close()
+	})
+	return nil
+}
+
+func (hc *http2TunnelConn) LocalAddr() net.Addr {
+	return hc.localAddr
+}
+
+func (hc *http2TunnelConn) RemoteAddr() net.Addr {
+	return hc.remoteAddr
+}
+
+func (hc *http2TunnelConn) SetDeadline(t time.Time) error {
+	return nil
+}
+
+func (hc *http2TunnelConn) SetReadDeadline(t time.Time) error {
+	return nil
+}
+
+func (hc *http2TunnelConn) SetWriteDeadline(t time.Time) error {
 	return nil
 }
 
