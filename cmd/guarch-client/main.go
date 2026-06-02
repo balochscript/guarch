@@ -107,6 +107,15 @@ func main() {
     if cfg.Cover.Enabled {
         log.Printf("   Cover Mode: %s", cfg.Cover.Mode)
     }
+    
+    if cfg.Transport != nil && cfg.Transport.Type == "http2" {
+        log.Println("⚠️  [client] HTTP/2 transport is experimental and may be unstable")
+        log.Println("⚠️  [client] Recommended: use 'websocket' or 'direct' for production")
+        
+        if !cfg.Transport.Experimental.EnableHTTP2 {
+            log.Println("⚠️  [client] Note: Server must have transport.experimental.enable_http2=true")
+        }
+    }
 
     ctx, cancel := context.WithCancel(context.Background())
     defer cancel()
