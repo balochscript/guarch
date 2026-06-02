@@ -113,7 +113,13 @@ func main() {
 	log.Printf("📋 Config: %s", cfg.Server.Name)
 	log.Printf("   Listen: %s", cfg.Server.Address)
 	log.Printf("   Protocol: %s", cfg.Server.Protocol)
-	log.Printf("   Transport: Multi-Protocol (Direct/WebSocket/HTTP2)")
+	
+	transports := "Direct/WebSocket"
+	if cfg.Transport != nil && cfg.Transport.Experimental.EnableHTTP2 {
+		transports = "Direct/WebSocket/HTTP2 (experimental)"
+	}
+	log.Printf("   Transport: Multi-Protocol (%s)", transports)
+	
 	log.Printf("   Cover Traffic: %v (%d domains)", cfg.Cover.Enabled, len(cfg.Cover.Domains))
 	log.Printf("   Probe Detection: %v", *enableProbe)
 	log.Printf("   Decoy Server: %s", *decoyAddr)
@@ -167,10 +173,16 @@ func main() {
 	certPin := sha256.Sum256(cert.Certificate[0])
 	certPinHex := hex.EncodeToString(certPin[:])
 
+	nextProtos := []string{"http/1.1"}
+	if cfg.Transport != nil && cfg.Transport.Experimental.EnableHTTP2 {
+		log.Println("[server] ⚠️  HTTP/2 enabled (experimental mode)")
+		nextProtos = []string{"h2", "http/1.1"}
+	}
+
 	tlsConfig := &tls.Config{
 		Certificates: []tls.Certificate{cert},
 		MinVersion:   tls.VersionTLS12,
-		NextProtos:   []string{"h2", "http/1.1"},
+		NextProtos:   nextProtos,
 	}
 
 	listenAddr := cfg.Server.Address
@@ -188,7 +200,12 @@ func main() {
 	log.Println("╚══════════════════════════════════════════════════════════════════╝")
 	log.Printf("✅ Server ready on %s", listenAddr)
 	log.Println("[guarch] ready to accept connections 🏹")
-	log.Println("[multi-protocol] supporting Direct TLS, WebSocket, HTTP/2")
+	
+	supportMsg := "[multi-protocol] supporting Direct TLS, WebSocket"
+	if cfg.Transport != nil && cfg.Transport.Experimental.EnableHTTP2 {
+		supportMsg += ", HTTP/2 (experimental)"
+	}
+	log.Println(supportMsg)
 
 	if cfg.DNS.Enabled {
 		log.Printf("[dns] Starting DNS fallback listener...")
@@ -413,7 +430,32 @@ func handleMultiProtocol(rawConn net.Conn, cfg *config.ServerConfig) {
 
 	state := tlsConn.ConnectionState()
 	if state.NegotiatedProtocol == "h2" {
-		log.Printf("[multi-protocol] HTTP/2 (ALPN) from %s", remoteAddr)
+		experimental := false
+		if cfg.Transport != nil && cfg.Transport.Experimental.EnableHTTP2 {
+			experimental = true
+		}
+		
+		if !experimental {
+			log.Printf("[multi-protocol] HTTP/2 from %s (experimental, disabled by default)", remoteAddr)
+			log.Printf("[multi-protocol] To enable: set transport.experimental.enable_http2=true in config")
+			
+			response := "HTTP/1.1 200 OK\r\n" +
+				"Content-Type: text/plain; charset=utf-8\r\n" +
+				"Connection: close\r\n" +
+				"X-Guarch-Info: HTTP/2 transport is experimental and disabled by default\r\n\r\n" +
+				"HTTP/2 transport is currently experimental.\n\n" +
+				"Recommended transports:\n" +
+				"  - WebSocket (best for DPI bypass and whitelisting)\n" +
+				"  - Direct TLS (fastest, simplest)\n\n" +
+				"To enable HTTP/2 (experimental):\n" +
+				"  Set transport.experimental.enable_http2=true in server config\n\n" +
+				"See https://github.com/balochscript/guarch for details.\n"
+			
+			tlsConn.Write([]byte(response))
+			return
+		}
+		
+		log.Printf("[multi-protocol] HTTP/2 (ALPN, EXPERIMENTAL) from %s", remoteAddr)
 		handleHTTP2Direct(tlsConn, cfg, remoteAddr)
 		return
 	}
