@@ -1,0 +1,64 @@
+{
+  "version": 1,
+  "server": {
+    "name": "Experimental HTTP/2 Server",
+    "address": "127.0.0.1:8443",
+    "protocol": "guarch",
+    "psk": "your-secret-key-here-change-this",
+    "cert_pin": ""
+  },
+  "transport": {
+    "type": "http2",
+    "path": "/",
+    "experimental": {
+      "enable_http2": true
+    }
+  },
+  "sni": {
+    "enabled": true,
+    "mode": "weighted",
+    "rotation_interval": "5m",
+    "health_check_interval": "30s",
+    "health_check_timeout": "5s",
+    "domains": [
+      {
+        "domain": "www.google.com",
+        "weight": 30,
+        "check_health": true
+      },
+      {
+        "domain": "www.microsoft.com",
+        "weight": 20,
+        "check_health": true
+      },
+      {
+        "domain": "github.com",
+        "weight": 15,
+        "check_health": true
+      },
+      {
+        "domain": "www.cloudflare.com",
+        "weight": 10,
+        "check_health": false,
+        "fallback": true
+      }
+    ]
+  },
+  "cover": {
+    "enabled": false,
+    "mode": "balanced",
+    "domains": [],
+    "adaptive": {
+      "enabled": false
+    }
+  },
+  "dns": {
+    "enabled": false
+  },
+  "metadata": {
+    "created_at": "2024-06-02T00:00:00Z",
+    "notes": "⚠️ HTTP/2 is experimental - use WebSocket for production",
+    "tags": ["experimental", "http2", "testing"]
+  },
+  "_warning": "HTTP/2 transport is experimental and may have stability issues. Use WebSocket or Direct TLS for production."
+}
