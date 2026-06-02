@@ -43,6 +43,8 @@ func NewHTTP2Transport(cfg *Config) *HTTP2Transport {
 			}
 			return tlsConn, nil
 		},
+		AllowHTTP: false,
+		StrictMaxConcurrentStreams: false,
 	}
 
 	return &HTTP2Transport{
@@ -63,6 +65,11 @@ func (h *HTTP2Transport) Dial(ctx context.Context) (net.Conn, error) {
 	url := fmt.Sprintf("https://%s:%d%s", h.config.Host, h.config.Port, path)
 
 	pr, pw := io.Pipe()
+	defer func() {
+		if pr != nil {
+			pr.Close()
+		}
+	}()
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, pr)
 	if err != nil {
@@ -76,39 +83,51 @@ func (h *HTTP2Transport) Dial(ctx context.Context) (net.Conn, error) {
 		req.Header.Set(k, v)
 	}
 
-	respChan := make(chan *http.Response, 1)
-	errChan := make(chan error, 1)
+	type result struct {
+		resp *http.Response
+		err  error
+	}
+	resultChan := make(chan result, 1)
 
 	go func() {
 		resp, err := h.httpClient.Do(req)
-		if err != nil {
-			errChan <- err
-			return
-		}
-		if resp.StatusCode != http.StatusOK {
-			resp.Body.Close()
-			errChan <- fmt.Errorf("http2 status: %d", resp.StatusCode)
-			return
-		}
-		respChan <- resp
+		resultChan <- result{resp: resp, err: err}
 	}()
 
+	var resp *http.Response
+
 	select {
-	case resp := <-respChan:
-		return NewHTTP2Conn(resp.Body, pw), nil
-	case err := <-errChan:
-		pr.Close()
-		pw.Close()
-		return nil, fmt.Errorf("http2 dial: %w", err)
+	case res := <-resultChan:
+		if res.err != nil {
+			pw.Close()
+			return nil, fmt.Errorf("http2 request: %w", res.err)
+		}
+		if res.resp.StatusCode != http.StatusOK {
+			res.resp.Body.Close()
+			pw.Close()
+			return nil, fmt.Errorf("http2 status: %d", res.resp.StatusCode)
+		}
+		resp = res.resp
+
 	case <-ctx.Done():
-		pr.Close()
 		pw.Close()
 		return nil, ctx.Err()
+
 	case <-time.After(30 * time.Second):
-		pr.Close()
 		pw.Close()
 		return nil, fmt.Errorf("http2 dial timeout")
 	}
+
+	pr = nil
+
+	conn := &HTTP2Conn{
+		reader: resp.Body,
+		writer: pw,
+		ctx:    ctx,
+		cancel: func() { resp.Body.Close(); pw.Close() },
+	}
+
+	return conn, nil
 }
 
 func (h *HTTP2Transport) Name() string {
@@ -125,27 +144,60 @@ func (h *HTTP2Transport) Close() error {
 type HTTP2Conn struct {
 	reader io.ReadCloser
 	writer io.WriteCloser
+	ctx    context.Context
+	cancel func()
 	mu     sync.Mutex
+	closed bool
 }
 
 func NewHTTP2Conn(r io.ReadCloser, w io.WriteCloser) *HTTP2Conn {
 	return &HTTP2Conn{
 		reader: r,
 		writer: w,
+		cancel: func() { r.Close(); w.Close() },
 	}
 }
 
 func (c *HTTP2Conn) Read(b []byte) (n int, err error) {
+	if c.ctx != nil {
+		select {
+		case <-c.ctx.Done():
+			return 0, io.EOF
+		default:
+		}
+	}
+
 	return c.reader.Read(b)
 }
 
 func (c *HTTP2Conn) Write(b []byte) (n int, err error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	return c.writer.Write(b)
+
+	if c.closed {
+		return 0, io.ErrClosedPipe
+	}
+
+	n, err = c.writer.Write(b)
+	if err != nil {
+		c.closed = true
+	}
+	return n, err
 }
 
 func (c *HTTP2Conn) Close() error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if c.closed {
+		return nil
+	}
+
+	c.closed = true
+	if c.cancel != nil {
+		c.cancel()
+	}
+
 	c.reader.Close()
 	c.writer.Close()
 	return nil
