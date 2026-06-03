@@ -28,21 +28,13 @@ import (
 	"guarch/pkg/transport"
 )
 
-// ═══════════════════════════════════════════════════════════
-// Constants
-// ═══════════════════════════════════════════════════════════
-
 const (
 	Version           = "1.0.1"
 	MaxRetryAttempts  = 3
 	RetryDelay        = 5 * time.Second
-	ConnectionTimeout = 15 * time.Second
+	ConnectionTimeout = 30 * time.Second
 	HandshakeTimeout  = 30 * time.Second
 )
-
-// ═══════════════════════════════════════════════════════════
-// Callback Interface
-// ═══════════════════════════════════════════════════════════
 
 type Callback interface {
 	OnStatusChanged(status string)
@@ -53,34 +45,25 @@ type Callback interface {
 	OnDNSFallback(enabled bool)
 }
 
-// ═══════════════════════════════════════════════════════════
-// Engine Structure
-// ═══════════════════════════════════════════════════════════
-
 type Engine struct {
 	mu       sync.RWMutex
 	callback Callback
 	ctx      context.Context
 	cancel   context.CancelFunc
 
-	// Configuration
 	config *config.ServerConfig
 
-	// Connection components
 	muxConn      *mux.Mux
 	groukSession *transport.GroukSession
 	groukUDP     *net.UDPConn
 	
-	// Enhanced features (v1.0.1)
 	sniManager    *sni.Manager
 	coverManager  *cover.Manager
 	adaptiveCover *cover.AdaptiveCover
 	dnsClient     *dns.Client
 
-	// SOCKS5 server
 	listener net.Listener
 
-	// State
 	status           string
 	stats            *engineStats
 	protocol         string
@@ -89,10 +72,6 @@ type Engine struct {
 	dataSaverMode    bool
 	retryCount       int
 }
-
-// ═══════════════════════════════════════════════════════════
-// Statistics
-// ═══════════════════════════════════════════════════════════
 
 type engineStats struct {
 	mu               sync.RWMutex
@@ -104,7 +83,6 @@ type engineStats struct {
 	startTime        time.Time
 	connectTime      time.Time
 
-	// Enhanced stats (v1.0.1)
 	currentSNI     string
 	sniSwitches    int64
 	dnsQueriesSent int64
@@ -112,10 +90,6 @@ type engineStats struct {
 	lastSpeedUp    int64
 	lastSpeedDown  int64
 }
-
-// ═══════════════════════════════════════════════════════════
-// Constructor
-// ═══════════════════════════════════════════════════════════
 
 func New() *Engine {
 	ctx, cancel := context.WithCancel(context.Background())
@@ -133,10 +107,6 @@ func (e *Engine) SetCallback(cb Callback) {
 	defer e.mu.Unlock()
 	e.callback = cb
 }
-
-// ═══════════════════════════════════════════════════════════
-// Configuration Loading
-// ═══════════════════════════════════════════════════════════
 
 func (e *Engine) LoadConfigJSON(jsonStr string) bool {
 	defer e.recoverPanic("LoadConfigJSON")
@@ -228,10 +198,6 @@ func (e *Engine) ExportConfigJSON() string {
 	return string(data)
 }
 
-// ═══════════════════════════════════════════════════════════
-// Battery & Data Saver
-// ═══════════════════════════════════════════════════════════
-
 func (e *Engine) SetBatteryLevel(level int) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
@@ -239,7 +205,6 @@ func (e *Engine) SetBatteryLevel(level int) {
 	e.batteryLevel = level
 	e.logDebug(fmt.Sprintf("Battery level: %d%%", level))
 
-	// 🔧 FIXED: اعمال به adaptiveCover
 	if e.adaptiveCover != nil {
 		e.adaptiveCover.SetBatteryLevel(level)
 		
@@ -259,17 +224,12 @@ func (e *Engine) SetDataSaverMode(enabled bool) {
 		e.config.Cover.Adaptive.DataSaverMode = enabled
 	}
 
-	// 🔧 FIXED: اعمال به adaptiveCover
 	if e.adaptiveCover != nil {
 		e.adaptiveCover.SetDataSaverMode(enabled)
 	}
 
 	e.logInfo(fmt.Sprintf("Data saver mode: %v", enabled))
 }
-
-// ═══════════════════════════════════════════════════════════
-// Connect
-// ═══════════════════════════════════════════════════════════
 
 func (e *Engine) Connect() bool {
 	defer e.recoverPanic("Connect")
@@ -330,18 +290,13 @@ func (e *Engine) connectWithRetry() {
 	}
 }
 
-// ═══════════════════════════════════════════════════════════
-// Internal Connection Logic
-// ═══════════════════════════════════════════════════════════
-
 func (e *Engine) connectInternal() error {
 	e.mu.RLock()
 	cfg := e.config
 	protocol := e.protocol
 	e.mu.RUnlock()
 
-		if cfg.SNI.Enabled {
-		// 🆕 استفاده از integration
+	if cfg.SNI.Enabled {
 		sniMgr, err := sni.NewManagerFromConfig(&cfg.SNI)
 		if err != nil {
 			e.logWarn("SNI manager init failed: " + err.Error())
@@ -362,57 +317,57 @@ func (e *Engine) connectInternal() error {
 
 	var coverMgr *cover.Manager
 	if cfg.Cover.Enabled {
-    coverCfg := e.buildCoverConfig(&cfg.Cover)
-    
-    maxPadding := config.GetMaxPaddingForMode(cfg.Cover.Mode)
-    modeCfg := &cover.ModeConfig{
-        MaxPadding: maxPadding,
-    }
-    
-    adaptiveCover := cover.NewAdaptiveCover(modeCfg)
+		coverCfg := e.buildCoverConfig(&cfg.Cover)
+		
+		maxPadding := config.GetMaxPaddingForMode(cfg.Cover.Mode)
+		modeCfg := &cover.ModeConfig{
+			MaxPadding: maxPadding,
+		}
+		
+		adaptiveCover := cover.NewAdaptiveCover(modeCfg)
 
-    e.mu.RLock()
-    currentBattery := e.batteryLevel
-    currentDataSaver := e.dataSaverMode
-    e.mu.RUnlock()
-    
-    adaptiveCover.SetBatteryLevel(currentBattery)
-    log.Printf("[cover] Initial battery level: %d%%", currentBattery)
+		e.mu.RLock()
+		currentBattery := e.batteryLevel
+		currentDataSaver := e.dataSaverMode
+		e.mu.RUnlock()
+		
+		adaptiveCover.SetBatteryLevel(currentBattery)
+		log.Printf("[cover] Initial battery level: %d%%", currentBattery)
 
-    if cfg.Cover.Adaptive.BatteryAware {
-        adaptiveCover.SetBatteryAware(true)
-        if currentBattery < 20 {
-            log.Println("[cover] Low battery detected - reducing cover activity")
-        }
-    }
-    
-    if cfg.Cover.Adaptive.DataSaverMode || currentDataSaver {
-        adaptiveCover.SetDataSaverMode(true)
-        log.Println("[cover] Data saver mode enabled")
-    }
-    
-    coverMgr = cover.NewManager(coverCfg, adaptiveCover)
-    
-    e.mu.Lock()
-    e.coverManager = coverMgr
-    e.adaptiveCover = adaptiveCover
-    e.mu.Unlock()
+		if cfg.Cover.Adaptive.BatteryAware {
+			adaptiveCover.SetBatteryAware(true)
+			if currentBattery < 20 {
+				log.Println("[cover] Low battery detected - reducing cover activity")
+			}
+		}
+		
+		if cfg.Cover.Adaptive.DataSaverMode || currentDataSaver {
+			adaptiveCover.SetDataSaverMode(true)
+			log.Println("[cover] Data saver mode enabled")
+		}
+		
+		coverMgr = cover.NewManager(coverCfg, adaptiveCover)
+		
+		e.mu.Lock()
+		e.coverManager = coverMgr
+		e.adaptiveCover = adaptiveCover
+		e.mu.Unlock()
 
-    coverMgr.Start(e.ctx)
-    log.Printf("[cover] Cover traffic enabled (%s mode, %d domains)",
-        cfg.Cover.Mode, len(cfg.Cover.Domains))
+		coverMgr.Start(e.ctx)
+		log.Printf("[cover] Cover traffic enabled (%s mode, %d domains)",
+			cfg.Cover.Mode, len(cfg.Cover.Domains))
 
-	e.logInfo("[cover] warming up (waiting 3 seconds for initial requests)...")
-        
-        warmupTimer := time.NewTimer(3 * time.Second)
-        select {
-        case <-warmupTimer.C:
-            e.logInfo("[cover] warm-up complete, ready to connect")
-        case <-e.ctx.Done():
-            warmupTimer.Stop()
-            return e.ctx.Err()
-        }
-}
+		e.logInfo("[cover] warming up (waiting 3 seconds for initial requests)...")
+		
+		warmupTimer := time.NewTimer(3 * time.Second)
+		select {
+		case <-warmupTimer.C:
+			e.logInfo("[cover] warm-up complete, ready to connect")
+		case <-e.ctx.Done():
+			warmupTimer.Stop()
+			return e.ctx.Err()
+		}
+	}
 
 	switch strings.ToLower(protocol) {
 	case "grouk":
@@ -423,10 +378,6 @@ func (e *Engine) connectInternal() error {
 		return e.connectGuarch(cfg, coverMgr)
 	}
 }
-
-// ═══════════════════════════════════════════════════════════
-// Protocol: Guarch
-// ═══════════════════════════════════════════════════════════
 
 func (e *Engine) connectGuarch(cfg *config.ServerConfig, coverMgr *cover.Manager) error {
 	serverAddr := cfg.Server.Address
@@ -462,7 +413,11 @@ func (e *Engine) connectGuarch(cfg *config.ServerConfig, coverMgr *cover.Manager
 		coverMgr.SendOne()
 	}
 
-	dialer := &net.Dialer{Timeout: ConnectionTimeout}
+	dialer := &net.Dialer{
+		Timeout:   ConnectionTimeout,
+		KeepAlive: 30 * time.Second,
+	}
+	
 	tlsConn, err := tls.DialWithDialer(dialer, "tcp", serverAddr, tlsConfig)
 	if err != nil {
 		return fmt.Errorf("TLS dial failed: %w", err)
@@ -470,13 +425,12 @@ func (e *Engine) connectGuarch(cfg *config.ServerConfig, coverMgr *cover.Manager
 
 	tlsConn.SetDeadline(time.Now().Add(HandshakeTimeout))
 
-		// 🔧 CHANGED: اضافه کردن padding config
 	maxPadding := config.GetMaxPaddingForMode(cfg.Cover.Mode)
 	
 	handshakeCfg := &transport.HandshakeConfig{
 		PSK:            []byte(cfg.Server.PSK),
-		MaxPadding:     maxPadding,     // ← اضافه کن
-		PaddingEnabled: maxPadding > 0, // ← اضافه کن
+		MaxPadding:     maxPadding,
+		PaddingEnabled: maxPadding > 0,
 	}
 
 	sc, err := transport.Handshake(tlsConn, false, handshakeCfg)
@@ -501,10 +455,6 @@ func (e *Engine) connectGuarch(cfg *config.ServerConfig, coverMgr *cover.Manager
 		return m.OpenStream()
 	})
 }
-
-// ═══════════════════════════════════════════════════════════
-// Protocol: Grouk
-// ═══════════════════════════════════════════════════════════
 
 func (e *Engine) connectGrouk(cfg *config.ServerConfig, coverMgr *cover.Manager) error {
 	serverAddr := cfg.Server.Address
@@ -579,10 +529,6 @@ func (e *Engine) groukReadLoop(session *transport.GroukSession, udpConn *net.UDP
 	}
 }
 
-// ═══════════════════════════════════════════════════════════
-// Protocol: Zhip
-// ═══════════════════════════════════════════════════════════
-
 func (e *Engine) connectZhip(cfg *config.ServerConfig, coverMgr *cover.Manager) error {
 	serverAddr := cfg.Server.Address
 
@@ -608,16 +554,10 @@ func (e *Engine) connectZhip(cfg *config.ServerConfig, coverMgr *cover.Manager) 
 	e.stats.connectTime = time.Now()
 	e.mu.Unlock()
 
-	// QUIC connection در closure نگه‌داری می‌شود
-	// وقتی e.ctx.Done() شود، connection خودکار close می‌شود
 	return e.startSOCKS5(func() (io.ReadWriteCloser, error) {
 		return conn.OpenStreamSync(e.ctx)
 	})
 }
-
-// ═══════════════════════════════════════════════════════════
-// DNS Fallback
-// ═══════════════════════════════════════════════════════════
 
 func (e *Engine) enableDNSFallback() error {
 	e.mu.RLock()
@@ -628,9 +568,6 @@ func (e *Engine) enableDNSFallback() error {
 		return fmt.Errorf("DNS fallback not enabled in config")
 	}
 
-	// ═══════════════════════════════════════════════════════════
-	// ساخت DNS Client
-	// ═══════════════════════════════════════════════════════════
 	clientCfg := &dns.ClientConfig{
 		Domain:     dnsCfg.Domain,
 		DNSServers: dnsCfg.Servers,
@@ -656,49 +593,38 @@ func (e *Engine) enableDNSFallback() error {
 
 	e.logWarn("⚠️ DNS Fallback Mode Active (Reduced Speed ~50Kbps)")
 
-	// ═══════════════════════════════════════════════════════════
-	// 🔧 FIX: راه‌اندازی SOCKS5 با DNS tunnel
-	// ═══════════════════════════════════════════════════════════
 	return e.startSOCKS5(func() (io.ReadWriteCloser, error) {
-    sessionID := uint32(time.Now().UnixNano() & 0xFFFFFFFF)
-    
-    // ═══════════════════════════════════════════════════════════
-    // ساخت stream config از DNS config
-    // ═══════════════════════════════════════════════════════════
-    streamCfg := &dns.StreamConfig{
-        RecvBufferSize: 65536,  // 64KB
-        SendBufferSize: 32768,  // 32KB
-        ReadTimeout:    0,      // no timeout
-        WriteTimeout:   0,      // no timeout
-        IdleTimeout:    5 * time.Minute,
-        MaxRetries:     e.config.DNS.MaxRetries,
-        RetryDelay:     e.config.DNS.RetryDelay.Duration,
-        MaxPacketSize:  32768,
-        Compression:    e.config.DNS.Compression,
-    }
-    
-    // اگر user مقادیر سفارشی set کرده، استفاده کن
-    if e.config.DNS.BufferSize > 0 {
-        streamCfg.RecvBufferSize = e.config.DNS.BufferSize
-        streamCfg.SendBufferSize = e.config.DNS.BufferSize / 2
-    }
-    
-    if e.config.DNS.MaxPacketSize > 0 {
-        streamCfg.MaxPacketSize = e.config.DNS.MaxPacketSize
-    }
-    
-    wrapper := dns.NewStreamWrapperWithConfig(e.dnsClient, sessionID, streamCfg)
-    
-    e.logDebug(fmt.Sprintf("DNS stream created (session: %08x, buffer: %d)", 
-        sessionID, streamCfg.RecvBufferSize))
-    
-    return wrapper, nil
-})
+		sessionID := uint32(time.Now().UnixNano() & 0xFFFFFFFF)
+		
+		streamCfg := &dns.StreamConfig{
+			RecvBufferSize: 65536,
+			SendBufferSize: 32768,
+			ReadTimeout:    0,
+			WriteTimeout:   0,
+			IdleTimeout:    5 * time.Minute,
+			MaxRetries:     e.config.DNS.MaxRetries,
+			RetryDelay:     e.config.DNS.RetryDelay.Duration,
+			MaxPacketSize:  32768,
+			Compression:    e.config.DNS.Compression,
+		}
+		
+		if e.config.DNS.BufferSize > 0 {
+			streamCfg.RecvBufferSize = e.config.DNS.BufferSize
+			streamCfg.SendBufferSize = e.config.DNS.BufferSize / 2
+		}
+		
+		if e.config.DNS.MaxPacketSize > 0 {
+			streamCfg.MaxPacketSize = e.config.DNS.MaxPacketSize
+		}
+		
+		wrapper := dns.NewStreamWrapperWithConfig(e.dnsClient, sessionID, streamCfg)
+		
+		e.logDebug(fmt.Sprintf("DNS stream created (session: %08x, buffer: %d)", 
+			sessionID, streamCfg.RecvBufferSize))
+		
+		return wrapper, nil
+	})
 }
-
-// ═══════════════════════════════════════════════════════════
-// SOCKS5 Server
-// ═══════════════════════════════════════════════════════════
 
 func (e *Engine) startSOCKS5(openStream func() (io.ReadWriteCloser, error)) error {
 	listenAddr := "127.0.0.1:1080"
@@ -814,96 +740,87 @@ func (e *Engine) sendConnectRequest(stream io.ReadWriter, target string) error {
 }
 
 func (e *Engine) relayWithStats(stream io.ReadWriteCloser, conn net.Conn) {
-    done := make(chan struct{}, 2)
+	done := make(chan struct{}, 2)
 
-    // ═══════════════════════════════════════════════════════════
-    // 📤 UPLOAD: Browser/App → VPN Server
-    // ═══════════════════════════════════════════════════════════
-    go func() {
-        defer e.recoverPanic("relay upload")
-        buf := make([]byte, 32768)
-        
-        for {
-            n, err := conn.Read(buf)
-            
-            if n > 0 {
-                written, writeErr := stream.Write(buf[:n])
-                
-                if writeErr != nil {
-                    e.logError(fmt.Sprintf("Stream write failed: %v", writeErr))
-                    break 
-                }
-                
-                if written > 0 {
-                    e.stats.mu.Lock()
-                    e.stats.totalUpload += int64(written)
-                    e.stats.mu.Unlock()
-                    if e.adaptiveCover != nil {
-                        e.adaptiveCover.RecordTraffic(int64(written))
-                    }
-                }
-            }
-            
-            if err != nil {
-                if err != io.EOF {
-                    e.logError(fmt.Sprintf("Connection read error: %v", err))
-                }
-                break
-            }
-        }
-        
-        done <- struct{}{}
-    }()
+	go func() {
+		defer e.recoverPanic("relay upload")
+		buf := make([]byte, 32768)
+		
+		for {
+			n, err := conn.Read(buf)
+			
+			if n > 0 {
+				written, writeErr := stream.Write(buf[:n])
+				
+				if writeErr != nil {
+					e.logError(fmt.Sprintf("Stream write failed: %v", writeErr))
+					break 
+				}
+				
+				if written > 0 {
+					e.stats.mu.Lock()
+					e.stats.totalUpload += int64(written)
+					e.stats.mu.Unlock()
+					if e.adaptiveCover != nil {
+						e.adaptiveCover.RecordTraffic(int64(written))
+					}
+				}
+			}
+			
+			if err != nil {
+				if err != io.EOF {
+					e.logError(fmt.Sprintf("Connection read error: %v", err))
+				}
+				break
+			}
+		}
+		
+		done <- struct{}{}
+	}()
 
-    // ═══════════════════════════════════════════════════════════
-    // 📥 DOWNLOAD: VPN Server → Browser/App
-    // ═══════════════════════════════════════════════════════════
-    go func() {
-        defer e.recoverPanic("relay download")
-        buf := make([]byte, 32768)
-        
-        for {
-            n, err := stream.Read(buf)
-            
-            if n > 0 {
-                written, writeErr := conn.Write(buf[:n])
-                
-                if writeErr != nil {
-                    e.logError(fmt.Sprintf("Connection write failed: %v", writeErr))
-                    break
-                }
-                
-                if written > 0 {
-                    e.stats.mu.Lock()
-                    e.stats.totalDownload += int64(written)
-                    e.stats.mu.Unlock()
-                    
-                    if e.adaptiveCover != nil {
-                        e.adaptiveCover.RecordTraffic(int64(written))
-                    }
-                }
-            }
-            
-            if err != nil {
-                if err != io.EOF {
-                    e.logError(fmt.Sprintf("Stream read error: %v", err))
-                }
-                break
-            }
-        }
-        
-        done <- struct{}{}
-    }()
+	go func() {
+		defer e.recoverPanic("relay download")
+		buf := make([]byte, 32768)
+		
+		for {
+			n, err := stream.Read(buf)
+			
+			if n > 0 {
+				written, writeErr := conn.Write(buf[:n])
+				
+				if writeErr != nil {
+					e.logError(fmt.Sprintf("Connection write failed: %v", writeErr))
+					break
+				}
+				
+				if written > 0 {
+					e.stats.mu.Lock()
+					e.stats.totalDownload += int64(written)
+					e.stats.mu.Unlock()
+					
+					if e.adaptiveCover != nil {
+						e.adaptiveCover.RecordTraffic(int64(written))
+					}
+				}
+			}
+			
+			if err != nil {
+				if err != io.EOF {
+					e.logError(fmt.Sprintf("Stream read error: %v", err))
+				}
+				break
+			}
+		}
+		
+		done <- struct{}{}
+	}()
 
-    <-done
-    
-    stream.Close()
-    conn.Close()
-    <-done
+	<-done
+	
+	stream.Close()
+	conn.Close()
+	<-done
 }
-// ═══════════════════════════════════════════════════════════
-// Background Tasks
-// ═══════════════════════════════════════════════════════════
 
 func (e *Engine) statsReporter() {
 	defer e.recoverPanic("statsReporter")
@@ -1003,10 +920,6 @@ func (e *Engine) sniRotator() {
 	}
 }
 
-// ═══════════════════════════════════════════════════════════
-// Disconnect
-// ═══════════════════════════════════════════════════════════
-
 func (e *Engine) Disconnect() bool {
 	defer e.recoverPanic("Disconnect")
 
@@ -1062,10 +975,6 @@ func (e *Engine) Disconnect() bool {
 
 	return true
 }
-
-// ═══════════════════════════════════════════════════════════
-// Public API
-// ═══════════════════════════════════════════════════════════
 
 func (e *Engine) GetStatus() string {
 	e.mu.RLock()
@@ -1124,10 +1033,6 @@ func (e *Engine) buildCoverConfig(cfg *config.CoverConfig) *cover.Config {
 		IdleTraffic:   true,
 	}
 }
-
-// ═══════════════════════════════════════════════════════════
-// Helpers
-// ═══════════════════════════════════════════════════════════
 
 func (e *Engine) setStatus(s string) {
 	e.status = s
