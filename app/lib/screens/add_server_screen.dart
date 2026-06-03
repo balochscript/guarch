@@ -19,7 +19,6 @@ class _AddServerScreenState extends State<AddServerScreen> {
   late TextEditingController _portController;
   late TextEditingController _pskController;
   late TextEditingController _pinController;
-  late TextEditingController _socksPortController;
   final _domainController = TextEditingController();
   final _sniDomainController = TextEditingController();
   final _dnsDomainController = TextEditingController();
@@ -58,7 +57,6 @@ class _AddServerScreenState extends State<AddServerScreen> {
     _portController = TextEditingController(text: (widget.server?.port ?? 8443).toString());
     _pskController = TextEditingController(text: widget.server?.psk ?? '');
     _pinController = TextEditingController(text: widget.server?.certPin ?? '');
-    _socksPortController = TextEditingController(text: (widget.server?.socksPort ?? 1080).toString());
     
     _protocol = widget.server?.protocol ?? 'guarch';
     _coverEnabled = widget.server?.coverEnabled ?? false;
@@ -84,7 +82,6 @@ class _AddServerScreenState extends State<AddServerScreen> {
     _portController.dispose();
     _pskController.dispose();
     _pinController.dispose();
-    _socksPortController.dispose();
     _domainController.dispose();
     _sniDomainController.dispose();
     _dnsDomainController.dispose();
@@ -267,34 +264,6 @@ class _AddServerScreenState extends State<AddServerScreen> {
             ),
 
             if (_dnsFallbackEnabled) ..._buildDNSSection(),
-
-            const SizedBox(height: 32),
-            ExpansionTile(
-              leading: Icon(Icons.tune, color: textMuted(context)),
-              title: Text(
-                'Advanced Settings',
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
-                  color: textMuted(context),
-                ),
-              ),
-              children: [
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  child: TextFormField(
-                    controller: _socksPortController,
-                    decoration: const InputDecoration(
-                      labelText: 'Local SOCKS5 Port',
-                      hintText: '1080',
-                      prefixIcon: Icon(Icons.settings_ethernet),
-                    ),
-                    keyboardType: TextInputType.number,
-                  ),
-                ),
-                const SizedBox(height: 16),
-              ],
-            ),
 
             const SizedBox(height: 32),
             FilledButton(
@@ -805,7 +774,6 @@ class _AddServerScreenState extends State<AddServerScreen> {
     final provider = context.read<AppProvider>();
     final psk = _pskController.text.trim();
     final pin = _pinController.text.trim();
-    final socksPort = int.tryParse(_socksPortController.text.trim()) ?? 1080;
 
     if (isEditing) {
       provider.updateServer(
@@ -815,7 +783,6 @@ class _AddServerScreenState extends State<AddServerScreen> {
           port: int.parse(_portController.text.trim()),
           psk: psk,
           certPin: pin.isEmpty ? null : pin,
-          socksPort: socksPort,
           protocol: _protocol,
           coverEnabled: _coverEnabled,
           coverDomains: List.from(_coverDomains),
@@ -836,7 +803,6 @@ class _AddServerScreenState extends State<AddServerScreen> {
         port: int.parse(_portController.text.trim()),
         psk: psk,
         certPin: pin.isEmpty ? null : pin,
-        socksPort: socksPort,
         protocol: _protocol,
         coverEnabled: _coverEnabled,
         coverDomains: List.from(_coverDomains),
