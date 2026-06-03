@@ -2,13 +2,13 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 
 class ServerConfig {
+  final int version;
   String id;
   String name;
   String address;
   int port;
   String psk;
   String? certPin;
-  int socksPort;
   String protocol;
   bool coverEnabled;
   List<CoverDomain> coverDomains;
@@ -39,13 +39,13 @@ class ServerConfig {
   Metadata? metadata;
 
   ServerConfig({
+    this.version = 1,
     required this.id,
     required this.name,
     required this.address,
     this.port = 8443,
     this.psk = '',
     this.certPin,
-    this.socksPort = 1080,
     this.protocol = 'guarch',
     this.coverEnabled = false,
     List<CoverDomain>? coverDomains,
@@ -144,7 +144,7 @@ class ServerConfig {
 
   Map<String, dynamic> toJson() {
     final json = {
-      'version': 1,
+      'version': version,
       'id': id,
       'server': {
         'name': name,
@@ -153,7 +153,6 @@ class ServerConfig {
         'psk': psk,
         if (certPin != null) 'cert_pin': certPin,
       },
-      'socks_port': socksPort,
       'is_active': isActive,
       if (ping != null) 'ping': ping,
       if (realDelay != null) 'real_delay': realDelay,
@@ -202,6 +201,11 @@ class ServerConfig {
   }
 
   factory ServerConfig.fromJson(Map<String, dynamic> json) {
+    int version = json['version'] ?? 1;
+    if (version != 1) {
+      throw Exception('Unsupported config version: $version (expected 1)');
+    }
+
     final server = json['server'] as Map<String, dynamic>? ?? json;
     final sni = json['sni'] as Map<String, dynamic>? ?? {};
     final cover = json['cover'] ?? json['cover_traffic'] ?? {};
@@ -216,16 +220,14 @@ class ServerConfig {
       port = int.tryParse(parts[1]) ?? port;
     }
 
-    final socksPort = json['socks_port'] ?? json['listen_port'] ?? 1080;
-
     return ServerConfig(
+      version: version,
       id: json['id'] ?? DateTime.now().millisecondsSinceEpoch.toString(),
       name: server['name'] ?? 'Server',
       address: address,
       port: port,
       psk: server['psk'] ?? json['psk'] ?? '',
       certPin: server['cert_pin'] ?? json['cert_pin'],
-      socksPort: socksPort,
       protocol: server['protocol'] ?? json['protocol'] ?? 'guarch',
       
       coverEnabled: cover['enabled'] == true,
@@ -326,7 +328,6 @@ class ServerConfig {
     int? port,
     String? psk,
     String? certPin,
-    int? socksPort,
     String? protocol,
     bool? coverEnabled,
     List<CoverDomain>? coverDomains,
@@ -350,13 +351,13 @@ class ServerConfig {
     Metadata? metadata,
   }) {
     return ServerConfig(
+      version: version,
       id: id,
       name: name ?? this.name,
       address: address ?? this.address,
       port: port ?? this.port,
       psk: psk ?? this.psk,
       certPin: certPin ?? this.certPin,
-      socksPort: socksPort ?? this.socksPort,
       protocol: protocol ?? this.protocol,
       coverEnabled: coverEnabled ?? this.coverEnabled,
       coverDomains: coverDomains ?? this.coverDomains,
