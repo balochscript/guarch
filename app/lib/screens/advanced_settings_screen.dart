@@ -1,13 +1,53 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:guarch/app.dart';
 import 'package:guarch/providers/app_provider.dart';
+import 'package:guarch/models/app_settings.dart';
 
-class AdvancedSettingsScreen extends StatelessWidget {
+class AdvancedSettingsScreen extends StatefulWidget {
   const AdvancedSettingsScreen({super.key});
 
   @override
+  State<AdvancedSettingsScreen> createState() => _AdvancedSettingsScreenState();
+}
+
+class _AdvancedSettingsScreenState extends State<AdvancedSettingsScreen> {
+  int _socksPort = 7070;
+  bool _loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadSettings();
+  }
+
+  Future<void> _loadSettings() async {
+    final port = await AppSettings.getSocksPort();
+    setState(() {
+      _socksPort = port;
+      _loading = false;
+    });
+  }
+
+  Future<void> _saveSocksPort(int port) async {
+    await AppSettings.setSocksPort(port);
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('✓ SOCKS port updated to $port')),
+      );
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
+    if (_loading) {
+      return Scaffold(
+        appBar: AppBar(title: const Text('Advanced Settings')),
+        body: const Center(child: CircularProgressIndicator()),
+      );
+    }
+
     return Consumer<AppProvider>(
       builder: (context, provider, _) {
         return Scaffold(
@@ -24,9 +64,12 @@ class AdvancedSettingsScreen extends StatelessWidget {
           body: ListView(
             padding: const EdgeInsets.all(16),
             children: [
-              // ═══════════════════════════════════════════════
-              // Connection Timeouts
-              // ═══════════════════════════════════════════════
+              _sectionTitle(context, 'Local Proxy Settings'),
+              Card(
+                child: _buildSocksPortTile(context),
+              ),
+
+              const SizedBox(height: 24),
               _sectionTitle(context, 'Connection Timeouts'),
               Card(
                 child: Column(
@@ -79,9 +122,6 @@ class AdvancedSettingsScreen extends StatelessWidget {
                 ),
               ),
 
-              // ═══════════════════════════════════════════════
-              // Retry Settings
-              // ═══════════════════════════════════════════════
               const SizedBox(height: 24),
               _sectionTitle(context, 'Retry Settings'),
               Card(
@@ -119,18 +159,12 @@ class AdvancedSettingsScreen extends StatelessWidget {
                 ),
               ),
 
-              // ═══════════════════════════════════════════════
-              // Performance
-              // ═══════════════════════════════════════════════
               const SizedBox(height: 24),
               _sectionTitle(context, 'Performance'),
               Card(
                 child: _buildBufferSizeTile(context, provider),
               ),
 
-              // ═══════════════════════════════════════════════
-              // Info Box
-              // ═══════════════════════════════════════════════
               const SizedBox(height: 24),
               Container(
                 padding: const EdgeInsets.all(16),
@@ -163,6 +197,7 @@ class AdvancedSettingsScreen extends StatelessWidget {
                     ),
                     const SizedBox(height: 12),
                     Text(
+                      '• SOCKS port: Change if port 7070 conflicts\n'
                       '• Lower timeouts = faster failure detection\n'
                       '• Higher timeouts = better on slow networks\n'
                       '• More retries = more resilient\n'
@@ -178,9 +213,6 @@ class AdvancedSettingsScreen extends StatelessWidget {
                 ),
               ),
 
-              // ═══════════════════════════════════════════════
-              // Current Values Summary
-              // ═══════════════════════════════════════════════
               const SizedBox(height: 24),
               _sectionTitle(context, 'Current Configuration'),
               Card(
@@ -189,35 +221,19 @@ class AdvancedSettingsScreen extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      _buildInfoRow(
-                        'Connection Timeout',
-                        '${provider.connectionTimeout}s',
-                      ),
+                      _buildInfoRow('SOCKS Port', '$_socksPort'),
                       const SizedBox(height: 8),
-                      _buildInfoRow(
-                        'Handshake Timeout',
-                        '${provider.handshakeTimeout}s',
-                      ),
+                      _buildInfoRow('Connection Timeout', '${provider.connectionTimeout}s'),
                       const SizedBox(height: 8),
-                      _buildInfoRow(
-                        'Keep-Alive Interval',
-                        '${provider.keepAliveInterval}s',
-                      ),
+                      _buildInfoRow('Handshake Timeout', '${provider.handshakeTimeout}s'),
                       const SizedBox(height: 8),
-                      _buildInfoRow(
-                        'Max Retry Attempts',
-                        '${provider.maxRetryAttempts}',
-                      ),
+                      _buildInfoRow('Keep-Alive Interval', '${provider.keepAliveInterval}s'),
                       const SizedBox(height: 8),
-                      _buildInfoRow(
-                        'Retry Delay',
-                        '${provider.retryDelay}s',
-                      ),
+                      _buildInfoRow('Max Retry Attempts', '${provider.maxRetryAttempts}'),
                       const SizedBox(height: 8),
-                      _buildInfoRow(
-                        'Buffer Size',
-                        '${provider.bufferSize ~/ 1024} KB',
-                      ),
+                      _buildInfoRow('Retry Delay', '${provider.retryDelay}s'),
+                      const SizedBox(height: 8),
+                      _buildInfoRow('Buffer Size', '${provider.bufferSize ~/ 1024} KB'),
                     ],
                   ),
                 ),
@@ -241,6 +257,96 @@ class AdvancedSettingsScreen extends StatelessWidget {
           fontWeight: FontWeight.w600,
           color: textPrimary(context),
         ),
+      ),
+    );
+  }
+
+  Widget _buildSocksPortTile(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.settings_ethernet, color: accentColor(context), size: 20),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'SOCKS5 Proxy Port',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w600,
+                        color: textSecondary(context),
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      'Local port for SOCKS5 proxy (applies to all servers)',
+                      style: TextStyle(
+                        color: textMuted(context),
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Container(
+                width: 100,
+                child: TextField(
+                  controller: TextEditingController(text: _socksPort.toString()),
+                  keyboardType: TextInputType.number,
+                  textAlign: TextAlign.center,
+                  inputFormatters: [
+                    FilteringTextInputFormatter.digitsOnly,
+                    LengthLimitingTextInputFormatter(5),
+                  ],
+                  decoration: InputDecoration(
+                    border: const OutlineInputBorder(),
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                    hintText: '7070',
+                  ),
+                  onSubmitted: (value) {
+                    int? port = int.tryParse(value);
+                    if (port == null || port < 1024 || port > 65535) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('❌ Invalid port. Must be 1024-65535'),
+                          backgroundColor: Colors.red,
+                        ),
+                      );
+                      return;
+                    }
+                    setState(() => _socksPort = port);
+                    _saveSocksPort(port);
+                  },
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Colors.blue.shade50,
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.info_outline, color: Colors.blue, size: 16),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'ℹ️  Valid range: 1024-65535 | Avoid: 1080, 8080, 3128',
+                    style: TextStyle(fontSize: 12, color: Colors.blue.shade900),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -414,20 +520,27 @@ class AdvancedSettingsScreen extends StatelessWidget {
             child: const Text('Cancel'),
           ),
           FilledButton(
-            onPressed: () {
+            onPressed: () async {
               provider.setConnectionTimeout(15);
               provider.setHandshakeTimeout(30);
               provider.setKeepAliveInterval(30);
               provider.setMaxRetryAttempts(3);
               provider.setRetryDelay(5);
               provider.setBufferSize(32768);
-              Navigator.pop(context);
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('Settings reset to defaults'),
-                  backgroundColor: Colors.green,
-                ),
-              );
+              
+              await AppSettings.resetSocksPort();
+              final port = await AppSettings.getSocksPort();
+              setState(() => _socksPort = port);
+              
+              if (context.mounted) {
+                Navigator.pop(context);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Settings reset to defaults'),
+                    backgroundColor: Colors.green,
+                  ),
+                );
+              }
             },
             child: const Text('Reset'),
           ),
