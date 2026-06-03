@@ -627,7 +627,14 @@ func (e *Engine) enableDNSFallback() error {
 }
 
 func (e *Engine) startSOCKS5(openStream func() (io.ReadWriteCloser, error)) error {
-	listenAddr := "127.0.0.1:1080"
+	e.mu.RLock()
+	socksPort := e.config.SocksPort
+	if socksPort == 0 {
+		socksPort = 7070
+	}
+	e.mu.RUnlock()
+
+	listenAddr := fmt.Sprintf("127.0.0.1:%d", socksPort)
 
 	ln, err := net.Listen("tcp", listenAddr)
 	if err != nil {
