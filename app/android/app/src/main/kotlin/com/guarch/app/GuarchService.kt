@@ -47,10 +47,6 @@ class GuarchService : VpnService() {
     private var bytesDownloaded = 0L
     private var connectedTime = 0L
 
-    // ═══════════════════════════════════════════════════════════════
-    // Lifecycle
-    // ═══════════════════════════════════════════════════════════════
-
     override fun onCreate() {
         super.onCreate()
         CrashLogger.d("Service", "=== onCreate (v1.0.1) ===")
@@ -70,7 +66,7 @@ class GuarchService : VpnService() {
                 }
 
                 ACTION_START -> {
-                    val socksPort = intent?.getIntExtra("socks_port", 1080) ?: 1080
+                    val socksPort = intent?.getIntExtra("socks_port", 7070) ?: 7070
                     CrashLogger.d("Service", "  socksPort=$socksPort isRunning=$isRunning")
 
                     if (isRunning) {
@@ -97,14 +93,9 @@ class GuarchService : VpnService() {
         return START_STICKY
     }
 
-    // ═══════════════════════════════════════════════════════════════
-    // VPN Setup
-    // ═══════════════════════════════════════════════════════════════
-
     private fun startVpn(socksPort: Int) {
         CrashLogger.d("Service", "--- startVpn ---")
 
-        // Start foreground service
         try {
             CrashLogger.d("Service", "  S1: Starting foreground service...")
             startForeground(NOTIFICATION_ID, createNotification("Connecting..."))
@@ -115,7 +106,6 @@ class GuarchService : VpnService() {
             return
         }
 
-        // Build VPN interface
         try {
             CrashLogger.d("Service", "  S2: Building VPN interface...")
             
@@ -126,13 +116,11 @@ class GuarchService : VpnService() {
                 .setMtu(1500)
                 .setBlocking(false)
 
-            // DNS servers
-            builder.addDnsServer("8.8.8.8")      // Google DNS
+            builder.addDnsServer("8.8.8.8")
             builder.addDnsServer("8.8.4.4")
-            builder.addDnsServer("1.1.1.1")      // Cloudflare DNS
+            builder.addDnsServer("1.1.1.1")
             builder.addDnsServer("1.0.0.1")
 
-            // Exclude this app from VPN (prevent loop)
             try {
                 builder.addDisallowedApplication(packageName)
                 CrashLogger.d("Service", "  S2: Excluded self from VPN ✅")
@@ -140,7 +128,6 @@ class GuarchService : VpnService() {
                 CrashLogger.w("Service", "  S2: Could not exclude self (OK on older Android)")
             }
 
-            // Optional: IPv6 support
             try {
                 builder.addAddress("fd00::2", 64)
                 builder.addRoute("::", 0)
@@ -149,7 +136,6 @@ class GuarchService : VpnService() {
                 CrashLogger.w("Service", "  S2: IPv6 not supported on this device")
             }
 
-            // Establish VPN
             CrashLogger.d("Service", "  S2: Calling establish()...")
             vpnInterface = builder.establish()
 
@@ -161,8 +147,6 @@ class GuarchService : VpnService() {
                 return
             }
 
-            // Get file descriptor WITHOUT detaching
-            // (detach() would close the interface — we need to keep it alive)
             val fd = vpnInterface!!.fd
             _tunFd.set(fd)
             _isRunning.set(true)
@@ -175,7 +159,6 @@ class GuarchService : VpnService() {
             CrashLogger.d("Service", "  S2: DNS = 8.8.8.8, 1.1.1.1")
             CrashLogger.d("Service", "  S2: MTU = 1500")
 
-            // Update notification
             updateNotificationText("Connected ✅")
 
             CrashLogger.d("Service", "=== VPN STARTED ===")
@@ -187,10 +170,6 @@ class GuarchService : VpnService() {
             stopSelf()
         }
     }
-
-    // ═══════════════════════════════════════════════════════════════
-    // Cleanup
-    // ═══════════════════════════════════════════════════════════════
 
     private fun cleanupTun() {
         CrashLogger.d("Service", "  cleanupTun")
@@ -228,10 +207,6 @@ class GuarchService : VpnService() {
         stopSelf()
         CrashLogger.d("Service", "  VPN stopped ✅")
     }
-
-    // ═══════════════════════════════════════════════════════════════
-    // Notifications
-    // ═══════════════════════════════════════════════════════════════
 
     private fun createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -307,15 +282,10 @@ class GuarchService : VpnService() {
         }
     }
 
-    // ═══════════════════════════════════════════════════════════════
-    // Statistics (for future use)
-    // ═══════════════════════════════════════════════════════════════
-
     fun updateStats(upload: Long, download: Long) {
         bytesUploaded = upload
         bytesDownloaded = download
 
-        // Update notification with stats (optional)
         val uploadMB = upload / (1024.0 * 1024.0)
         val downloadMB = download / (1024.0 * 1024.0)
         
@@ -335,10 +305,6 @@ class GuarchService : VpnService() {
 
         updateNotificationText(statsText)
     }
-
-    // ═══════════════════════════════════════════════════════════════
-    // VPN Revocation
-    // ═══════════════════════════════════════════════════════════════
 
     override fun onRevoke() {
         CrashLogger.d("Service", "=== onRevoke (user revoked VPN permission) ===")
