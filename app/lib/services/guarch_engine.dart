@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/services.dart';
 import 'package:guarch/models/server_config.dart';
+import 'package:guarch/models/app_settings.dart';
 
 class FlutterLog {
   static const _logChannel = MethodChannel('com.guarch.app/logs');
@@ -231,7 +232,7 @@ class GuarchEngine {
     required String psk,
     String? certPin,
     String listenAddr = '127.0.0.1',
-    int listenPort = 1080,
+    int? listenPort,
     bool coverEnabled = true,
     String protocol = 'guarch',
   }) async {
@@ -245,13 +246,16 @@ class GuarchEngine {
     }
 
     try {
+      final socksPort = listenPort ?? await AppSettings.getSocksPort();
+      FlutterLog.d('Engine', '  SOCKS port: $socksPort');
+
       final config = jsonEncode({
         'server_addr': serverAddr,
         'server_port': serverPort,
         'psk': psk,
         'cert_pin': certPin ?? '',
         'listen_addr': listenAddr,
-        'listen_port': listenPort,
+        'listen_port': socksPort,
         'cover_enabled': coverEnabled,
         'protocol': protocol,
       });
@@ -289,12 +293,19 @@ class GuarchEngine {
     }
 
     try {
+      final socksPort = await AppSettings.getSocksPort();
+      FlutterLog.d('Engine', '  SOCKS port from settings: $socksPort');
+
       final config = jsonDecode(configJson) as Map<String, dynamic>;
+      config['socks_port'] = socksPort;
+
       FlutterLog.d('Engine', '  Config version: ${config['version']}');
       FlutterLog.d('Engine', '  Server: ${config['server']?['address']}');
       FlutterLog.d('Engine', '  Protocol: ${config['server']?['protocol']}');
 
-      final result = await _channel.invokeMethod('connectWithConfig', configJson);
+      final updatedConfigJson = jsonEncode(config);
+
+      final result = await _channel.invokeMethod('connectWithConfig', updatedConfigJson);
       FlutterLog.d('Engine', '  result: $result');
       return result == true;
     } on PlatformException catch (e) {
@@ -518,6 +529,8 @@ class GuarchEngine {
     final startTime = DateTime.now();
     
     try {
+      final socksPort = await AppSettings.getSocksPort();
+
       final testConfig = {
         'version': 1,
         'server': {
@@ -527,7 +540,7 @@ class GuarchEngine {
           'psk': server.psk,
           'cert_pin': server.certPin ?? '',
         },
-        'socks_port': 1080,
+        'socks_port': socksPort,
         'sni': {
           'enabled': false,
         },
@@ -578,6 +591,8 @@ class GuarchEngine {
     if (!_nativeAvailable) return false;
     
     try {
+      final socksPort = await AppSettings.getSocksPort();
+
       final testConfig = {
         'version': 1,
         'server': {
@@ -586,6 +601,7 @@ class GuarchEngine {
           'protocol': 'guarch',
           'psk': psk,
         },
+        'socks_port': socksPort,
         'sni': {'enabled': false},
         'cover': {
           'enabled': false,
