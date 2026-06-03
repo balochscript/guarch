@@ -335,50 +335,123 @@ class MainActivity : FlutterActivity() {
                             CrashLogger.d(TAG, "  Config loaded")
                         } catch (e: Throwable) {
                             CrashLogger.e(TAG, "  Config load failed", unwrapException(e))
+                            runOnUiThread {
+                                sendEvent("error", "Config load failed")
+                            }
+                            return@Thread
                         }
 
                         try {
                             val connectMethod = goEngine!!.javaClass.getMethod("connect")
-                            val success = connectMethod.invoke(goEngine) as? Boolean ?: false
-                            CrashLogger.d(TAG, "  Go connect: $success")
-
-                            if (!success) {
-                                sendEvent("error", "Go engine connection failed")
-                            }
-                        } catch (e: Throwable) {
-                            CrashLogger.e(TAG, "  Go connect FAILED", unwrapException(e))
-                            sendEvent("error", "Go engine error: ${e.message}")
-                        }
-                    }
-
-                    if (goEngine != null && !vpnAndTunStarted) {
-                        try {
-                            CrashLogger.d(TAG, "  Starting TUN (fd=$fd, port=$pendingSocksPort)...")
-                            val startTunMethod = goEngine!!.javaClass.getMethod(
-                                "startTun",
-                                Int::class.java,
-                                Int::class.java
-                            )
-                            startTunMethod.invoke(goEngine, fd, pendingSocksPort)
+                            val started = connectMethod.invoke(goEngine) as? Boolean ?: false
                             
-                            vpnAndTunStarted = true
-                            CrashLogger.d(TAG, "  TUN started ✅")
+                            if (!started) {
+                                CrashLogger.e(TAG, "  Connect() returned false")
+                                runOnUiThread {
+                                    sendEvent("error", "Connection start failed")
+                                }
+                                return@Thread
+                            }
+                            
+                            CrashLogger.d(TAG, "  Waiting for connection...")
+
+                            val getStatusMethod = goEngine!!.javaClass.getMethod("getStatus")
+                            var statusAttempts = 0
+                            val maxStatusAttempts = 300
+                            var connected = false
+
+                            while (statusAttempts < maxStatusAttempts) {
+                                try {
+                                    val status = getStatusMethod.invoke(goEngine) as? String ?: "disconnected"
+                                    
+                                    when (status) {
+                                        "connected" -> {
+                                            connected = true
+                                            CrashLogger.d(TAG, "  Connected! (attempts: $statusAttempts)")
+                                            break
+                                        }
+                                        "disconnected" -> {
+                                            if (statusAttempts > 10) {
+                                                CrashLogger.e(TAG, "  Connection failed (status: disconnected)")
+                                                runOnUiThread {
+                                                    sendEvent("error", "Connection failed")
+                                                }
+                                                return@Thread
+                                            }
+                                        }
+                                        "connecting" -> {
+                                        }
+                                    }
+                                    
+                                    Thread.sleep(100)
+                                    statusAttempts++
+                                } catch (e: Throwable) {
+                                    CrashLogger.e(TAG, "  Status check error", unwrapException(e))
+                                    break
+                                }
+                            }
+
+                            if (!connected) {
+                                CrashLogger.e(TAG, "  Connection timeout (30s)")
+                                runOnUiThread {
+                                    sendEvent("error", "Connection timeout")
+                                }
+                                
+                                try {
+                                    goEngine!!.javaClass.getMethod("disconnect").invoke(goEngine)
+                                } catch (_: Throwable) {}
+                                
+                                return@Thread
+                            }
+
+                            if (!vpnAndTunStarted) {
+                                try {
+                                    CrashLogger.d(TAG, "  Starting TUN (fd=$fd, port=$pendingSocksPort)...")
+                                    
+                                    val startTunMethod = goEngine!!.javaClass.getMethod(
+                                        "startTun",
+                                        Int::class.java,
+                                        Int::class.java
+                                    )
+                                    startTunMethod.invoke(goEngine, fd, pendingSocksPort)
+                                    
+                                    vpnAndTunStarted = true
+                                    CrashLogger.d(TAG, "  TUN started")
+                                } catch (e: Throwable) {
+                                    CrashLogger.e(TAG, "  TUN start failed", unwrapException(e))
+                                    runOnUiThread {
+                                        sendEvent("error", "TUN start failed: ${e.message}")
+                                    }
+                                    
+                                    try {
+                                        goEngine!!.javaClass.getMethod("disconnect").invoke(goEngine)
+                                    } catch (_: Throwable) {}
+                                    
+                                    return@Thread
+                                }
+                            }
+
+                            CrashLogger.d(TAG, "=== Setup complete ===")
+
                         } catch (e: Throwable) {
-                            CrashLogger.e(TAG, "  TUN start FAILED", unwrapException(e))
-                            sendEvent("error", "TUN start failed: ${e.message}")
+                            val real = unwrapException(e)
+                            CrashLogger.e(TAG, "  Go connect failed", real)
+                            runOnUiThread {
+                                sendEvent("error", "Connection error: ${real.message}")
+                            }
                         }
                     }
-
-                    CrashLogger.d(TAG, "=== Setup complete ===")
 
                 } catch (e: Throwable) {
-                    CrashLogger.e(TAG, "  Background thread CRASHED", e)
-                    sendEvent("error", "Setup failed: ${e.message}")
+                    CrashLogger.e(TAG, "  Background thread crashed", e)
+                    runOnUiThread {
+                        sendEvent("error", "Setup failed: ${e.message}")
+                    }
                 }
             }.start()
 
         } catch (e: Throwable) {
-            CrashLogger.e(TAG, "  startVpnService CRASHED", e)
+            CrashLogger.e(TAG, "  startVpnService crashed", e)
             sendEvent("error", e.message ?: "VPN service failed")
             result.success(false)
         }
