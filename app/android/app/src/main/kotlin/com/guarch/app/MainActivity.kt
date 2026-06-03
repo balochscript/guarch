@@ -27,7 +27,7 @@ class MainActivity : FlutterActivity() {
 
     private var vpnPermissionResult: MethodChannel.Result? = null
     private var pendingConfig: String? = null
-    private var pendingSocksPort: Int = 1080
+    private var pendingSocksPort: Int = 7070
     private var methodChannel: MethodChannel? = null
     private var eventSink: EventChannel.EventSink? = null
     private var goEngine: Any? = null
@@ -189,10 +189,10 @@ class MainActivity : FlutterActivity() {
 
         val socksPort = try {
             val json = org.json.JSONObject(configJson)
-            json.optInt("socks_port", 1080)
+            json.optInt("socks_port", 7070)
         } catch (e: Exception) {
-            CrashLogger.w(TAG, "  Failed to parse socks_port, using default 1080")
-            1080
+            CrashLogger.w(TAG, "  Failed to parse socks_port, using default 7070")
+            7070
         }
 
         CrashLogger.d(TAG, "  Config: ${configJson.take(200)}...")
