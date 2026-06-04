@@ -22,6 +22,8 @@ class _AddServerScreenState extends State<AddServerScreen> {
   final _domainController = TextEditingController();
   final _sniDomainController = TextEditingController();
   final _dnsDomainController = TextEditingController();
+  final _transportHostController = TextEditingController();
+  final _transportPathController = TextEditingController();
   
   late String _protocol;
   bool _coverEnabled = false;
@@ -30,6 +32,8 @@ class _AddServerScreenState extends State<AddServerScreen> {
   bool _batteryAwareEnabled = true;
   bool _dataSaverEnabled = false;
   bool _pskVisible = false;
+  
+  String _transportType = 'direct';
   
   late String _sniMode;
   late String _dnsFallbackMode;
@@ -41,11 +45,11 @@ class _AddServerScreenState extends State<AddServerScreen> {
   String get _protocolDescription {
     switch (_protocol) {
       case 'grouk':
-        return '🌩️ Fast raw UDP tunnel. Best for speed, less stealth.';
+        return '🌩️ Fast raw UDP tunnel. Best for speed, less stealth. ⚠️ Beta';
       case 'zhip':
-        return '⚡ QUIC-based tunnel. Good balance of speed and stealth.';
+        return '⚡ QUIC-based tunnel. Good balance. ⚠️ Experimental';
       default:
-        return '🏹 TLS 1.3 encrypted with cover traffic. Maximum stealth.';
+        return '🏹 TLS 1.3 encrypted. Maximum stealth & stability. ✅ Recommended';
     }
   }
 
@@ -64,6 +68,10 @@ class _AddServerScreenState extends State<AddServerScreen> {
     _dnsFallbackEnabled = widget.server?.dnsFallbackEnabled ?? false;
     _batteryAwareEnabled = widget.server?.batteryAwareEnabled ?? true;
     _dataSaverEnabled = widget.server?.dataSaverEnabled ?? false;
+    
+    _transportType = widget.server?.transport?.type ?? 'direct';
+    _transportHostController.text = widget.server?.transport?.host ?? '';
+    _transportPathController.text = widget.server?.transport?.path ?? '/';
     
     _sniMode = widget.server?.sniMode ?? 'weighted';
     _dnsFallbackMode = widget.server?.dnsFallbackMode ?? 'auto';
@@ -85,6 +93,8 @@ class _AddServerScreenState extends State<AddServerScreen> {
     _domainController.dispose();
     _sniDomainController.dispose();
     _dnsDomainController.dispose();
+    _transportHostController.dispose();
+    _transportPathController.dispose();
     super.dispose();
   }
 
@@ -163,21 +173,60 @@ class _AddServerScreenState extends State<AddServerScreen> {
                       labelText: 'Protocol',
                       prefixIcon: Icon(Icons.router),
                     ),
-                    items: const [
+                    items: [
                       DropdownMenuItem(
                         value: 'guarch',
-                        child: Text('🏹 Guarch (TLS)'),
+                        child: Row(
+                          children: [
+                            const Text('🏹 Guarch (TLS)'),
+                            const SizedBox(width: 8),
+                            Chip(
+                              label: const Text('Stable', style: TextStyle(fontSize: 10, color: Colors.white)),
+                              backgroundColor: Colors.green,
+                              padding: const EdgeInsets.symmetric(horizontal: 4),
+                              materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                            ),
+                          ],
+                        ),
                       ),
                       DropdownMenuItem(
                         value: 'grouk',
-                        child: Text('🌩️ Grouk (UDP)'),
+                        child: Row(
+                          children: [
+                            const Text('🌩️ Grouk (UDP)'),
+                            const SizedBox(width: 8),
+                            Chip(
+                              label: const Text('Beta', style: TextStyle(fontSize: 10, color: Colors.white)),
+                              backgroundColor: Colors.orange,
+                              padding: const EdgeInsets.symmetric(horizontal: 4),
+                              materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                            ),
+                          ],
+                        ),
                       ),
                       DropdownMenuItem(
                         value: 'zhip',
-                        child: Text('⚡ Zhip (QUIC)'),
+                        child: Row(
+                          children: [
+                            const Text('⚡ Zhip (QUIC)'),
+                            const SizedBox(width: 8),
+                            Chip(
+                              label: const Text('Experimental', style: TextStyle(fontSize: 10, color: Colors.white)),
+                              backgroundColor: Colors.red,
+                              padding: const EdgeInsets.symmetric(horizontal: 4),
+                              materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                            ),
+                          ],
+                        ),
                       ),
                     ],
-                    onChanged: (v) => setState(() => _protocol = v!),
+                    onChanged: (v) {
+                      if (v == 'grouk' || v == 'zhip') {
+                        _showProtocolWarning(v!);
+                      } else {
+                        setState(() => _protocol = v!);
+                      }
+                    },
                   ),
                 ),
               ],
@@ -234,6 +283,17 @@ class _AddServerScreenState extends State<AddServerScreen> {
               ),
               style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
             ),
+
+            const SizedBox(height: 32),
+            _buildSectionHeader('🚀 Transport Settings'),
+            const SizedBox(height: 4),
+            Text(
+              'How data is sent through the tunnel (bypass method)',
+              style: TextStyle(color: textMuted(context), fontSize: 13),
+            ),
+            const SizedBox(height: 16),
+
+            _buildTransportSection(),
 
             const SizedBox(height: 32),
             _buildToggleSection(
@@ -328,6 +388,253 @@ class _AddServerScreenState extends State<AddServerScreen> {
         ),
         Switch(value: value, onChanged: onChanged),
       ],
+    );
+  }
+
+  Widget _buildTransportSection() {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            DropdownButtonFormField<String>(
+              value: _transportType,
+              decoration: const InputDecoration(
+                labelText: 'Transport Type',
+                prefixIcon: Icon(Icons.swap_horiz),
+                helperText: 'Method for sending data',
+              ),
+              items: const [
+                DropdownMenuItem(
+                  value: 'direct',
+                  child: Text('🔌 Direct (Simple & Fast)'),
+                ),
+                DropdownMenuItem(
+                  value: 'websocket',
+                  child: Text('🌐 WebSocket (Bypass)'),
+                ),
+                DropdownMenuItem(
+                  value: 'http2',
+                  child: Text('⚡ HTTP/2 (Experimental)'),
+                ),
+                DropdownMenuItem(
+                  value: 'dns',
+                  child: Text('🔌 DNS Tunnel (Emergency)'),
+                ),
+              ],
+              onChanged: (v) => setState(() => _transportType = v!),
+            ),
+            
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: _getTransportColor().withOpacity(0.1),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(
+                  color: _getTransportColor().withOpacity(0.3),
+                ),
+              ),
+              child: Row(
+                children: [
+                  Icon(
+                    _getTransportIcon(),
+                    size: 18,
+                    color: _getTransportColor(),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      _getTransportDescription(),
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: textMuted(context),
+                        height: 1.4,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            
+            if (_transportType == 'websocket' || _transportType == 'http2') ...[
+              const SizedBox(height: 16),
+              Divider(color: accentColor(context).withOpacity(0.1)),
+              const SizedBox(height: 16),
+              
+              Text(
+                'Advanced Settings',
+                style: TextStyle(
+                  fontWeight: FontWeight.w600,
+                  color: textSecondary(context),
+                ),
+              ),
+              const SizedBox(height: 12),
+              
+              TextFormField(
+                controller: _transportHostController,
+                decoration: const InputDecoration(
+                  labelText: 'Domain Fronting (optional)',
+                  hintText: 'e.g., digikala.com',
+                  prefixIcon: Icon(Icons.public),
+                  helperText: 'Pretend to connect to this popular domain',
+                ),
+                keyboardType: TextInputType.url,
+              ),
+              
+              if (_transportType == 'websocket') ...[
+                const SizedBox(height: 16),
+                TextFormField(
+                  controller: _transportPathController,
+                  decoration: const InputDecoration(
+                    labelText: 'WebSocket Path',
+                    hintText: '/ws',
+                    prefixIcon: Icon(Icons.route),
+                    helperText: 'URL path for WebSocket connection',
+                  ),
+                ),
+              ],
+              
+              const SizedBox(height: 12),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.blue.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.info_outline, size: 16, color: Colors.blue),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Domain Fronting helps bypass SNI-based filtering (Iran/China)',
+                        style: TextStyle(fontSize: 11, color: textMuted(context)),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Color _getTransportColor() {
+    switch (_transportType) {
+      case 'websocket':
+        return Colors.green;
+      case 'http2':
+        return Colors.orange;
+      case 'dns':
+        return Colors.red;
+      default:
+        return Colors.blue;
+    }
+  }
+
+  IconData _getTransportIcon() {
+    switch (_transportType) {
+      case 'websocket':
+        return Icons.wifi;
+      case 'http2':
+        return Icons.flash_on;
+      case 'dns':
+        return Icons.dns;
+      default:
+        return Icons.cable;
+    }
+  }
+
+  String _getTransportDescription() {
+    switch (_transportType) {
+      case 'direct':
+        return 'Direct TCP connection. Fastest but easily detected by DPI firewalls.';
+      case 'websocket':
+        return 'WebSocket over HTTPS. Looks like normal web browsing. Best for censored networks.';
+      case 'http2':
+        return 'HTTP/2 multiplexing. Advanced bypass technique. May be unstable.';
+      case 'dns':
+        return 'Tunnel via DNS queries (port 53). Very slow (~50 Kbps) but works everywhere.';
+      default:
+        return '';
+    }
+  }
+
+  void _showProtocolWarning(String protocol) {
+    final warnings = {
+      'grouk': {
+        'title': '⚠️ Grouk Protocol (Beta)',
+        'content': '''This protocol is still in beta testing.
+
+⚠️ Known Issues:
+• UDP may be blocked on some networks (WiFi, corporate)
+• NAT traversal problems on mobile
+• Higher battery consumption
+• Cover traffic less effective
+
+✅ Use Grouk only if:
+• You need maximum speed
+• Your network allows UDP traffic
+• You're testing/debugging
+
+Recommended: Use Guarch for production.''',
+      },
+      'zhip': {
+        'title': '⚠️ Zhip Protocol (Experimental)',
+        'content': '''This protocol uses QUIC and is experimental.
+
+⚠️ Known Issues:
+• Not stable on all networks yet
+• Some firewalls block QUIC (UDP port 443)
+• Limited testing in production
+• May have bugs
+
+✅ Use Zhip only if:
+• You're an advanced user
+• Testing new features
+• Contributing to development
+
+Recommended: Use Guarch for reliable connections.''',
+      },
+    };
+
+    final warning = warnings[protocol]!;
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        title: Text(warning['title']!),
+        content: SingleChildScrollView(
+          child: Text(
+            warning['content']!,
+            style: const TextStyle(height: 1.5),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              setState(() => _protocol = 'guarch');
+              Navigator.pop(context);
+            },
+            child: const Text('Use Guarch (Safe)'),
+          ),
+          FilledButton(
+            onPressed: () {
+              setState(() => _protocol = protocol);
+              Navigator.pop(context);
+            },
+            style: FilledButton.styleFrom(
+              backgroundColor: Colors.orange,
+            ),
+            child: const Text('Continue Anyway'),
+          ),
+        ],
+      ),
     );
   }
 
@@ -774,6 +1081,24 @@ class _AddServerScreenState extends State<AddServerScreen> {
     final provider = context.read<AppProvider>();
     final psk = _pskController.text.trim();
     final pin = _pinController.text.trim();
+    
+    TransportConfig? transport;
+    if (_transportType != 'direct') {
+      final host = _transportHostController.text.trim();
+      final path = _transportPathController.text.trim();
+      
+      transport = TransportConfig(
+        type: _transportType,
+        host: host.isEmpty ? null : host,
+        path: (_transportType == 'websocket' && path.isNotEmpty) ? path : null,
+        useTls: true,
+        fallbackOrder: _transportType == 'websocket' 
+            ? ['http2', 'dns'] 
+            : _transportType == 'http2'
+                ? ['websocket', 'dns']
+                : null,
+      );
+    }
 
     if (isEditing) {
       provider.updateServer(
@@ -784,6 +1109,7 @@ class _AddServerScreenState extends State<AddServerScreen> {
           psk: psk,
           certPin: pin.isEmpty ? null : pin,
           protocol: _protocol,
+          transport: transport,
           coverEnabled: _coverEnabled,
           coverDomains: List.from(_coverDomains),
           sniEnabled: _sniEnabled,
@@ -804,6 +1130,7 @@ class _AddServerScreenState extends State<AddServerScreen> {
         psk: psk,
         certPin: pin.isEmpty ? null : pin,
         protocol: _protocol,
+        transport: transport,
         coverEnabled: _coverEnabled,
         coverDomains: List.from(_coverDomains),
         sniEnabled: _sniEnabled,
