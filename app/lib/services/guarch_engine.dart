@@ -293,17 +293,27 @@ class GuarchEngine {
     }
 
     try {
-      final socksPort = await AppSettings.getSocksPort();
-      FlutterLog.d('Engine', '  SOCKS port from settings: $socksPort');
+      final settings = await AppSettings.load();
+      
+      FlutterLog.d('Engine', '  User settings: socks=${settings.socksPort}, dial=${settings.dialTimeout}s, handshake=${settings.handshakeTimeout}s');
 
       final config = jsonDecode(configJson) as Map<String, dynamic>;
-      config['socks_port'] = socksPort;
+      config['socks_port'] = settings.socksPort;
+
+      final userSettingsJson = jsonEncode({
+        'socks_port': settings.socksPort,
+        'dial_timeout': settings.dialTimeout,
+        'handshake_timeout': settings.handshakeTimeout,
+      });
 
       FlutterLog.d('Engine', '  Config version: ${config['version']}');
       FlutterLog.d('Engine', '  Server: ${config['server']?['address']}');
       FlutterLog.d('Engine', '  Protocol: ${config['server']?['protocol']}');
 
       final updatedConfigJson = jsonEncode(config);
+
+      await _channel.invokeMethod('setUserSettings', userSettingsJson);
+      FlutterLog.d('Engine', '  User settings sent to Go');
 
       final result = await _channel.invokeMethod('connectWithConfig', updatedConfigJson);
       FlutterLog.d('Engine', '  result: $result');
