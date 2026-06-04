@@ -29,6 +29,8 @@ class ServerConfig {
   String shapingPattern;
   int maxPadding;
   
+  TransportConfig? transport;
+  
   int? ping;
   int? realDelay;
   DateTime? lastTested;
@@ -62,6 +64,7 @@ class ServerConfig {
     this.dataSaverEnabled = false,
     this.shapingPattern = 'web_browsing',
     this.maxPadding = 1024,
+    this.transport,
     this.ping,
     this.realDelay,
     this.lastTested,
@@ -160,6 +163,10 @@ class ServerConfig {
       'created_at': createdAt.toIso8601String(),
     };
 
+    if (transport != null) {
+      json['transport'] = transport!.toJson();
+    }
+
     if (sniEnabled && sniDomains.isNotEmpty) {
       json['sni'] = {
         'enabled': true,
@@ -210,6 +217,7 @@ class ServerConfig {
     final sni = json['sni'] as Map<String, dynamic>? ?? {};
     final cover = json['cover'] ?? json['cover_traffic'] ?? {};
     final dns = json['dns'] ?? json['dns_fallback'] ?? {};
+    final transportData = json['transport'] as Map<String, dynamic>?;
 
     String address = server['address'] ?? json['address'] ?? '';
     int port = server['port'] ?? json['port'] ?? 8443;
@@ -229,6 +237,10 @@ class ServerConfig {
       psk: server['psk'] ?? json['psk'] ?? '',
       certPin: server['cert_pin'] ?? json['cert_pin'],
       protocol: server['protocol'] ?? json['protocol'] ?? 'guarch',
+      
+      transport: transportData != null 
+          ? TransportConfig.fromJson(transportData)
+          : null,
       
       coverEnabled: cover['enabled'] == true,
       coverDomains: cover['enabled'] == true 
@@ -329,6 +341,7 @@ class ServerConfig {
     String? psk,
     String? certPin,
     String? protocol,
+    TransportConfig? transport,
     bool? coverEnabled,
     List<CoverDomain>? coverDomains,
     bool? sniEnabled,
@@ -359,6 +372,7 @@ class ServerConfig {
       psk: psk ?? this.psk,
       certPin: certPin ?? this.certPin,
       protocol: protocol ?? this.protocol,
+      transport: transport ?? this.transport,
       coverEnabled: coverEnabled ?? this.coverEnabled,
       coverDomains: coverDomains ?? this.coverDomains,
       sniEnabled: sniEnabled ?? this.sniEnabled,
@@ -381,6 +395,86 @@ class ServerConfig {
       createdAt: createdAt,
       metadata: metadata ?? this.metadata,
     );
+  }
+}
+
+class TransportConfig {
+  final String type;
+  final String? host;
+  final int? port;
+  final String? path;
+  final bool useTls;
+  final Map<String, String>? headers;
+  final List<String>? fallbackOrder;
+
+  TransportConfig({
+    this.type = 'direct',
+    this.host,
+    this.port,
+    this.path,
+    this.useTls = true,
+    this.headers,
+    this.fallbackOrder,
+  });
+
+  Map<String, dynamic> toJson() => {
+    'type': type,
+    if (host != null && host!.isNotEmpty) 'host': host,
+    if (port != null && port! > 0) 'port': port,
+    if (path != null && path!.isNotEmpty) 'path': path,
+    'use_tls': useTls,
+    if (headers != null && headers!.isNotEmpty) 'headers': headers,
+    if (fallbackOrder != null && fallbackOrder!.isNotEmpty) 
+      'fallback_order': fallbackOrder,
+  };
+
+  factory TransportConfig.fromJson(Map<String, dynamic> json) {
+    return TransportConfig(
+      type: json['type'] ?? 'direct',
+      host: json['host'],
+      port: json['port'],
+      path: json['path'],
+      useTls: json['use_tls'] ?? true,
+      headers: json['headers'] != null 
+          ? Map<String, String>.from(json['headers']) 
+          : null,
+      fallbackOrder: json['fallback_order'] != null
+          ? List<String>.from(json['fallback_order'])
+          : null,
+    );
+  }
+
+  TransportConfig copyWith({
+    String? type,
+    String? host,
+    int? port,
+    String? path,
+    bool? useTls,
+    Map<String, String>? headers,
+    List<String>? fallbackOrder,
+  }) {
+    return TransportConfig(
+      type: type ?? this.type,
+      host: host ?? this.host,
+      port: port ?? this.port,
+      path: path ?? this.path,
+      useTls: useTls ?? this.useTls,
+      headers: headers ?? this.headers,
+      fallbackOrder: fallbackOrder ?? this.fallbackOrder,
+    );
+  }
+
+  String get displayText {
+    switch (type) {
+      case 'websocket':
+        return 'WebSocket${host != null ? " → $host" : ""}';
+      case 'http2':
+        return 'HTTP/2${host != null ? " → $host" : ""}';
+      case 'dns':
+        return 'DNS Tunnel';
+      default:
+        return 'Direct TCP';
+    }
   }
 }
 
