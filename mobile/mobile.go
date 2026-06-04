@@ -22,6 +22,7 @@ import (
 	"guarch/pkg/core/dns"
 	"guarch/pkg/core/sni"
 	"guarch/pkg/cover"
+	"guarch/pkg/engine"
 	"guarch/pkg/mux"
 	"guarch/pkg/protocol"
 	"guarch/pkg/socks5"
@@ -45,13 +46,20 @@ type Callback interface {
 	OnDNSFallback(enabled bool)
 }
 
+type UserSettings struct {
+	SocksPort        int `json:"socks_port"`
+	DialTimeout      int `json:"dial_timeout"`
+	HandshakeTimeout int `json:"handshake_timeout"`
+}
+
 type Engine struct {
 	mu       sync.RWMutex
 	callback Callback
 	ctx      context.Context
 	cancel   context.CancelFunc
 
-	config *config.ServerConfig
+	config       *config.ServerConfig
+	userSettings *UserSettings
 
 	muxConn      *mux.Mux
 	groukSession *transport.GroukSession
@@ -61,6 +69,7 @@ type Engine struct {
 	coverManager  *cover.Manager
 	adaptiveCover *cover.AdaptiveCover
 	dnsClient     *dns.Client
+	connector     *engine.Connector
 
 	listener net.Listener
 
@@ -99,6 +108,11 @@ func New() *Engine {
 		status:       "disconnected",
 		stats:        &engineStats{startTime: time.Now()},
 		batteryLevel: 100,
+		userSettings: &UserSettings{
+			SocksPort:        7070,
+			DialTimeout:      30,
+			HandshakeTimeout: 15,
+		},
 	}
 }
 
@@ -106,6 +120,24 @@ func (e *Engine) SetCallback(cb Callback) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	e.callback = cb
+}
+
+func (e *Engine) SetUserSettings(jsonStr string) bool {
+	defer e.recoverPanic("SetUserSettings")
+
+	var settings UserSettings
+	if err := json.Unmarshal([]byte(jsonStr), &settings); err != nil {
+		e.logError("Failed to parse user settings: " + err.Error())
+		return false
+	}
+
+	e.mu.Lock()
+	e.userSettings = &settings
+	e.mu.Unlock()
+
+	e.logDebug(fmt.Sprintf("User settings updated: dial_timeout=%d, handshake_timeout=%d",
+		settings.DialTimeout, settings.HandshakeTimeout))
+	return true
 }
 
 func (e *Engine) LoadConfigJSON(jsonStr string) bool {
@@ -380,50 +412,28 @@ func (e *Engine) connectInternal() error {
 }
 
 func (e *Engine) connectGuarch(cfg *config.ServerConfig, coverMgr *cover.Manager) error {
-	serverAddr := cfg.Server.Address
+	e.mu.RLock()
+	userSettings := e.userSettings
+	e.mu.RUnlock()
 
-	var currentSNI string
+	configWithTimeouts := e.mergeTimeoutSettings(cfg, userSettings)
+
+	connector := engine.NewConnector(configWithTimeouts)
+
 	if e.sniManager != nil {
-		currentSNI = e.sniManager.Get()
+		currentSNI := e.sniManager.Get()
+		connector.SetSNI(currentSNI)
 		e.logInfo(fmt.Sprintf("Using SNI: %s", currentSNI))
-	}
-
-	tlsConfig := &tls.Config{
-		MinVersion:         tls.VersionTLS13,
-		InsecureSkipVerify: true,
-		ServerName:         currentSNI,
-	}
-
-	if cfg.Server.CertPin != "" {
-		tlsConfig.VerifyPeerCertificate = func(rawCerts [][]byte, _ [][]*x509.Certificate) error {
-			if len(rawCerts) == 0 {
-				return fmt.Errorf("no certificate")
-			}
-			hash := sha256.Sum256(rawCerts[0])
-			actualPin := hex.EncodeToString(hash[:])
-			if actualPin != cfg.Server.CertPin {
-				return fmt.Errorf("certificate PIN mismatch")
-			}
-			return nil
-		}
-		e.logInfo("Certificate pinning enabled")
 	}
 
 	if coverMgr != nil {
 		coverMgr.SendOne()
 	}
 
-	dialer := &net.Dialer{
-		Timeout:   ConnectionTimeout,
-		KeepAlive: 30 * time.Second,
-	}
-	
-	tlsConn, err := tls.DialWithDialer(dialer, "tcp", serverAddr, tlsConfig)
+	rawConn, err := connector.Dial(e.ctx)
 	if err != nil {
-		return fmt.Errorf("TLS dial failed: %w", err)
+		return fmt.Errorf("connector dial failed: %w", err)
 	}
-
-	tlsConn.SetDeadline(time.Now().Add(HandshakeTimeout))
 
 	maxPadding := config.GetMaxPaddingForMode(cfg.Cover.Mode)
 	
@@ -433,13 +443,11 @@ func (e *Engine) connectGuarch(cfg *config.ServerConfig, coverMgr *cover.Manager
 		PaddingEnabled: maxPadding > 0,
 	}
 
-	sc, err := transport.Handshake(tlsConn, false, handshakeCfg)
+	sc, err := transport.Handshake(rawConn, false, handshakeCfg)
 	if err != nil {
-		tlsConn.Close()
+		rawConn.Close()
 		return fmt.Errorf("handshake failed: %w", err)
 	}
-
-	tlsConn.SetDeadline(time.Time{})
 
 	if coverMgr != nil {
 		coverMgr.SendOne()
@@ -449,11 +457,36 @@ func (e *Engine) connectGuarch(cfg *config.ServerConfig, coverMgr *cover.Manager
 
 	e.mu.Lock()
 	e.stats.connectTime = time.Now()
+	e.connector = connector
 	e.mu.Unlock()
 
 	return e.startSOCKS5(func() (io.ReadWriteCloser, error) {
 		return m.OpenStream()
 	})
+}
+
+func (e *Engine) mergeTimeoutSettings(cfg *config.ServerConfig, userSettings *UserSettings) *config.ServerConfig {
+	merged := *cfg
+
+	if merged.Transport == nil {
+		merged.Transport = &config.TransportConfig{}
+	}
+
+	if merged.Transport.DialTimeout == 0 && userSettings.DialTimeout > 0 {
+		merged.Transport.DialTimeout = userSettings.DialTimeout
+		e.logDebug(fmt.Sprintf("Using user dial_timeout: %ds", userSettings.DialTimeout))
+	} else if merged.Transport.DialTimeout > 0 {
+		e.logDebug(fmt.Sprintf("Using config dial_timeout: %ds", merged.Transport.DialTimeout))
+	}
+
+	if merged.Transport.HandshakeTimeout == 0 && userSettings.HandshakeTimeout > 0 {
+		merged.Transport.HandshakeTimeout = userSettings.HandshakeTimeout
+		e.logDebug(fmt.Sprintf("Using user handshake_timeout: %ds", userSettings.HandshakeTimeout))
+	} else if merged.Transport.HandshakeTimeout > 0 {
+		e.logDebug(fmt.Sprintf("Using config handshake_timeout: %ds", merged.Transport.HandshakeTimeout))
+	}
+
+	return &merged
 }
 
 func (e *Engine) connectGrouk(cfg *config.ServerConfig, coverMgr *cover.Manager) error {
@@ -628,7 +661,7 @@ func (e *Engine) enableDNSFallback() error {
 
 func (e *Engine) startSOCKS5(openStream func() (io.ReadWriteCloser, error)) error {
 	e.mu.RLock()
-	socksPort := e.config.SocksPort
+	socksPort := e.userSettings.SocksPort
 	if socksPort == 0 {
 		socksPort = 7070
 	}
