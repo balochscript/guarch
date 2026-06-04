@@ -14,6 +14,8 @@ class AdvancedSettingsScreen extends StatefulWidget {
 
 class _AdvancedSettingsScreenState extends State<AdvancedSettingsScreen> {
   int _socksPort = 7070;
+  int _dialTimeout = 30;
+  int _handshakeTimeout = 15;
   bool _loading = true;
 
   @override
@@ -23,9 +25,11 @@ class _AdvancedSettingsScreenState extends State<AdvancedSettingsScreen> {
   }
 
   Future<void> _loadSettings() async {
-    final port = await AppSettings.getSocksPort();
+    final settings = await AppSettings.load();
     setState(() {
-      _socksPort = port;
+      _socksPort = settings.socksPort;
+      _dialTimeout = settings.dialTimeout;
+      _handshakeTimeout = settings.handshakeTimeout;
       _loading = false;
     });
   }
@@ -70,21 +74,24 @@ class _AdvancedSettingsScreenState extends State<AdvancedSettingsScreen> {
               ),
 
               const SizedBox(height: 24),
-              _sectionTitle(context, 'Connection Timeouts'),
+              _sectionTitle(context, 'Transport Timeouts'),
               Card(
                 child: Column(
                   children: [
                     _buildSliderTile(
                       context,
                       icon: Icons.timer,
-                      title: 'Connection Timeout',
-                      subtitle: 'Max time to establish connection',
-                      value: provider.connectionTimeout.toDouble(),
-                      min: 5,
-                      max: 60,
+                      title: 'Dial Timeout',
+                      subtitle: 'Max time to establish TCP connection',
+                      value: _dialTimeout.toDouble(),
+                      min: 10,
+                      max: 120,
                       divisions: 11,
-                      label: '${provider.connectionTimeout}s',
-                      onChanged: (v) => provider.setConnectionTimeout(v.toInt()),
+                      label: '${_dialTimeout}s',
+                      onChanged: (v) async {
+                        setState(() => _dialTimeout = v.toInt());
+                        await AppSettings.setDialTimeout(_dialTimeout);
+                      },
                     ),
                     Divider(
                       height: 1,
@@ -94,13 +101,37 @@ class _AdvancedSettingsScreenState extends State<AdvancedSettingsScreen> {
                       context,
                       icon: Icons.handshake,
                       title: 'Handshake Timeout',
-                      subtitle: 'Max time for protocol handshake',
-                      value: provider.handshakeTimeout.toDouble(),
-                      min: 10,
-                      max: 120,
+                      subtitle: 'Max time for TLS/protocol handshake',
+                      value: _handshakeTimeout.toDouble(),
+                      min: 5,
+                      max: 60,
                       divisions: 11,
-                      label: '${provider.handshakeTimeout}s',
-                      onChanged: (v) => provider.setHandshakeTimeout(v.toInt()),
+                      label: '${_handshakeTimeout}s',
+                      onChanged: (v) async {
+                        setState(() => _handshakeTimeout = v.toInt());
+                        await AppSettings.setHandshakeTimeout(_handshakeTimeout);
+                      },
+                    ),
+                  ],
+                ),
+              ),
+
+              const SizedBox(height: 24),
+              _sectionTitle(context, 'Engine Settings'),
+              Card(
+                child: Column(
+                  children: [
+                    _buildSliderTile(
+                      context,
+                      icon: Icons.access_time,
+                      title: 'Connection Timeout',
+                      subtitle: 'Max time for overall connection attempt',
+                      value: provider.connectionTimeout.toDouble(),
+                      min: 5,
+                      max: 60,
+                      divisions: 11,
+                      label: '${provider.connectionTimeout}s',
+                      onChanged: (v) => provider.setConnectionTimeout(v.toInt()),
                     ),
                     Divider(
                       height: 1,
@@ -198,6 +229,9 @@ class _AdvancedSettingsScreenState extends State<AdvancedSettingsScreen> {
                     const SizedBox(height: 12),
                     Text(
                       '• SOCKS port: Change if port 7070 conflicts\n'
+                      '• Dial timeout: TCP connection establishment\n'
+                      '• Handshake timeout: TLS/protocol handshake\n'
+                      '• Connection timeout: Overall attempt (engine-level)\n'
                       '• Lower timeouts = faster failure detection\n'
                       '• Higher timeouts = better on slow networks\n'
                       '• More retries = more resilient\n'
@@ -221,11 +255,33 @@ class _AdvancedSettingsScreenState extends State<AdvancedSettingsScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
+                      Text(
+                        'Transport Settings',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w600,
+                          fontSize: 13,
+                          color: textSecondary(context),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
                       _buildInfoRow('SOCKS Port', '$_socksPort'),
                       const SizedBox(height: 8),
-                      _buildInfoRow('Connection Timeout', '${provider.connectionTimeout}s'),
+                      _buildInfoRow('Dial Timeout', '${_dialTimeout}s'),
                       const SizedBox(height: 8),
-                      _buildInfoRow('Handshake Timeout', '${provider.handshakeTimeout}s'),
+                      _buildInfoRow('Handshake Timeout', '${_handshakeTimeout}s'),
+                      const SizedBox(height: 16),
+                      Divider(color: accentColor(context).withOpacity(0.1)),
+                      const SizedBox(height: 16),
+                      Text(
+                        'Engine Settings',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w600,
+                          fontSize: 13,
+                          color: textSecondary(context),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      _buildInfoRow('Connection Timeout', '${provider.connectionTimeout}s'),
                       const SizedBox(height: 8),
                       _buildInfoRow('Keep-Alive Interval', '${provider.keepAliveInterval}s'),
                       const SizedBox(height: 8),
@@ -293,7 +349,7 @@ class _AdvancedSettingsScreenState extends State<AdvancedSettingsScreen> {
                   ],
                 ),
               ),
-              Container(
+              SizedBox(
                 width: 100,
                 child: TextField(
                   controller: TextEditingController(text: _socksPort.toString()),
@@ -303,9 +359,9 @@ class _AdvancedSettingsScreenState extends State<AdvancedSettingsScreen> {
                     FilteringTextInputFormatter.digitsOnly,
                     LengthLimitingTextInputFormatter(5),
                   ],
-                  decoration: InputDecoration(
-                    border: const OutlineInputBorder(),
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                  decoration: const InputDecoration(
+                    border: OutlineInputBorder(),
+                    contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 8),
                     hintText: '7070',
                   ),
                   onSubmitted: (value) {
@@ -528,15 +584,19 @@ class _AdvancedSettingsScreenState extends State<AdvancedSettingsScreen> {
               provider.setRetryDelay(5);
               provider.setBufferSize(32768);
               
-              await AppSettings.resetSocksPort();
-              final port = await AppSettings.getSocksPort();
-              setState(() => _socksPort = port);
+              await AppSettings.reset();
+              final settings = await AppSettings.load();
+              setState(() {
+                _socksPort = settings.socksPort;
+                _dialTimeout = settings.dialTimeout;
+                _handshakeTimeout = settings.handshakeTimeout;
+              });
               
               if (context.mounted) {
                 Navigator.pop(context);
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(
-                    content: Text('Settings reset to defaults'),
+                    content: Text('✅ Settings reset to defaults'),
                     backgroundColor: Colors.green,
                   ),
                 );
