@@ -31,10 +31,15 @@ func (d *DNSTransport) Dial(ctx context.Context) (net.Conn, error) {
 		servers = []string{"8.8.8.8:53", "1.1.1.1:53"}
 	}
 
+	timeout := d.config.DialTimeout
+	if timeout <= 0 {
+		timeout = 10 * time.Second
+	}
+
 	dnsCfg := &dns.ClientConfig{
 		Domain:     d.config.Host,
 		DNSServers: servers,
-		Timeout:    10 * time.Second,
+		Timeout:    timeout,
 	}
 
 	client, err := dns.NewClient(dnsCfg)
