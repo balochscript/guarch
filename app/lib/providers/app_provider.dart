@@ -297,9 +297,7 @@ class AppProvider extends ChangeNotifier {
     _addLog('📡 Protocol: ${server.protocolLabel}');
     
     if (_debugModeEnabled) {
-      _addLog('🐛 Debug: Timeout=${_connectionTimeout}s, Retries=$_maxRetryAttempts');
-      _addLog('🐛 Debug: Handshake=${_handshakeTimeout}s, KeepAlive=${_keepAliveInterval}s');
-      _addLog('🐛 Debug: Buffer=${_bufferSize ~/ 1024}KB');
+      _addLog('🐛 Debug: Engine timeout=${_connectionTimeout}s, Retries=$_maxRetryAttempts');
     }
     
     if (server.sniEnabled) {
@@ -318,13 +316,6 @@ class AppProvider extends ChangeNotifier {
 
     try {
       final configJson = server.toJson();
-      
-      configJson['connection_timeout'] = _connectionTimeout;
-      configJson['max_retry_attempts'] = _maxRetryAttempts;
-      configJson['retry_delay'] = _retryDelay;
-      configJson['handshake_timeout'] = _handshakeTimeout;
-      configJson['keep_alive_interval'] = _keepAliveInterval;
-      configJson['buffer_size'] = _bufferSize;
       
       final success = await _engine.connectWithConfig(
         jsonEncode(configJson),
