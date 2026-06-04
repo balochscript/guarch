@@ -21,7 +21,7 @@
     "health_check_interval": "30s"
   },
   
-  "cover_traffic": {
+  "cover": {
     "enabled": true,
     "mode": "balanced",
     "domains": [
@@ -54,7 +54,7 @@
     }
   },
   
-  "dns_fallback": {
+  "dns": {
     "enabled": false
   }
 }
