@@ -71,12 +71,108 @@ class _ServerDetailScreenState extends State<ServerDetailScreen> {
           _sectionTitle(context, '🎯 Connection'),
           _infoTile(context, 'Address', server.address, Icons.dns),
           _infoTile(context, 'Port', server.port.toString(), Icons.numbers),
-          _infoTile(
-            context,
-            'SOCKS5 Port',
-            server.socksPort.toString(),
-            Icons.settings_ethernet,
-          ),
+
+          if (server.transport != null) ...[
+            const SizedBox(height: 24),
+            _sectionTitle(context, '🚀 Transport'),
+            
+            Card(
+              child: ListTile(
+                leading: Icon(
+                  _getTransportIcon(server.transport!.type),
+                  size: 20,
+                  color: accentColor(context),
+                ),
+                title: Text(
+                  'Type',
+                  style: TextStyle(fontSize: 13, color: textMuted(context)),
+                ),
+                subtitle: Text(
+                  server.transport!.displayText,
+                  style: TextStyle(color: textSecondary(context)),
+                ),
+                trailing: _getTransportBadge(server.transport!.type),
+              ),
+            ),
+            
+            if (server.transport!.host != null) 
+              Card(
+                child: ListTile(
+                  leading: Icon(Icons.public, size: 20, color: accentColor(context)),
+                  title: Text(
+                    'Domain Fronting',
+                    style: TextStyle(fontSize: 13, color: textMuted(context)),
+                  ),
+                  subtitle: Text(
+                    server.transport!.host!,
+                    style: TextStyle(
+                      fontFamily: 'monospace',
+                      color: textSecondary(context),
+                    ),
+                  ),
+                ),
+              ),
+            
+            if (server.transport!.path != null && server.transport!.type == 'websocket')
+              Card(
+                child: ListTile(
+                  leading: Icon(Icons.route, size: 20, color: accentColor(context)),
+                  title: Text(
+                    'WebSocket Path',
+                    style: TextStyle(fontSize: 13, color: textMuted(context)),
+                  ),
+                  subtitle: Text(
+                    server.transport!.path!,
+                    style: TextStyle(
+                      fontFamily: 'monospace',
+                      color: textSecondary(context),
+                    ),
+                  ),
+                ),
+              ),
+            
+            if (server.transport!.fallbackOrder != null && 
+                server.transport!.fallbackOrder!.isNotEmpty)
+              Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Icon(Icons.swap_vert, size: 18, color: accentColor(context)),
+                          const SizedBox(width: 8),
+                          Text(
+                            'Fallback Order',
+                            style: TextStyle(
+                              fontWeight: FontWeight.w600,
+                              fontSize: 13,
+                              color: textSecondary(context),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: server.transport!.fallbackOrder!.map((type) {
+                          return Chip(
+                            label: Text(
+                              type.toUpperCase(),
+                              style: const TextStyle(fontSize: 10),
+                            ),
+                            padding: const EdgeInsets.symmetric(horizontal: 8),
+                            materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          );
+                        }).toList(),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+          ],
 
           const SizedBox(height: 24),
           _sectionTitle(context, '⏱️ Latency'),
@@ -484,6 +580,7 @@ class _ServerDetailScreenState extends State<ServerDetailScreen> {
       ),
     );
   }
+
   List<Widget> _buildMetadataSection(BuildContext context, Metadata metadata) {
     return [
       const SizedBox(height: 24),
@@ -746,6 +843,49 @@ class _ServerDetailScreenState extends State<ServerDetailScreen> {
         color: enabled ? Colors.green : Colors.grey,
         size: 20,
       ),
+    );
+  }
+
+  IconData _getTransportIcon(String type) {
+    switch (type) {
+      case 'websocket':
+        return Icons.wifi;
+      case 'http2':
+        return Icons.flash_on;
+      case 'dns':
+        return Icons.dns;
+      default:
+        return Icons.cable;
+    }
+  }
+
+  Widget _getTransportBadge(String type) {
+    Color color;
+    String label;
+    
+    switch (type) {
+      case 'websocket':
+        color = Colors.green;
+        label = 'Bypass';
+        break;
+      case 'http2':
+        color = Colors.orange;
+        label = 'Experimental';
+        break;
+      case 'dns':
+        color = Colors.red;
+        label = 'Slow';
+        break;
+      default:
+        color = Colors.blue;
+        label = 'Fast';
+    }
+    
+    return Chip(
+      label: Text(label, style: const TextStyle(fontSize: 10, color: Colors.white)),
+      backgroundColor: color,
+      padding: const EdgeInsets.symmetric(horizontal: 8),
+      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
     );
   }
 
