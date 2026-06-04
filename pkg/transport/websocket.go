@@ -48,11 +48,21 @@ func (w *WebSocketTransport) Dial(ctx context.Context) (net.Conn, error) {
 		headers.Set(k, v)
 	}
 	
+	dialTimeout := w.config.DialTimeout
+	if dialTimeout <= 0 {
+		dialTimeout = 30 * time.Second
+	}
+	
+	handshakeTimeout := w.config.HandshakeTimeout
+	if handshakeTimeout <= 0 {
+		handshakeTimeout = 15 * time.Second
+	}
+	
 	dialer := &websocket.Dialer{
 		Proxy:            http.ProxyFromEnvironment,
-		HandshakeTimeout: 15 * time.Second,
+		HandshakeTimeout: handshakeTimeout,
 		NetDialContext: (&net.Dialer{
-			Timeout: 30 * time.Second,
+			Timeout: dialTimeout,
 		}).DialContext,
 	}
 	
