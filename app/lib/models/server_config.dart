@@ -406,6 +406,8 @@ class TransportConfig {
   final bool useTls;
   final Map<String, String>? headers;
   final List<String>? fallbackOrder;
+  final int? dialTimeout;
+  final int? handshakeTimeout;
 
   TransportConfig({
     this.type = 'direct',
@@ -415,6 +417,8 @@ class TransportConfig {
     this.useTls = true,
     this.headers,
     this.fallbackOrder,
+    this.dialTimeout,
+    this.handshakeTimeout,
   });
 
   Map<String, dynamic> toJson() => {
@@ -426,6 +430,8 @@ class TransportConfig {
     if (headers != null && headers!.isNotEmpty) 'headers': headers,
     if (fallbackOrder != null && fallbackOrder!.isNotEmpty) 
       'fallback_order': fallbackOrder,
+    if (dialTimeout != null) 'dial_timeout': dialTimeout,
+    if (handshakeTimeout != null) 'handshake_timeout': handshakeTimeout,
   };
 
   factory TransportConfig.fromJson(Map<String, dynamic> json) {
@@ -441,6 +447,8 @@ class TransportConfig {
       fallbackOrder: json['fallback_order'] != null
           ? List<String>.from(json['fallback_order'])
           : null,
+      dialTimeout: json['dial_timeout'],
+      handshakeTimeout: json['handshake_timeout'],
     );
   }
 
@@ -452,6 +460,8 @@ class TransportConfig {
     bool? useTls,
     Map<String, String>? headers,
     List<String>? fallbackOrder,
+    int? dialTimeout,
+    int? handshakeTimeout,
   }) {
     return TransportConfig(
       type: type ?? this.type,
@@ -461,6 +471,8 @@ class TransportConfig {
       useTls: useTls ?? this.useTls,
       headers: headers ?? this.headers,
       fallbackOrder: fallbackOrder ?? this.fallbackOrder,
+      dialTimeout: dialTimeout ?? this.dialTimeout,
+      handshakeTimeout: handshakeTimeout ?? this.handshakeTimeout,
     );
   }
 
