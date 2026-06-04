@@ -138,7 +138,7 @@ func (l *Loader) applyDefaults(cfg *ServerConfig) {
 	}
 
 	if cfg.SocksPort == 0 {
-		cfg.SocksPort = 1080
+		cfg.SocksPort = 7070
 	}
 	
 	if cfg.Transport != nil {
