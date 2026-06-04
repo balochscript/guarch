@@ -19,6 +19,16 @@ type HTTP2Transport struct {
 }
 
 func NewHTTP2Transport(cfg *Config) *HTTP2Transport {
+	dialTimeout := cfg.DialTimeout
+	if dialTimeout <= 0 {
+		dialTimeout = 30 * time.Second
+	}
+	
+	handshakeTimeout := cfg.HandshakeTimeout
+	if handshakeTimeout <= 0 {
+		handshakeTimeout = 15 * time.Second
+	}
+
 	tlsConfig := &tls.Config{
 		ServerName:         cfg.Host,
 		InsecureSkipVerify: true,
@@ -32,20 +42,33 @@ func NewHTTP2Transport(cfg *Config) *HTTP2Transport {
 		StrictMaxConcurrentStreams: false,
 		ReadIdleTimeout:            120 * time.Second,
 		PingTimeout:                15 * time.Second,
-		DialTLS: func(network, addr string, cfg *tls.Config) (net.Conn, error) {
+		DialTLS: func(network, addr string, tlsCfg *tls.Config) (net.Conn, error) {
 			dialer := &net.Dialer{
-				Timeout:   30 * time.Second,
+				Timeout:   dialTimeout,
 				KeepAlive: 30 * time.Second,
 			}
 			conn, err := dialer.Dial(network, addr)
 			if err != nil {
 				return nil, err
 			}
-			tlsConn := tls.Client(conn, cfg)
+			
+			tlsConn := tls.Client(conn, tlsCfg)
+			
+			if err := tlsConn.SetDeadline(time.Now().Add(handshakeTimeout)); err != nil {
+				conn.Close()
+				return nil, err
+			}
+			
 			if err := tlsConn.Handshake(); err != nil {
 				conn.Close()
 				return nil, err
 			}
+			
+			if err := tlsConn.SetDeadline(time.Time{}); err != nil {
+				tlsConn.Close()
+				return nil, err
+			}
+			
 			return tlsConn, nil
 		},
 	}
@@ -108,6 +131,11 @@ func (h *HTTP2Transport) Dial(ctx context.Context) (net.Conn, error) {
 
 	var resp *http.Response
 
+	requestTimeout := h.config.DialTimeout
+	if requestTimeout <= 0 {
+		requestTimeout = 30 * time.Second
+	}
+
 	select {
 	case res := <-resultChan:
 		if res.err != nil {
@@ -121,7 +149,7 @@ func (h *HTTP2Transport) Dial(ctx context.Context) (net.Conn, error) {
 		pr.Close()
 		return nil, ctx.Err()
 
-	case <-time.After(30 * time.Second):
+	case <-time.After(requestTimeout):
 		pw.Close()
 		pr.Close()
 		return nil, fmt.Errorf("http2 dial timeout")
