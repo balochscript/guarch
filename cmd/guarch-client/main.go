@@ -52,7 +52,7 @@ func main() {
     configFile := flag.String("config", "", "Path to config file (JSON)")
     configURI  := flag.String("uri", "", "Config URI (guarch://...)")
     
-    listenAddr := flag.String("listen", "127.0.0.1:1080", "SOCKS5 listen address")
+    listenAddr := flag.String("listen", "127.0.0.1:7070", "SOCKS5 listen address")
     serverAddr := flag.String("server", "", "Server address (IP:PORT)")
     psk        := flag.String("psk", "", "Pre-shared key")
     certPin    := flag.String("pin", "", "Certificate SHA-256 pin")
