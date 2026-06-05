@@ -14,6 +14,7 @@ import 'package:qr_flutter/qr_flutter.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:google_mlkit_barcode_scanning/google_mlkit_barcode_scanning.dart';
 
 class ServersScreen extends StatelessWidget {
   const ServersScreen({super.key});
@@ -439,45 +440,213 @@ class ServersScreen extends StatelessWidget {
   }
 
   void _scanQRCode(BuildContext context, AppProvider provider) {
+    final scannerController = MobileScannerController();
+    bool hasScanned = false;
+
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (_) => Scaffold(
+        builder: (scanContext) => Scaffold(
           appBar: AppBar(
             title: const Text('Scan QR Code'),
             backgroundColor: Colors.black,
+            actions: [
+              IconButton(
+                icon: const Icon(Icons.flash_on),
+                onPressed: () => scannerController.toggleTorch(),
+              ),
+              IconButton(
+                icon: const Icon(Icons.flip_camera_ios),
+                onPressed: () => scannerController.switchCamera(),
+              ),
+            ],
           ),
-          body: MobileScanner(
-            onDetect: (capture) {
-              final List<Barcode> barcodes = capture.barcodes;
-              for (final barcode in barcodes) {
-                if (barcode.rawValue != null) {
-                  Navigator.pop(context);
-                  provider.importConfig(barcode.rawValue!);
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('QR Code scanned successfully')),
-                  );
-                  break;
-                }
-              }
-            },
+          body: Stack(
+            children: [
+              MobileScanner(
+                controller: scannerController,
+                onDetect: (capture) {
+                  if (hasScanned) return;
+
+                  final List<Barcode> barcodes = capture.barcodes;
+                  for (final barcode in barcodes) {
+                    if (barcode.rawValue != null && barcode.rawValue!.isNotEmpty) {
+                      hasScanned = true;
+                      scannerController.dispose();
+
+                      Navigator.of(scanContext).pop();
+
+                      provider.importConfig(barcode.rawValue!);
+
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('✅ QR Code scanned successfully'),
+                            backgroundColor: Colors.green,
+                            duration: Duration(seconds: 2),
+                          ),
+                        );
+                      }
+                      break;
+                    }
+                  }
+                },
+              ),
+              Positioned(
+                bottom: 0,
+                left: 0,
+                right: 0,
+                child: Container(
+                  padding: const EdgeInsets.all(24),
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.bottomCenter,
+                      end: Alignment.topCenter,
+                      colors: [
+                        Colors.black.withOpacity(0.8),
+                        Colors.transparent,
+                      ],
+                    ),
+                  ),
+                  child: Column(
+                    children: [
+                      const Icon(
+                        Icons.qr_code_scanner,
+                        size: 48,
+                        color: Colors.white,
+                      ),
+                      const SizedBox(height: 12),
+                      Text(
+                        'Point camera at QR code',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 16,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Will automatically scan when detected',
+                        style: TextStyle(
+                          color: Colors.white.withOpacity(0.7),
+                          fontSize: 13,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
           ),
         ),
       ),
-    );
+    ).then((_) {
+      if (!hasScanned) {
+        scannerController.dispose();
+      }
+    });
   }
 
   Future<void> _pickQRFromGallery(BuildContext context, AppProvider provider) async {
-    final picker = ImagePicker();
-    final image = await picker.pickImage(source: ImageSource.gallery);
-    
-    if (image != null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('QR code reading from images requires additional setup. Use camera scanner instead.'),
-          duration: Duration(seconds: 3),
-        ),
-      );
+    try {
+      final picker = ImagePicker();
+      final image = await picker.pickImage(source: ImageSource.gallery);
+      
+      if (image == null) {
+        return;
+      }
+
+      if (context.mounted) {
+        showDialog(
+          context: context,
+          barrierDismissible: false,
+          builder: (ctx) => const Center(
+            child: Card(
+              child: Padding(
+                padding: EdgeInsets.all(24.0),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    CircularProgressIndicator(),
+                    SizedBox(height: 16),
+                    Text('Reading QR code...'),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+      }
+
+      final inputImage = InputImage.fromFilePath(image.path);
+      final barcodeScanner = BarcodeScanner();
+
+      try {
+        final List<Barcode> barcodes = await barcodeScanner.processImage(inputImage);
+        
+        if (context.mounted) {
+          Navigator.pop(context);
+        }
+
+        if (barcodes.isEmpty) {
+          if (context.mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('❌ No QR code found in image'),
+                backgroundColor: Colors.red,
+                duration: Duration(seconds: 3),
+              ),
+            );
+          }
+          return;
+        }
+
+        String? qrData;
+        for (final barcode in barcodes) {
+          if (barcode.rawValue != null && barcode.rawValue!.isNotEmpty) {
+            qrData = barcode.rawValue;
+            break;
+          }
+        }
+
+        if (qrData != null) {
+          provider.importConfig(qrData);
+          
+          if (context.mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('✅ QR code imported successfully'),
+                backgroundColor: Colors.green,
+                duration: Duration(seconds: 2),
+              ),
+            );
+          }
+        } else {
+          if (context.mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('❌ Could not read QR code data'),
+                backgroundColor: Colors.red,
+                duration: Duration(seconds: 3),
+              ),
+            );
+          }
+        }
+      } finally {
+        barcodeScanner.close();
+      }
+    } catch (e) {
+      if (context.mounted) {
+        Navigator.pop(context);
+        
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('❌ Error reading QR: ${e.toString()}'),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 4),
+          ),
+        );
+      }
     }
   }
 
@@ -665,6 +834,50 @@ class ServersScreen extends StatelessWidget {
                     ),
                   ),
                 ],
+              ),
+              const SizedBox(height: 12),
+              OutlinedButton.icon(
+                onPressed: () async {
+                  try {
+                    final boundary = qrKey.currentContext!.findRenderObject() as RenderRepaintBoundary;
+                    final image = await boundary.toImage(pixelRatio: 3.0);
+                    final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
+                    final pngBytes = byteData!.buffer.asUint8List();
+
+                    final tempDir = await getTemporaryDirectory();
+                    final file = File('${tempDir.path}/guarch_${server.name.replaceAll(' ', '_')}_qr.png');
+                    await file.writeAsBytes(pngBytes);
+
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text('QR saved to ${file.path}'),
+                          duration: const Duration(seconds: 3),
+                          action: SnackBarAction(
+                            label: 'Share',
+                            onPressed: () async {
+                              await Share.shareXFiles([XFile(file.path)]);
+                            },
+                          ),
+                        ),
+                      );
+                    }
+                  } catch (e) {
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text('Save failed: $e'),
+                          backgroundColor: Colors.red,
+                        ),
+                      );
+                    }
+                  }
+                },
+                icon: const Icon(Icons.download, size: 18),
+                label: const Text('Save Image'),
+                style: OutlinedButton.styleFrom(
+                  minimumSize: const Size(double.infinity, 40),
+                ),
               ),
               const SizedBox(height: 16),
               Container(
