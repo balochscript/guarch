@@ -1,6 +1,8 @@
-
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter/rendering.dart';
+import 'dart:ui' as ui;
+import 'dart:io';
 import 'package:provider/provider.dart';
 import 'package:guarch/app.dart';
 import 'package:guarch/providers/app_provider.dart';
@@ -11,6 +13,7 @@ import 'package:share_plus/share_plus.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:path_provider/path_provider.dart';
 
 class ServersScreen extends StatelessWidget {
   const ServersScreen({super.key});
@@ -528,7 +531,7 @@ class ServersScreen extends StatelessWidget {
               title: const Text('Show QR Code'),
               onTap: () {
                 Navigator.pop(ctx);
-                _showQRCode(context, provider.exportConfig(server), server.name);
+                _showQRCodeDialog(context, provider, server);
               },
             ),
           ],
@@ -537,26 +540,162 @@ class ServersScreen extends StatelessWidget {
     );
   }
 
-  void _showQRCode(BuildContext context, String data, String title) {
+  void _showQRCodeDialog(BuildContext context, AppProvider provider, ServerConfig server) {
+    final GlobalKey qrKey = GlobalKey();
+    final uri = provider.exportConfig(server);
+
     showDialog(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(title),
-        content: SizedBox(
-          width: 280,
-          height: 280,
-          child: QrImageView(
-            data: data,
-            version: QrVersions.auto,
-            backgroundColor: Colors.white,
+      builder: (ctx) => Dialog(
+        child: Container(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Row(
+                children: [
+                  Text(
+                    server.protocolEmoji,
+                    style: const TextStyle(fontSize: 32),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Share ${server.name}',
+                          style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                                fontWeight: FontWeight.bold,
+                              ),
+                        ),
+                        Text(
+                          'Scan or share this QR code',
+                          style: TextStyle(
+                            fontSize: 13,
+                            color: textMuted(context),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.close),
+                    onPressed: () => Navigator.pop(ctx),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 24),
+              RepaintBoundary(
+                key: qrKey,
+                child: Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: Theme.of(context).brightness == Brightness.dark
+                          ? Colors.grey.shade700
+                          : Colors.grey.shade300,
+                    ),
+                  ),
+                  child: QrImageView(
+                    data: uri,
+                    version: QrVersions.auto,
+                    size: 280,
+                    backgroundColor: Colors.white,
+                    errorCorrectionLevel: QrErrorCorrectLevel.M,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 24),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: () {
+                        Clipboard.setData(ClipboardData(text: uri));
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('Config URI copied'),
+                            duration: Duration(seconds: 2),
+                          ),
+                        );
+                      },
+                      icon: const Icon(Icons.copy, size: 18),
+                      label: const Text('Copy URI'),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: FilledButton.icon(
+                      onPressed: () async {
+                        try {
+                          final boundary = qrKey.currentContext!.findRenderObject() as RenderRepaintBoundary;
+                          final image = await boundary.toImage(pixelRatio: 3.0);
+                          final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
+                          final pngBytes = byteData!.buffer.asUint8List();
+
+                          final tempDir = await getTemporaryDirectory();
+                          final file = File('${tempDir.path}/guarch_${server.name.replaceAll(' ', '_')}_qr.png');
+                          await file.writeAsBytes(pngBytes);
+
+                          await Share.shareXFiles(
+                            [XFile(file.path)],
+                            text: 'Guarch VPN Config: ${server.name}\n\n$uri',
+                            subject: 'Guarch VPN Configuration',
+                          );
+
+                          if (context.mounted) {
+                            Navigator.pop(ctx);
+                          }
+                        } catch (e) {
+                          if (context.mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text('Share failed: $e'),
+                                backgroundColor: Colors.red,
+                              ),
+                            );
+                          }
+                        }
+                      },
+                      icon: const Icon(Icons.share, size: 18),
+                      label: const Text('Share QR'),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.blue.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Row(
+                  children: [
+                    Icon(
+                      Icons.info_outline,
+                      size: 18,
+                      color: accentColor(context),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Share via encrypted channels only (Signal, Telegram)',
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: textMuted(context),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ),
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Close'),
-          ),
-        ],
       ),
     );
   }
