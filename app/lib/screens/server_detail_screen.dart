@@ -1,7 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter/rendering.dart';
+import 'dart:ui' as ui;
+import 'dart:io';
 import 'package:provider/provider.dart';
 import 'package:qr_flutter/qr_flutter.dart';
+import 'package:share_plus/share_plus.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:guarch/app.dart';
 import 'package:guarch/models/server_config.dart';
 import 'package:guarch/providers/app_provider.dart';
@@ -960,11 +965,12 @@ class _ServerDetailScreenState extends State<ServerDetailScreen> {
   }
 
   void _showQRCode(BuildContext context, ServerConfig server) {
+    final GlobalKey qrKey = GlobalKey();
     final uri = server.toShareString();
 
     showDialog(
       context: context,
-      builder: (context) => Dialog(
+      builder: (dialogContext) => Dialog(
         child: Container(
           padding: const EdgeInsets.all(24),
           child: Column(
@@ -988,7 +994,7 @@ class _ServerDetailScreenState extends State<ServerDetailScreen> {
                               ),
                         ),
                         Text(
-                          'Scan this QR code',
+                          'Scan or share this QR code',
                           style: TextStyle(
                             fontSize: 13,
                             color: textMuted(context),
@@ -999,28 +1005,31 @@ class _ServerDetailScreenState extends State<ServerDetailScreen> {
                   ),
                   IconButton(
                     icon: const Icon(Icons.close),
-                    onPressed: () => Navigator.pop(context),
+                    onPressed: () => Navigator.pop(dialogContext),
                   ),
                 ],
               ),
               const SizedBox(height: 24),
-              Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(
-                    color: Theme.of(context).brightness == Brightness.dark
-                        ? Colors.grey.shade700
-                        : Colors.grey.shade300,
+              RepaintBoundary(
+                key: qrKey,
+                child: Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: Theme.of(context).brightness == Brightness.dark
+                          ? Colors.grey.shade700
+                          : Colors.grey.shade300,
+                    ),
                   ),
-                ),
-                child: QrImageView(
-                  data: uri,
-                  version: QrVersions.auto,
-                  size: 280,
-                  backgroundColor: Colors.white,
-                  errorCorrectionLevel: QrErrorCorrectLevel.M,
+                  child: QrImageView(
+                    data: uri,
+                    version: QrVersions.auto,
+                    size: 280,
+                    backgroundColor: Colors.white,
+                    errorCorrectionLevel: QrErrorCorrectLevel.M,
+                  ),
                 ),
               ),
               const SizedBox(height: 24),
@@ -1032,7 +1041,8 @@ class _ServerDetailScreenState extends State<ServerDetailScreen> {
                         Clipboard.setData(ClipboardData(text: uri));
                         ScaffoldMessenger.of(context).showSnackBar(
                           const SnackBar(
-                            content: Text('Config URI copied to clipboard'),
+                            content: Text('Config URI copied'),
+                            duration: Duration(seconds: 2),
                           ),
                         );
                       },
@@ -1043,14 +1053,88 @@ class _ServerDetailScreenState extends State<ServerDetailScreen> {
                   const SizedBox(width: 12),
                   Expanded(
                     child: FilledButton.icon(
-                      onPressed: () {
-                        Navigator.pop(context);
+                      onPressed: () async {
+                        try {
+                          final boundary = qrKey.currentContext!.findRenderObject() as RenderRepaintBoundary;
+                          final image = await boundary.toImage(pixelRatio: 3.0);
+                          final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
+                          final pngBytes = byteData!.buffer.asUint8List();
+
+                          final tempDir = await getTemporaryDirectory();
+                          final fileName = 'guarch_${server.name.replaceAll(' ', '_')}_qr.png';
+                          final file = File('${tempDir.path}/$fileName');
+                          await file.writeAsBytes(pngBytes);
+
+                          await Share.shareXFiles(
+                            [XFile(file.path)],
+                            text: 'Guarch VPN Config: ${server.name}\n\n$uri',
+                            subject: 'Guarch VPN Configuration',
+                          );
+
+                          if (context.mounted) {
+                            Navigator.pop(dialogContext);
+                          }
+                        } catch (e) {
+                          if (context.mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text('Share failed: $e'),
+                                backgroundColor: Colors.red,
+                              ),
+                            );
+                          }
+                        }
                       },
-                      icon: const Icon(Icons.check, size: 18),
-                      label: const Text('Done'),
+                      icon: const Icon(Icons.share, size: 18),
+                      label: const Text('Share QR'),
                     ),
                   ),
                 ],
+              ),
+              const SizedBox(height: 12),
+              OutlinedButton.icon(
+                onPressed: () async {
+                  try {
+                    final boundary = qrKey.currentContext!.findRenderObject() as RenderRepaintBoundary;
+                    final image = await boundary.toImage(pixelRatio: 3.0);
+                    final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
+                    final pngBytes = byteData!.buffer.asUint8List();
+
+                    final tempDir = await getTemporaryDirectory();
+                    final fileName = 'guarch_${server.name.replaceAll(' ', '_')}_qr.png';
+                    final file = File('${tempDir.path}/$fileName');
+                    await file.writeAsBytes(pngBytes);
+
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text('QR saved to ${file.path}'),
+                          duration: const Duration(seconds: 3),
+                          action: SnackBarAction(
+                            label: 'Share',
+                            onPressed: () async {
+                              await Share.shareXFiles([XFile(file.path)]);
+                            },
+                          ),
+                        ),
+                      );
+                    }
+                  } catch (e) {
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text('Save failed: $e'),
+                          backgroundColor: Colors.red,
+                        ),
+                      );
+                    }
+                  }
+                },
+                icon: const Icon(Icons.download, size: 18),
+                label: const Text('Save Image'),
+                style: OutlinedButton.styleFrom(
+                  minimumSize: const Size(double.infinity, 40),
+                ),
               ),
               const SizedBox(height: 16),
               Container(
@@ -1069,7 +1153,7 @@ class _ServerDetailScreenState extends State<ServerDetailScreen> {
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
-                        'Share via encrypted channels only (Signal, Telegram secret chat)',
+                        'Share via encrypted channels only (Signal, Telegram)',
                         style: TextStyle(
                           fontSize: 11,
                           color: textMuted(context),
