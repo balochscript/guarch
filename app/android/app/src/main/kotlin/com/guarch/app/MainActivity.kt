@@ -52,6 +52,7 @@ class MainActivity : FlutterActivity() {
             try {
                 when (call.method) {
                     "getVersion" -> result.success("Guarch Android v1.0.1")
+                    "setUserSettings" -> handleSetUserSettings(call.arguments, result)
                     "connect" -> handleConnectLegacy(call.arguments, result)
                     "connectWithConfig" -> handleConnectWithConfig(call.arguments, result)
                     "disconnect" -> handleDisconnect(result)
@@ -70,6 +71,7 @@ class MainActivity : FlutterActivity() {
                     "requestVpnPermission" -> requestVpnPermission(result)
                     "testRealDelay" -> handleTestRealDelay(call.arguments, result)
                     "testConnection" -> handleTestConnection(call.arguments, result)
+                    "readGoLog" -> handleReadGoLog(result)
                     else -> result.notImplemented()
                 }
             } catch (e: Throwable) {
@@ -87,8 +89,8 @@ class MainActivity : FlutterActivity() {
                     "getCrashLog" -> result.success(CrashLogger.getPreviousCrashLog(this))
                     "getGoLog" -> {
                         try {
-                            val logFile = File(filesDir, "go_debug.log")
-                            result.success(if (logFile.exists()) logFile.readText() else "No Go log")
+                            val logFile = File(filesDir, "go_engine.log")
+                            result.success(if (logFile.exists()) logFile.readText() else "No Go log yet")
                         } catch (e: Throwable) {
                             result.success("Error reading Go log: ${e.message}")
                         }
@@ -155,6 +157,52 @@ class MainActivity : FlutterActivity() {
         }
     }
 
+    private fun handleSetUserSettings(arguments: Any?, result: MethodChannel.Result) {
+        CrashLogger.d(TAG, "=== handleSetUserSettings ===")
+        
+        val json = arguments as? String
+        if (json == null) {
+            CrashLogger.w(TAG, "  Settings JSON is null")
+            result.success(false)
+            return
+        }
+
+        if (goEngine == null) {
+            CrashLogger.w(TAG, "  Go engine not available - storing for later")
+            result.success(true)
+            return
+        }
+
+        try {
+            CrashLogger.d(TAG, "  Settings: $json")
+            
+            val method = goEngine!!.javaClass.getMethod("setUserSettings", String::class.java)
+            val success = method.invoke(goEngine, json) as? Boolean ?: false
+            
+            CrashLogger.d(TAG, "  setUserSettings result: $success")
+            result.success(success)
+            
+        } catch (e: Throwable) {
+            val real = unwrapException(e)
+            CrashLogger.e(TAG, "  setUserSettings failed", real)
+            result.success(true)
+        }
+    }
+
+    private fun handleReadGoLog(result: MethodChannel.Result) {
+        CrashLogger.d(TAG, ">> Method: readGoLog")
+        try {
+            val logFile = File(filesDir, "go_engine.log")
+            if (logFile.exists()) {
+                result.success(logFile.readText())
+            } else {
+                result.success("No Go log file")
+            }
+        } catch (e: Throwable) {
+            result.success("Error: ${e.message}")
+        }
+    }
+
     private fun handleConnectLegacy(arguments: Any?, result: MethodChannel.Result) {
         CrashLogger.d(TAG, "=== handleConnectLegacy (deprecated) ===")
         
@@ -183,6 +231,7 @@ class MainActivity : FlutterActivity() {
         }
 
         if (goEngine == null) {
+            CrashLogger.e(TAG, "  Go engine is NULL!")
             result.error("NO_ENGINE", "Native engine not available", null)
             return
         }
@@ -215,6 +264,7 @@ class MainActivity : FlutterActivity() {
             try {
                 val config = pendingConfig ?: return@Thread
                 
+                CrashLogger.d(TAG, "  Loading new config...")
                 try {
                     goEngine!!.javaClass.getMethod("loadConfigJSON", String::class.java)
                         .invoke(goEngine, config)
@@ -223,6 +273,7 @@ class MainActivity : FlutterActivity() {
                     CrashLogger.e(TAG, "  loadConfigJSON failed", unwrapException(e))
                 }
 
+                CrashLogger.d(TAG, "  Calling connect()...")
                 val connectMethod = goEngine!!.javaClass.getMethod("connect")
                 val success = connectMethod.invoke(goEngine) as? Boolean ?: false
                 
@@ -329,10 +380,11 @@ class MainActivity : FlutterActivity() {
 
                     val config = pendingConfig
                     if (config != null && goEngine != null) {
+                        CrashLogger.d(TAG, "  Loading config to Go engine...")
                         try {
                             goEngine!!.javaClass.getMethod("loadConfigJSON", String::class.java)
                                 .invoke(goEngine, config)
-                            CrashLogger.d(TAG, "  Config loaded")
+                            CrashLogger.d(TAG, "  Config loaded ✅")
                         } catch (e: Throwable) {
                             CrashLogger.e(TAG, "  Config load failed", unwrapException(e))
                             runOnUiThread {
@@ -341,6 +393,7 @@ class MainActivity : FlutterActivity() {
                             return@Thread
                         }
 
+                        CrashLogger.d(TAG, "  Calling Go connect()...")
                         try {
                             val connectMethod = goEngine!!.javaClass.getMethod("connect")
                             val started = connectMethod.invoke(goEngine) as? Boolean ?: false
@@ -353,7 +406,7 @@ class MainActivity : FlutterActivity() {
                                 return@Thread
                             }
                             
-                            CrashLogger.d(TAG, "  Waiting for connection...")
+                            CrashLogger.d(TAG, "  Waiting for connection status...")
 
                             val getStatusMethod = goEngine!!.javaClass.getMethod("getStatus")
                             var statusAttempts = 0
@@ -416,7 +469,7 @@ class MainActivity : FlutterActivity() {
                                     startTunMethod.invoke(goEngine, fd, pendingSocksPort)
                                     
                                     vpnAndTunStarted = true
-                                    CrashLogger.d(TAG, "  TUN started")
+                                    CrashLogger.d(TAG, "  TUN started ✅")
                                 } catch (e: Throwable) {
                                     CrashLogger.e(TAG, "  TUN start failed", unwrapException(e))
                                     runOnUiThread {
@@ -431,7 +484,7 @@ class MainActivity : FlutterActivity() {
                                 }
                             }
 
-                            CrashLogger.d(TAG, "=== Setup complete ===")
+                            CrashLogger.d(TAG, "=== Setup complete ✅ ===")
 
                         } catch (e: Throwable) {
                             val real = unwrapException(e)
@@ -464,6 +517,7 @@ class MainActivity : FlutterActivity() {
             try {
                 if (goEngine != null) {
                     try {
+                        CrashLogger.d(TAG, "  Calling Go disconnect()...")
                         goEngine!!.javaClass.getMethod("disconnect").invoke(goEngine)
                         CrashLogger.d(TAG, "  Go disconnect ✅")
                     } catch (e: Throwable) {
@@ -471,6 +525,7 @@ class MainActivity : FlutterActivity() {
                     }
 
                     try {
+                        CrashLogger.d(TAG, "  Stopping TUN...")
                         goEngine!!.javaClass.getMethod("stopTun").invoke(goEngine)
                         CrashLogger.d(TAG, "  TUN stopped ✅")
                     } catch (e: Throwable) {
@@ -479,6 +534,7 @@ class MainActivity : FlutterActivity() {
                 }
 
                 try {
+                    CrashLogger.d(TAG, "  Stopping VPN service...")
                     startService(Intent(this@MainActivity, GuarchService::class.java).apply {
                         action = GuarchService.ACTION_STOP
                     })
@@ -510,6 +566,7 @@ class MainActivity : FlutterActivity() {
         try {
             goEngine!!.javaClass.getMethod("loadConfigJSON", String::class.java)
                 .invoke(goEngine, json)
+            CrashLogger.d(TAG, "loadConfigJSON success")
             result.success(true)
         } catch (e: Throwable) {
             CrashLogger.e(TAG, "loadConfigJSON failed", unwrapException(e))
@@ -527,6 +584,7 @@ class MainActivity : FlutterActivity() {
         try {
             goEngine!!.javaClass.getMethod("loadConfigURI", String::class.java)
                 .invoke(goEngine, uri)
+            CrashLogger.d(TAG, "loadConfigURI success")
             result.success(true)
         } catch (e: Throwable) {
             CrashLogger.e(TAG, "loadConfigURI failed", unwrapException(e))
@@ -544,6 +602,7 @@ class MainActivity : FlutterActivity() {
         try {
             goEngine!!.javaClass.getMethod("loadPreset", String::class.java)
                 .invoke(goEngine, preset)
+            CrashLogger.d(TAG, "loadPreset success: $preset")
             result.success(true)
         } catch (e: Throwable) {
             CrashLogger.e(TAG, "loadPreset failed", unwrapException(e))
@@ -594,6 +653,7 @@ class MainActivity : FlutterActivity() {
             goEngine!!.javaClass.getMethod("setBatteryLevel", Int::class.java)
                 .invoke(goEngine, level)
             currentBatteryLevel = level
+            CrashLogger.d(TAG, "Battery level set: $level%")
             result.success(true)
         } catch (e: Throwable) {
             CrashLogger.e(TAG, "setBatteryLevel failed", unwrapException(e))
@@ -611,6 +671,7 @@ class MainActivity : FlutterActivity() {
         try {
             goEngine!!.javaClass.getMethod("setDataSaverMode", Boolean::class.java)
                 .invoke(goEngine, enabled)
+            CrashLogger.d(TAG, "Data saver mode: $enabled")
             result.success(true)
         } catch (e: Throwable) {
             CrashLogger.e(TAG, "setDataSaverMode failed", unwrapException(e))
@@ -628,6 +689,7 @@ class MainActivity : FlutterActivity() {
         try {
             goEngine!!.javaClass.getMethod("setSplitTunnelMode", String::class.java)
                 .invoke(goEngine, mode)
+            CrashLogger.d(TAG, "Split tunnel mode: $mode")
             result.success(true)
         } catch (e: Throwable) {
             CrashLogger.e(TAG, "setSplitTunnelMode failed", unwrapException(e))
@@ -657,6 +719,7 @@ class MainActivity : FlutterActivity() {
                 String::class.java,
                 Boolean::class.java
             ).invoke(goEngine, domain, isWhitelist)
+            CrashLogger.d(TAG, "Split tunnel domain added: $domain (whitelist=$isWhitelist)")
             result.success(true)
         } catch (e: Throwable) {
             CrashLogger.e(TAG, "addSplitTunnelDomain failed", unwrapException(e))
@@ -723,9 +786,11 @@ class MainActivity : FlutterActivity() {
         }
 
         Thread {
+            var testSuccess = false
+            var previousConfig: String? = null
+            
             try {
-                CrashLogger.d(TAG, "  Loading test config...")
-                
+                CrashLogger.d(TAG, "  Extracting server info...")
                 val serverAddress = try {
                     val json = org.json.JSONObject(configJson)
                     json.getJSONObject("server").getString("address")
@@ -735,20 +800,35 @@ class MainActivity : FlutterActivity() {
                 
                 CrashLogger.d(TAG, "  Testing server: $serverAddress")
                 
+                try {
+                    CrashLogger.d(TAG, "  Saving current config...")
+                    previousConfig = goEngine!!.javaClass.getMethod("exportConfigJSON")
+                        .invoke(goEngine) as? String
+                    if (previousConfig != null) {
+                        CrashLogger.d(TAG, "  Previous config saved (${previousConfig!!.length} chars)")
+                    }
+                } catch (e: Throwable) {
+                    CrashLogger.w(TAG, "  Could not save previous config (OK if first run)")
+                }
+                
+                CrashLogger.d(TAG, "  Loading test config...")
                 goEngine!!.javaClass.getMethod("loadConfigJSON", String::class.java)
                     .invoke(goEngine, configJson)
                 
-                CrashLogger.d(TAG, "  Config loaded, connecting...")
-                
+                CrashLogger.d(TAG, "  Connecting to test server...")
+                val startTime = System.currentTimeMillis()
                 val connectMethod = goEngine!!.javaClass.getMethod("connect")
                 val success = connectMethod.invoke(goEngine) as? Boolean ?: false
+                val elapsed = System.currentTimeMillis() - startTime
                 
-                CrashLogger.d(TAG, "  Connection result: $success")
+                CrashLogger.d(TAG, "  Connection result: $success (${elapsed}ms)")
                 
                 if (success) {
+                    testSuccess = true
                     Thread.sleep(100)
                     
                     try {
+                        CrashLogger.d(TAG, "  Disconnecting test connection...")
                         goEngine!!.javaClass.getMethod("disconnect").invoke(goEngine)
                         CrashLogger.d(TAG, "  Test connection disconnected")
                     } catch (e: Throwable) {
@@ -756,16 +836,27 @@ class MainActivity : FlutterActivity() {
                     }
                 }
                 
-                runOnUiThread {
-                    result.success(success)
-                }
-                
             } catch (e: Throwable) {
                 val real = unwrapException(e)
-                CrashLogger.e(TAG, "  Real delay test failed", real)
-                runOnUiThread {
-                    result.success(false)
+                CrashLogger.e(TAG, "  Test failed: ${real.message}", real)
+            } finally {
+                if (previousConfig != null) {
+                    try {
+                        CrashLogger.d(TAG, "  Restoring previous config...")
+                        goEngine!!.javaClass.getMethod("loadConfigJSON", String::class.java)
+                            .invoke(goEngine, previousConfig)
+                        CrashLogger.d(TAG, "  Previous config restored ✅")
+                    } catch (e: Throwable) {
+                        CrashLogger.e(TAG, "  Could not restore previous config", unwrapException(e))
+                    }
                 }
+            }
+            
+            val engineStillAlive = goEngine != null
+            CrashLogger.d(TAG, "  After test: engine=${if (engineStillAlive) "ALIVE ✅" else "NULL ❌"}")
+            
+            runOnUiThread {
+                result.success(testSuccess)
             }
         }.start()
     }
@@ -775,27 +866,34 @@ class MainActivity : FlutterActivity() {
         
         val configJson = arguments as? String
         if (configJson == null) {
+            CrashLogger.w(TAG, "  Config is null")
             result.success(false)
             return
         }
 
         if (goEngine == null) {
+            CrashLogger.w(TAG, "  Go engine not available")
             result.success(false)
             return
         }
 
         Thread {
             try {
+                CrashLogger.d(TAG, "  Loading test config...")
                 goEngine!!.javaClass.getMethod("loadConfigJSON", String::class.java)
                     .invoke(goEngine, configJson)
                 
+                CrashLogger.d(TAG, "  Attempting connection...")
                 val connectMethod = goEngine!!.javaClass.getMethod("connect")
                 val success = connectMethod.invoke(goEngine) as? Boolean ?: false
+                
+                CrashLogger.d(TAG, "  Test result: $success")
                 
                 if (success) {
                     Thread.sleep(50)
                     try {
                         goEngine!!.javaClass.getMethod("disconnect").invoke(goEngine)
+                        CrashLogger.d(TAG, "  Disconnected")
                     } catch (_: Throwable) {}
                 }
                 
@@ -804,7 +902,7 @@ class MainActivity : FlutterActivity() {
                 }
                 
             } catch (e: Throwable) {
-                CrashLogger.e(TAG, "testConnection failed", unwrapException(e))
+                CrashLogger.e(TAG, "  Test connection failed", unwrapException(e))
                 runOnUiThread {
                     result.success(false)
                 }
@@ -819,10 +917,24 @@ class MainActivity : FlutterActivity() {
     private fun tryInitGoEngine() {
         CrashLogger.d(TAG, "--- tryInitGoEngine ---")
         try {
+            CrashLogger.d(TAG, "  Loading Mobile class...")
             val cls = Class.forName("com.guarch.mobile.mobile.Mobile")
+            
+            CrashLogger.d(TAG, "  Creating new engine instance...")
             goEngine = cls.getMethod("new_").invoke(null)
             
             try {
+                val logPath = File(filesDir, "go_engine.log").absolutePath
+                CrashLogger.d(TAG, "  Initializing Go log: $logPath")
+                val initLogMethod = cls.getMethod("initGoLog", String::class.java)
+                initLogMethod.invoke(null, logPath)
+                CrashLogger.d(TAG, "  Go log initialized ✅")
+            } catch (e: Throwable) {
+                CrashLogger.w(TAG, "  Go log init failed (method may not exist yet)")
+            }
+            
+            try {
+                CrashLogger.d(TAG, "  Setting up callback...")
                 val callbackClass = Class.forName("com.guarch.mobile.mobile.Callback")
                 val callback = java.lang.reflect.Proxy.newProxyInstance(
                     callbackClass.classLoader,
@@ -832,6 +944,7 @@ class MainActivity : FlutterActivity() {
                         "onStatusChanged" -> {
                             val status = args?.get(0) as? String
                             if (status != null) {
+                                CrashLogger.d("GoCallback", "Status: $status")
                                 runOnUiThread { sendEvent("status", status) }
                             }
                         }
@@ -842,27 +955,31 @@ class MainActivity : FlutterActivity() {
                             }
                         }
                         "onLog" -> {
-                            val log = args?.get(0) as? String
-                            if (log != null) {
-                                CrashLogger.d("GoEngine", log)
-                                runOnUiThread { sendEvent("log", log) }
+                            val level = args?.get(0) as? String
+                            val msg = args?.get(1) as? String
+                            if (level != null && msg != null) {
+                                CrashLogger.d("GoEngine", "[$level] $msg")
+                                runOnUiThread { sendEvent("log", msg) }
                             }
                         }
                         "onError" -> {
                             val error = args?.get(0) as? String
                             if (error != null) {
+                                CrashLogger.e("GoEngine", "Error: $error")
                                 runOnUiThread { sendEvent("error", error) }
                             }
                         }
                         "onSNIRotation" -> {
                             val sni = args?.get(0) as? String
                             if (sni != null) {
+                                CrashLogger.d("GoEngine", "SNI rotated: $sni")
                                 runOnUiThread { sendEvent("sni", sni) }
                             }
                         }
                         "onDNSFallback" -> {
                             val enabled = args?.get(0) as? Boolean
                             if (enabled != null) {
+                                CrashLogger.d("GoEngine", "DNS fallback: $enabled")
                                 runOnUiThread { sendEvent("dns_fallback", enabled) }
                             }
                         }
@@ -872,9 +989,9 @@ class MainActivity : FlutterActivity() {
 
                 goEngine!!.javaClass.getMethod("setCallback", callbackClass)
                     .invoke(goEngine, callback)
-                CrashLogger.d(TAG, "  Go callback set ✅")
+                CrashLogger.d(TAG, "  Callback set ✅")
             } catch (e: Throwable) {
-                CrashLogger.w(TAG, "  Callback setup failed (optional)", e)
+                CrashLogger.w(TAG, "  Callback setup failed", e)
             }
 
             CrashLogger.d(TAG, "  Go engine LOADED ✅")
@@ -883,9 +1000,10 @@ class MainActivity : FlutterActivity() {
                 .map { it.name }
                 .distinct()
                 .sorted()
-            CrashLogger.d(TAG, "  Methods: ${methods.joinToString(", ")}")
+            CrashLogger.d(TAG, "  Available methods (${methods.size}): ${methods.joinToString(", ")}")
         } catch (e: ClassNotFoundException) {
-            CrashLogger.w(TAG, "  com.guarch.mobile.mobile.Mobile NOT FOUND (AAR missing or not packaged)")
+            CrashLogger.e(TAG, "  com.guarch.mobile.mobile.Mobile NOT FOUND")
+            CrashLogger.e(TAG, "  AAR file missing or not packaged correctly")
             goEngine = null
         } catch (e: Throwable) {
             CrashLogger.e(TAG, "  Go engine init FAILED", e)
@@ -898,7 +1016,7 @@ class MainActivity : FlutterActivity() {
             try {
                 eventSink?.success(mapOf("type" to type, "data" to data))
             } catch (e: Throwable) {
-                CrashLogger.e(TAG, "sendEvent failed", e)
+                CrashLogger.e(TAG, "sendEvent failed: $type", e)
             }
         }
     }
@@ -942,7 +1060,10 @@ class MainActivity : FlutterActivity() {
         CrashLogger.d(TAG, "=== Activity onDestroy ===")
         
         try {
-            batteryReceiver?.let { unregisterReceiver(it) }
+            batteryReceiver?.let { 
+                unregisterReceiver(it)
+                CrashLogger.d(TAG, "  Battery receiver unregistered")
+            }
         } catch (_: Throwable) {}
         
         CrashLogger.close()
