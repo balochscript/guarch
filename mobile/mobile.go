@@ -311,7 +311,7 @@ func (e *Engine) SetBatteryLevel(level int) {
 	if e.adaptiveCover != nil {
 		e.adaptiveCover.SetBatteryLevel(level)
 		
-		if e.config != nil && e.config.Cover.Adaptive.BatteryAware && level < 20 {
+		if e.config != nil && e.config.Cover != nil && e.config.Cover.Adaptive.BatteryAware && level < 20 {
 			log.Printf("[Engine] Low battery warning (%d%%)", level)
 			e.logWarn(fmt.Sprintf("Low battery (%d%%) - reducing cover activity", level))
 		}
@@ -325,7 +325,7 @@ func (e *Engine) SetDataSaverMode(enabled bool) {
 	e.dataSaverMode = enabled
 	log.Printf("[Engine] Data saver mode: %v", enabled)
 	
-	if e.config != nil {
+	if e.config != nil && e.config.Cover != nil {
 		e.config.Cover.Adaptive.DataSaverMode = enabled
 	}
 
@@ -396,7 +396,11 @@ func (e *Engine) connectWithRetry() {
 
 	log.Println("[Engine] All connection attempts failed")
 
-	if e.config.DNS.Enabled && e.config.DNS.AutoSwitch {
+	e.mu.RLock()
+	cfg := e.config
+	e.mu.RUnlock()
+
+	if cfg.DNS != nil && cfg.DNS.Enabled && cfg.DNS.AutoSwitch {
 		log.Println("[Engine] Attempting DNS fallback...")
 		e.logWarn("All TLS attempts failed - trying DNS fallback...")
 		if err := e.enableDNSFallback(); err != nil {
@@ -409,6 +413,7 @@ func (e *Engine) connectWithRetry() {
 			e.logInfo("✓ Connected via DNS fallback!")
 		}
 	} else {
+		log.Println("[Engine] DNS fallback not available or not enabled")
 		e.setStatus("disconnected")
 	}
 }
@@ -422,13 +427,23 @@ func (e *Engine) connectInternal() error {
 	e.mu.RUnlock()
 
 	log.Printf("[Engine] Protocol: %s", protocol)
-	log.Printf("[Engine] Cover enabled: %v", cfg.Cover.Enabled)
-	log.Printf("[Engine] SNI enabled: %v", cfg.SNI.Enabled)
-	log.Printf("[Engine] DNS fallback enabled: %v", cfg.DNS.Enabled)
 
-	if cfg.SNI.Enabled {
+	var userSettings *config.UserSettings = nil
+	
+	resolvedCfg, err := config.ResolveAll(cfg, userSettings)
+	if err != nil {
+		log.Printf("[Engine] Config resolve failed: %v", err)
+		return fmt.Errorf("config resolve: %w", err)
+	}
+
+	log.Printf("[Engine] Resolved config - SNI: %v, Cover: %v, DNS: %v", 
+		resolvedCfg.SNI != nil, 
+		resolvedCfg.Cover != nil, 
+		resolvedCfg.DNS != nil)
+
+	if resolvedCfg.SNI != nil {
 		log.Println("[Engine] Initializing SNI manager...")
-		sniMgr, err := sni.NewManagerFromConfig(&cfg.SNI)
+		sniMgr, err := sni.NewManagerFromConfig(resolvedCfg.SNI)
 		if err != nil {
 			log.Printf("[Engine] SNI manager init failed: %v", err)
 			e.logWarn("SNI manager init failed: " + err.Error())
@@ -442,17 +457,21 @@ func (e *Engine) connectInternal() error {
 			e.stats.currentSNI = currentSNI
 			e.stats.mu.Unlock()
 
-			log.Printf("[Engine] SNI rotation enabled (%s mode, current: %s)", cfg.SNI.Mode, currentSNI)
-			e.logInfo(fmt.Sprintf("SNI rotation enabled (%s mode, current: %s)", cfg.SNI.Mode, currentSNI))
+			log.Printf("[Engine] SNI rotation enabled (%s mode, current: %s)", 
+				resolvedCfg.SNI.Mode, currentSNI)
+			e.logInfo(fmt.Sprintf("SNI rotation enabled (%s mode, current: %s)", 
+				resolvedCfg.SNI.Mode, currentSNI))
 		}
+	} else {
+		log.Println("[Engine] SNI disabled or not configured")
 	}
 
 	var coverMgr *cover.Manager
-	if cfg.Cover.Enabled {
+	if resolvedCfg.Cover != nil {
 		log.Println("[Engine] Initializing cover traffic...")
-		coverCfg := e.buildCoverConfig(&cfg.Cover)
+		coverCfg := e.buildCoverConfig(resolvedCfg.Cover)
 		
-		maxPadding := config.GetMaxPaddingForMode(cfg.Cover.Mode)
+		maxPadding := config.GetMaxPaddingForMode(resolvedCfg.Cover.Mode)
 		modeCfg := &cover.ModeConfig{
 			MaxPadding: maxPadding,
 		}
@@ -467,14 +486,14 @@ func (e *Engine) connectInternal() error {
 		adaptiveCover.SetBatteryLevel(currentBattery)
 		log.Printf("[Engine] Initial battery level: %d%%", currentBattery)
 
-		if cfg.Cover.Adaptive.BatteryAware {
+		if resolvedCfg.Cover.Adaptive.BatteryAware {
 			adaptiveCover.SetBatteryAware(true)
 			if currentBattery < 20 {
 				log.Println("[Engine] Low battery detected - reducing cover activity")
 			}
 		}
 		
-		if cfg.Cover.Adaptive.DataSaverMode || currentDataSaver {
+		if resolvedCfg.Cover.Adaptive.DataSaverMode || currentDataSaver {
 			adaptiveCover.SetDataSaverMode(true)
 			log.Println("[Engine] Data saver mode enabled")
 		}
@@ -487,32 +506,35 @@ func (e *Engine) connectInternal() error {
 		e.mu.Unlock()
 
 		coverMgr.Start(e.ctx)
-		log.Printf("[Engine] Cover traffic enabled (%s mode, %d domains)", cfg.Cover.Mode, len(cfg.Cover.Domains))
+		log.Printf("[Engine] Cover traffic enabled (%s mode, %d domains)", 
+			resolvedCfg.Cover.Mode, len(resolvedCfg.Cover.Domains))
 
-		e.logInfo("[Engine] warming up (waiting 3 seconds for initial requests)...")
+		e.logInfo("Cover warming up (waiting 3 seconds for initial requests)...")
 		log.Println("[Engine] Cover warm-up: 3 seconds...")
 		
 		warmupTimer := time.NewTimer(3 * time.Second)
 		select {
 		case <-warmupTimer.C:
 			log.Println("[Engine] Cover warm-up complete")
-			e.logInfo("[Engine] warm-up complete, ready to connect")
+			e.logInfo("Cover warm-up complete, ready to connect")
 		case <-e.ctx.Done():
 			warmupTimer.Stop()
 			return e.ctx.Err()
 		}
+	} else {
+		log.Println("[Engine] Cover traffic disabled or not configured")
 	}
 
 	switch strings.ToLower(protocol) {
 	case "grouk":
 		log.Println("[Engine] Using Grouk protocol (UDP)")
-		return e.connectGrouk(cfg, coverMgr)
+		return e.connectGrouk(resolvedCfg, coverMgr)
 	case "zhip":
 		log.Println("[Engine] Using Zhip protocol (QUIC)")
-		return e.connectZhip(cfg, coverMgr)
+		return e.connectZhip(resolvedCfg, coverMgr)
 	default:
 		log.Println("[Engine] Using Guarch protocol (TLS)")
-		return e.connectGuarch(cfg, coverMgr)
+		return e.connectGuarch(resolvedCfg, coverMgr)
 	}
 }
 
@@ -548,7 +570,10 @@ func (e *Engine) connectGuarch(cfg *config.ServerConfig, coverMgr *cover.Manager
 	}
 	log.Println("[Engine] TCP connection established ✅")
 
-	maxPadding := config.GetMaxPaddingForMode(cfg.Cover.Mode)
+	maxPadding := 0
+	if cfg.Cover != nil {
+		maxPadding = config.GetMaxPaddingForMode(cfg.Cover.Mode)
+	}
 	
 	handshakeCfg := &transport.HandshakeConfig{
 		PSK:            []byte(cfg.Server.PSK),
@@ -740,19 +765,23 @@ func (e *Engine) enableDNSFallback() error {
 	log.Println("[Engine] === enableDNSFallback ===")
 
 	e.mu.RLock()
-	dnsCfg := &e.config.DNS
+	cfg := e.config
 	e.mu.RUnlock()
 
-	if !dnsCfg.Enabled {
+	if cfg.DNS == nil {
+		return fmt.Errorf("DNS config is nil")
+	}
+
+	if !cfg.DNS.Enabled {
 		return fmt.Errorf("DNS fallback not enabled in config")
 	}
 
-	log.Printf("[Engine] Creating DNS client (domain: %s)...", dnsCfg.Domain)
+	log.Printf("[Engine] Creating DNS client (domain: %s)...", cfg.DNS.Domain)
 	clientCfg := &dns.ClientConfig{
-		Domain:     dnsCfg.Domain,
-		DNSServers: dnsCfg.Servers,
-		Timeout:    dnsCfg.Timeout.Duration,
-		Retries:    dnsCfg.SwitchThreshold,
+		Domain:     cfg.DNS.Domain,
+		DNSServers: cfg.DNS.Servers,
+		Timeout:    cfg.DNS.Timeout.Duration,
+		Retries:    cfg.DNS.SwitchThreshold,
 		RetryDelay: 500 * time.Millisecond,
 	}
 	
@@ -784,19 +813,19 @@ func (e *Engine) enableDNSFallback() error {
 			ReadTimeout:    0,
 			WriteTimeout:   0,
 			IdleTimeout:    5 * time.Minute,
-			MaxRetries:     e.config.DNS.MaxRetries,
-			RetryDelay:     e.config.DNS.RetryDelay.Duration,
+			MaxRetries:     cfg.DNS.MaxRetries,
+			RetryDelay:     cfg.DNS.RetryDelay.Duration,
 			MaxPacketSize:  32768,
-			Compression:    e.config.DNS.Compression,
+			Compression:    cfg.DNS.Compression,
 		}
 		
-		if e.config.DNS.BufferSize > 0 {
-			streamCfg.RecvBufferSize = e.config.DNS.BufferSize
-			streamCfg.SendBufferSize = e.config.DNS.BufferSize / 2
+		if cfg.DNS.BufferSize > 0 {
+			streamCfg.RecvBufferSize = cfg.DNS.BufferSize
+			streamCfg.SendBufferSize = cfg.DNS.BufferSize / 2
 		}
 		
-		if e.config.DNS.MaxPacketSize > 0 {
-			streamCfg.MaxPacketSize = e.config.DNS.MaxPacketSize
+		if cfg.DNS.MaxPacketSize > 0 {
+			streamCfg.MaxPacketSize = cfg.DNS.MaxPacketSize
 		}
 		
 		wrapper := dns.NewStreamWrapperWithConfig(e.dnsClient, sessionID, streamCfg)
@@ -1069,13 +1098,15 @@ func (e *Engine) sniRotator() {
 	}
 
 	e.mu.RLock()
+	cfg := e.config
+	e.mu.RUnlock()
+
 	var interval time.Duration
-	if e.config.SNI.RotationInterval.Duration > 0 {
-		interval = e.config.SNI.RotationInterval.Duration
+	if cfg.SNI != nil && cfg.SNI.RotationInterval.Duration > 0 {
+		interval = cfg.SNI.RotationInterval.Duration
 	} else {
 		interval = 5 * time.Minute
 	}
-	e.mu.RUnlock()
 
 	log.Printf("[Engine] SNI rotator started (interval: %v)", interval)
 
@@ -1119,8 +1150,6 @@ func (e *Engine) Disconnect() bool {
 	defer e.mu.Unlock()
 
 	e.setStatus("disconnecting")
-
-	e.StopTun()
 
 	if e.cancel != nil {
 		e.cancel()
@@ -1215,6 +1244,12 @@ func GetVersion() string {
 }
 
 func (e *Engine) buildCoverConfig(cfg *config.CoverConfig) *cover.Config {
+	if cfg == nil {
+		return &cover.Config{
+			Enabled: false,
+		}
+	}
+
 	domains := make([]cover.DomainConfig, len(cfg.Domains))
 	for i, d := range cfg.Domains {
 		domains[i] = cover.DomainConfig{
