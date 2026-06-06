@@ -283,8 +283,9 @@ class GuarchEngine {
     }
   }
 
-  Future<bool> connectWithConfig(String configJson) async {
+  Future<bool> connectWithConfig(String configJson, bool vpnModeEnabled) async {
     FlutterLog.d('Engine', '=== connectWithConfig() (v1.0.1) ===');
+    FlutterLog.d('Engine', '  VPN Mode: $vpnModeEnabled');
 
     if (!_nativeAvailable) {
       FlutterLog.e('Engine', '  Native not available');
@@ -299,6 +300,7 @@ class GuarchEngine {
 
       final config = jsonDecode(configJson) as Map<String, dynamic>;
       config['socks_port'] = settings.socksPort;
+      config['vpn_mode'] = vpnModeEnabled;
 
       final userSettingsJson = jsonEncode({
         'socks_port': settings.socksPort,
@@ -315,7 +317,12 @@ class GuarchEngine {
       await _channel.invokeMethod('setUserSettings', userSettingsJson);
       FlutterLog.d('Engine', '  User settings sent to Go');
 
-      final result = await _channel.invokeMethod('connectWithConfig', updatedConfigJson);
+      final params = {
+        'config': updatedConfigJson,
+        'vpnMode': vpnModeEnabled,
+      };
+
+      final result = await _channel.invokeMethod('connectWithConfig', params);
       FlutterLog.d('Engine', '  result: $result');
       return result == true;
     } on PlatformException catch (e) {
@@ -337,8 +344,8 @@ class GuarchEngine {
     }
   }
 
-  Future<bool> disconnect() async {
-    FlutterLog.d('Engine', 'disconnect()');
+  Future<bool> disconnect(bool vpnModeEnabled) async {
+    FlutterLog.d('Engine', 'disconnect() - VPN mode: $vpnModeEnabled');
 
     if (!_nativeAvailable) {
       _statusController.add('disconnected');
@@ -346,7 +353,7 @@ class GuarchEngine {
     }
 
     try {
-      final result = await _channel.invokeMethod('disconnect');
+      final result = await _channel.invokeMethod('disconnect', vpnModeEnabled);
       return result == true;
     } on MissingPluginException {
       _statusController.add('disconnected');
