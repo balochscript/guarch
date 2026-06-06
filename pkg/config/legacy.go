@@ -72,19 +72,19 @@ func ParseLegacyClient(data []byte) (*ServerConfig, error) {
 	}
 
 	if legacy.Cover != nil {
-		cfg.Cover = *legacy.Cover
+		cfg.Cover = legacy.Cover
 	}
 
 	if legacy.SNI != nil {
-		cfg.SNI = *legacy.SNI
+		cfg.SNI = legacy.SNI
 	}
 
 	if legacy.DNS != nil {
-		cfg.DNS = *legacy.DNS
+		cfg.DNS = legacy.DNS
 	}
 
 	if legacy.Shaping != nil {
-		cfg.Modes = ModesConfig{
+		cfg.Modes = &ModesConfig{
 			Stealth: ModeSettings{
 				Padding: legacy.Shaping.MaxPadding,
 			},
@@ -126,7 +126,7 @@ func ParseLegacyServer(data []byte) (*ServerConfig, error) {
 			}
 		}
 
-		cfg.Cover = CoverConfig{
+		cfg.Cover = &CoverConfig{
 			Enabled: legacy.CoverTraffic.Enabled,
 			Mode:    legacy.CoverTraffic.Mode,
 			Domains: domains,
