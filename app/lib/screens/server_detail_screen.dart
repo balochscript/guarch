@@ -11,7 +11,6 @@ import 'package:guarch/app.dart';
 import 'package:guarch/models/server_config.dart';
 import 'package:guarch/providers/app_provider.dart';
 import 'package:guarch/screens/add_server_screen.dart';
-import 'package:guarch/screens/export_screen.dart';
 
 class ServerDetailScreen extends StatefulWidget {
   final ServerConfig server;
@@ -48,7 +47,11 @@ class _ServerDetailScreenState extends State<ServerDetailScreen> {
         padding: const EdgeInsets.all(24),
         children: [
           Center(
-            child: Text(server.pingEmoji, style: const TextStyle(fontSize: 64)),
+            child: Icon(
+              _getProtocolIcon(server.protocol),
+              size: 64,
+              color: _getProtocolColor(server.protocol),
+            ),
           ),
           const SizedBox(height: 16),
           Center(
@@ -73,13 +76,13 @@ class _ServerDetailScreenState extends State<ServerDetailScreen> {
           ),
 
           const SizedBox(height: 32),
-          _sectionTitle(context, '🎯 Connection'),
+          _sectionTitle(context, 'Connection', Icons.link),
           _infoTile(context, 'Address', server.address, Icons.dns),
           _infoTile(context, 'Port', server.port.toString(), Icons.numbers),
 
           if (server.transport != null) ...[
             const SizedBox(height: 24),
-            _sectionTitle(context, '🚀 Transport'),
+            _sectionTitle(context, 'Transport', Icons.rocket_launch),
             
             Card(
               child: ListTile(
@@ -180,7 +183,7 @@ class _ServerDetailScreenState extends State<ServerDetailScreen> {
           ],
 
           const SizedBox(height: 24),
-          _sectionTitle(context, '⏱️ Latency'),
+          _sectionTitle(context, 'Latency', Icons.speed),
 
           Card(
             child: Column(
@@ -298,7 +301,7 @@ class _ServerDetailScreenState extends State<ServerDetailScreen> {
           ),
 
           const SizedBox(height: 24),
-          _sectionTitle(context, '🔐 Security'),
+          _sectionTitle(context, 'Security', Icons.lock),
 
           Card(
             child: ListTile(
@@ -378,14 +381,14 @@ class _ServerDetailScreenState extends State<ServerDetailScreen> {
           ),
 
           const SizedBox(height: 24),
-          _sectionTitle(context, '🎯 Advanced Features'),
+          _sectionTitle(context, 'Advanced Features', Icons.tune),
 
           Card(
             child: Column(
               children: [
                 _featureTile(
                   context,
-                  '🔄',
+                  Icons.shield_outlined,
                   'SNI Rotation',
                   server.sniEnabled
                       ? 'Enabled (${server.sniMode}, ${server.sniDomains.length} domains)'
@@ -398,7 +401,7 @@ class _ServerDetailScreenState extends State<ServerDetailScreen> {
                 ),
                 _featureTile(
                   context,
-                  '🎭',
+                  Icons.theater_comedy,
                   'Cover Traffic',
                   server.coverEnabled
                       ? 'Enabled (${server.coverDomains.length} domains)'
@@ -411,7 +414,7 @@ class _ServerDetailScreenState extends State<ServerDetailScreen> {
                 ),
                 _featureTile(
                   context,
-                  '🔌',
+                  Icons.dns,
                   'DNS Fallback',
                   server.dnsFallbackEnabled
                       ? 'Enabled (${server.dnsFallbackMode})'
@@ -424,7 +427,7 @@ class _ServerDetailScreenState extends State<ServerDetailScreen> {
                 ),
                 _featureTile(
                   context,
-                  '🔋',
+                  Icons.battery_charging_full,
                   'Battery-Aware',
                   server.batteryAwareEnabled ? 'Enabled' : 'Disabled',
                   server.batteryAwareEnabled,
@@ -435,7 +438,7 @@ class _ServerDetailScreenState extends State<ServerDetailScreen> {
                 ),
                 _featureTile(
                   context,
-                  '💾',
+                  Icons.data_saver_on,
                   'Data Saver',
                   server.dataSaverEnabled ? 'Enabled' : 'Disabled',
                   server.dataSaverEnabled,
@@ -448,7 +451,7 @@ class _ServerDetailScreenState extends State<ServerDetailScreen> {
 
           if (server.coverEnabled) ...[
             const SizedBox(height: 24),
-            _sectionTitle(context, '🎭 Cover Domains'),
+            _sectionTitle(context, 'Cover Domains', Icons.theater_comedy),
             ...server.coverDomains.map(
               (d) => Card(
                 child: ListTile(
@@ -472,7 +475,7 @@ class _ServerDetailScreenState extends State<ServerDetailScreen> {
 
           if (server.sniEnabled) ...[
             const SizedBox(height: 24),
-            _sectionTitle(context, '🔄 SNI Domains'),
+            _sectionTitle(context, 'SNI Domains', Icons.shield_outlined),
             ...server.sniDomains.where((d) => d.checkHealth).map(
                   (d) => Card(
                     child: ListTile(
@@ -509,12 +512,7 @@ class _ServerDetailScreenState extends State<ServerDetailScreen> {
               const SizedBox(width: 12),
               Expanded(
                 child: OutlinedButton.icon(
-                  onPressed: () => Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => ExportScreen(server: server),
-                    ),
-                  ),
+                  onPressed: () => _showExportDialog(context, server),
                   icon: const Icon(Icons.share),
                   label: const Text('Export'),
                 ),
@@ -589,7 +587,7 @@ class _ServerDetailScreenState extends State<ServerDetailScreen> {
   List<Widget> _buildMetadataSection(BuildContext context, Metadata metadata) {
     return [
       const SizedBox(height: 24),
-      _sectionTitle(context, '📋 Service Info'),
+      _sectionTitle(context, 'Service Info', Icons.info),
       
       if (metadata.country != null)
         _infoTile(context, 'Location', metadata.country!, Icons.location_on),
@@ -694,9 +692,10 @@ class _ServerDetailScreenState extends State<ServerDetailScreen> {
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  metadata.announcement!.icon,
-                  style: const TextStyle(fontSize: 24),
+                Icon(
+                  Icons.campaign,
+                  size: 24,
+                  color: metadata.announcement!.color,
                 ),
                 const SizedBox(width: 12),
                 Expanded(
@@ -782,16 +781,22 @@ class _ServerDetailScreenState extends State<ServerDetailScreen> {
     ];
   }
 
-  Widget _sectionTitle(BuildContext context, String title) {
+  Widget _sectionTitle(BuildContext context, String title, IconData icon) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
-      child: Text(
-        title,
-        style: TextStyle(
-          fontSize: 18,
-          fontWeight: FontWeight.w600,
-          color: textPrimary(context),
-        ),
+      child: Row(
+        children: [
+          Icon(icon, size: 20, color: accentColor(context)),
+          const SizedBox(width: 8),
+          Text(
+            title,
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.w600,
+              color: textPrimary(context),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -822,13 +827,13 @@ class _ServerDetailScreenState extends State<ServerDetailScreen> {
 
   Widget _featureTile(
     BuildContext context,
-    String emoji,
+    IconData icon,
     String title,
     String subtitle,
     bool enabled,
   ) {
     return ListTile(
-      leading: Text(emoji, style: const TextStyle(fontSize: 20)),
+      leading: Icon(icon, size: 20, color: accentColor(context)),
       title: Text(
         title,
         style: TextStyle(
@@ -849,6 +854,32 @@ class _ServerDetailScreenState extends State<ServerDetailScreen> {
         size: 20,
       ),
     );
+  }
+
+  IconData _getProtocolIcon(String protocol) {
+    switch (protocol.toLowerCase()) {
+      case 'guarch':
+        return Icons.security;
+      case 'grouk':
+        return Icons.flash_on;
+      case 'zhip':
+        return Icons.bolt;
+      default:
+        return Icons.shield;
+    }
+  }
+
+  Color _getProtocolColor(String protocol) {
+    switch (protocol.toLowerCase()) {
+      case 'guarch':
+        return Colors.blue;
+      case 'grouk':
+        return Colors.purple;
+      case 'zhip':
+        return Colors.amber;
+      default:
+        return Colors.grey;
+    }
   }
 
   IconData _getTransportIcon(String type) {
@@ -964,6 +995,215 @@ class _ServerDetailScreenState extends State<ServerDetailScreen> {
     }
   }
 
+  void _showExportDialog(BuildContext context, ServerConfig server) {
+    final provider = context.read<AppProvider>();
+    final link = provider.exportConfig(server);
+    final json = provider.exportConfigJson(server);
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      builder: (context) => DraggableScrollableSheet(
+        initialChildSize: 0.7,
+        minChildSize: 0.5,
+        maxChildSize: 0.95,
+        expand: false,
+        builder: (context, scrollController) => Container(
+          padding: const EdgeInsets.all(24),
+          child: ListView(
+            controller: scrollController,
+            children: [
+              Row(
+                children: [
+                  Icon(
+                    Icons.share,
+                    size: 28,
+                    color: accentColor(context),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Export ${server.name}',
+                          style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                                fontWeight: FontWeight.bold,
+                              ),
+                        ),
+                        Text(
+                          'Share this configuration',
+                          style: TextStyle(
+                            fontSize: 13,
+                            color: textMuted(context),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.close),
+                    onPressed: () => Navigator.pop(context),
+                  ),
+                ],
+              ),
+              
+              if (server.psk.isNotEmpty) ...[
+                const SizedBox(height: 16),
+                Card(
+                  color: Colors.orange.withOpacity(0.1),
+                  child: Padding(
+                    padding: const EdgeInsets.all(12),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.warning_amber, color: Colors.orange, size: 20),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Text(
+                            'Contains PSK. Share only through secure channels.',
+                            style: TextStyle(
+                              color: Colors.orange.shade800,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+
+              const SizedBox(height: 24),
+              Row(
+                children: [
+                  Icon(Icons.link, size: 20, color: accentColor(context)),
+                  const SizedBox(width: 8),
+                  Text(
+                    '${server.protocol.toUpperCase()} Link',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                      color: textPrimary(context),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      SelectableText(
+                        link,
+                        style: TextStyle(
+                          fontFamily: 'monospace',
+                          fontSize: 11,
+                          color: textSecondary(context),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: OutlinedButton.icon(
+                              onPressed: () {
+                                Clipboard.setData(ClipboardData(text: link));
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(content: Text('Link copied!')),
+                                );
+                              },
+                              icon: const Icon(Icons.copy, size: 16),
+                              label: const Text('Copy'),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: FilledButton.icon(
+                              onPressed: () => Share.share(link),
+                              icon: const Icon(Icons.share, size: 16),
+                              label: const Text('Share'),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+
+              const SizedBox(height: 24),
+              Row(
+                children: [
+                  Icon(Icons.code, size: 20, color: accentColor(context)),
+                  const SizedBox(width: 8),
+                  Text(
+                    'JSON Config',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                      color: textPrimary(context),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      ConstrainedBox(
+                        constraints: const BoxConstraints(maxHeight: 200),
+                        child: SingleChildScrollView(
+                          child: SelectableText(
+                            json,
+                            style: TextStyle(
+                              fontFamily: 'monospace',
+                              fontSize: 10,
+                              color: textSecondary(context),
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: OutlinedButton.icon(
+                              onPressed: () {
+                                Clipboard.setData(ClipboardData(text: json));
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(content: Text('JSON copied!')),
+                                );
+                              },
+                              icon: const Icon(Icons.copy, size: 16),
+                              label: const Text('Copy'),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: FilledButton.icon(
+                              onPressed: () => Share.share(json),
+                              icon: const Icon(Icons.share, size: 16),
+                              label: const Text('Share'),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   void _showQRCode(BuildContext context, ServerConfig server) {
     final GlobalKey qrKey = GlobalKey();
     final uri = server.toShareString();
@@ -978,9 +1218,10 @@ class _ServerDetailScreenState extends State<ServerDetailScreen> {
             children: [
               Row(
                 children: [
-                  Text(
-                    server.protocolEmoji,
-                    style: const TextStyle(fontSize: 32),
+                  Icon(
+                    _getProtocolIcon(server.protocol),
+                    size: 32,
+                    color: _getProtocolColor(server.protocol),
                   ),
                   const SizedBox(width: 12),
                   Expanded(
