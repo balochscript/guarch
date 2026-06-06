@@ -6,6 +6,9 @@ import 'package:guarch/providers/app_provider.dart';
 import 'package:guarch/screens/import_screen.dart';
 import 'package:guarch/screens/about_screen.dart';
 import 'package:guarch/screens/advanced_settings_screen.dart';
+import 'package:guarch/screens/sni_settings_screen.dart';
+import 'package:guarch/screens/cover_settings_screen.dart';
+import 'package:guarch/screens/dns_settings_screen.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 class SettingsScreen extends StatelessWidget {
@@ -20,9 +23,6 @@ class SettingsScreen extends StatelessWidget {
           body: ListView(
             padding: const EdgeInsets.all(16),
             children: [
-              // ═══════════════════════════════════════════════
-              // Appearance
-              // ═══════════════════════════════════════════════
               _sectionTitle(context, 'Appearance'),
               Card(
                 child: Column(
@@ -71,9 +71,6 @@ class SettingsScreen extends StatelessWidget {
                 ),
               ),
 
-              // ═══════════════════════════════════════════════
-              // Battery & Data Saver
-              // ═══════════════════════════════════════════════
               const SizedBox(height: 24),
               _sectionTitle(context, 'Battery & Data'),
               Card(
@@ -120,9 +117,6 @@ class SettingsScreen extends StatelessWidget {
                 ),
               ),
 
-              // ═══════════════════════════════════════════════
-              // Import / Export
-              // ═══════════════════════════════════════════════
               const SizedBox(height: 24),
               _sectionTitle(context, 'Import / Export'),
               Card(
@@ -172,14 +166,109 @@ class SettingsScreen extends StatelessWidget {
                 ),
               ),
 
-              // ═══════════════════════════════════════════════
-              // Connection
-              // ═══════════════════════════════════════════════
               const SizedBox(height: 24),
               _sectionTitle(context, 'Connection'),
               Card(
                 child: Column(
                   children: [
+                    ListTile(
+                      leading: Icon(Icons.shield, color: accentColor(context)),
+                      title: Text(
+                        'SNI Protection',
+                        style: TextStyle(color: textSecondary(context)),
+                      ),
+                      subtitle: Text(
+                        provider.globalSniEnabled
+                            ? '${provider.globalSniDomains.length} domains • ${provider.globalSniMode} mode'
+                            : 'Disabled',
+                        style: TextStyle(color: textMuted(context), fontSize: 12),
+                      ),
+                      trailing: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Switch(
+                            value: provider.globalSniEnabled,
+                            onChanged: (_) => provider.toggleGlobalSni(),
+                          ),
+                          const SizedBox(width: 8),
+                          Icon(
+                            Icons.arrow_forward_ios,
+                            size: 16,
+                            color: textMuted(context),
+                          ),
+                        ],
+                      ),
+                      onTap: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (_) => const SNISettingsScreen()),
+                      ),
+                    ),
+                    Divider(
+                      height: 1,
+                      color: accentColor(context).withOpacity(0.1),
+                    ),
+                    ListTile(
+                      leading: Icon(Icons.theater_comedy, color: accentColor(context)),
+                      title: Text(
+                        'Cover Traffic',
+                        style: TextStyle(color: textSecondary(context)),
+                      ),
+                      subtitle: Text(
+                        provider.globalCoverEnabled
+                            ? '${provider.globalCoverDomains.length} domains • ${provider.globalCoverMode} mode'
+                            : 'Disabled',
+                        style: TextStyle(color: textMuted(context), fontSize: 12),
+                      ),
+                      trailing: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Switch(
+                            value: provider.globalCoverEnabled,
+                            onChanged: (_) => provider.toggleGlobalCover(),
+                          ),
+                          const SizedBox(width: 8),
+                          Icon(
+                            Icons.arrow_forward_ios,
+                            size: 16,
+                            color: textMuted(context),
+                          ),
+                        ],
+                      ),
+                      onTap: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (_) => const CoverSettingsScreen()),
+                      ),
+                    ),
+                    Divider(
+                      height: 1,
+                      color: accentColor(context).withOpacity(0.1),
+                    ),
+                    ListTile(
+                      leading: Icon(Icons.dns, color: accentColor(context)),
+                      title: Text(
+                        'DNS & Security',
+                        style: TextStyle(color: textSecondary(context)),
+                      ),
+                      subtitle: Text(
+                        provider.globalDnsEnabled
+                            ? 'DNS: ${provider.globalDnsDomain} • UTLS: ${provider.globalUtlsEnabled ? "ON" : "OFF"}'
+                            : 'DNS disabled • UTLS: ${provider.globalUtlsEnabled ? "ON" : "OFF"}',
+                        style: TextStyle(color: textMuted(context), fontSize: 12),
+                      ),
+                      trailing: Icon(
+                        Icons.arrow_forward_ios,
+                        size: 16,
+                        color: textMuted(context),
+                      ),
+                      onTap: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (_) => const DNSSettingsScreen()),
+                      ),
+                    ),
+                    Divider(
+                      height: 1,
+                      color: accentColor(context).withOpacity(0.1),
+                    ),
                     ListTile(
                       leading: Icon(Icons.speed, color: accentColor(context)),
                       title: Text(
@@ -243,9 +332,6 @@ class SettingsScreen extends StatelessWidget {
                 ),
               ),
 
-              // ═══════════════════════════════════════════════
-              // VPN Mode
-              // ═══════════════════════════════════════════════
               const SizedBox(height: 24),
               _sectionTitle(context, 'VPN Mode'),
               Card(
@@ -286,9 +372,6 @@ class SettingsScreen extends StatelessWidget {
                 ),
               ),
 
-              // ═══════════════════════════════════════════════
-              // Protocols Info
-              // ═══════════════════════════════════════════════
               const SizedBox(height: 24),
               _sectionTitle(context, 'Protocols'),
               Card(
@@ -327,9 +410,6 @@ class SettingsScreen extends StatelessWidget {
                 ),
               ),
 
-              // ═══════════════════════════════════════════════
-              // About
-              // ═══════════════════════════════════════════════
               const SizedBox(height: 24),
               _sectionTitle(context, 'About'),
               Card(
