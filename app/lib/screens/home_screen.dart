@@ -20,10 +20,14 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   int _currentIndex = 0;
 
+  void _navigateToServers() {
+    setState(() => _currentIndex = 1);
+  }
+
   @override
   Widget build(BuildContext context) {
     final screens = [
-      const _HomeTab(),
+      _HomeTab(onNavigateToServers: _navigateToServers),
       const ServersScreen(),
       const LogsScreen(),
       const SettingsScreen(),
@@ -62,7 +66,9 @@ class _HomeScreenState extends State<HomeScreen> {
 }
 
 class _HomeTab extends StatelessWidget {
-  const _HomeTab();
+  final VoidCallback onNavigateToServers;
+  
+  const _HomeTab({required this.onNavigateToServers});
 
   @override
   Widget build(BuildContext context) {
@@ -125,7 +131,22 @@ class _HomeTab extends StatelessWidget {
             color: accentColor(context).withOpacity(0.15),
             borderRadius: BorderRadius.circular(12),
           ),
-          child: const Text('🎯', style: TextStyle(fontSize: 24)),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(6),
+            child: Image.asset(
+              'assets/icon.png',
+              width: 40,
+              height: 40,
+              fit: BoxFit.cover,
+              errorBuilder: (context, error, stackTrace) {
+                return Icon(
+                  Icons.shield,
+                  size: 40,
+                  color: accentColor(context),
+                );
+              },
+            ),
+          ),
         ),
         const SizedBox(width: 12),
         Expanded(
@@ -140,7 +161,7 @@ class _HomeTab extends StatelessWidget {
                     ),
               ),
               Text(
-                'Hidden like a Balochi hunter',
+                'Guarch your activity!',
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
                       color: textMuted(context),
                     ),
@@ -172,122 +193,172 @@ class _HomeTab extends StatelessWidget {
             style: TextStyle(color: textSecondary(context)),
           ),
           subtitle: Text(
-            'Go to Servers tab to add one',
+            'Tap here to add a server',
             style: TextStyle(color: textMuted(context)),
           ),
-          trailing:
-              Icon(Icons.arrow_forward_ios, size: 16, color: accentColor(context)),
+          trailing: Icon(
+            Icons.arrow_forward_ios,
+            size: 16,
+            color: accentColor(context),
+          ),
+          onTap: onNavigateToServers,
         ),
       );
     }
 
     return Card(
-      child: Column(
-        children: [
-          ListTile(
-            leading: Text(server.pingEmoji, style: const TextStyle(fontSize: 24)),
-            title: Text(
-              server.name,
-              style: TextStyle(
-                fontWeight: FontWeight.w600,
-                color: textSecondary(context),
+      child: InkWell(
+        onTap: onNavigateToServers,
+        borderRadius: BorderRadius.circular(12),
+        child: Column(
+          children: [
+            ListTile(
+              leading: Icon(
+                _getProtocolIcon(server.protocol),
+                size: 32,
+                color: _getProtocolColor(server.protocol),
               ),
-            ),
-            subtitle: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  server.fullAddress,
-                  style: TextStyle(color: textMuted(context)),
+              title: Text(
+                server.name,
+                style: TextStyle(
+                  fontWeight: FontWeight.w600,
+                  color: textSecondary(context),
                 ),
-                const SizedBox(height: 4),
-                Row(
-                  children: [
-                    Text(
-                      server.protocolEmoji,
-                      style: const TextStyle(fontSize: 14),
-                    ),
-                    const SizedBox(width: 4),
-                    Text(
-                      server.protocol.toUpperCase(),
-                      style: TextStyle(
-                        color: textMuted(context),
-                        fontSize: 11,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    if (server.sniEnabled) ...[
-                      const SizedBox(width: 8),
-                      const Text('🔄', style: TextStyle(fontSize: 12)),
-                      const SizedBox(width: 2),
-                      Text(
-                        'SNI',
-                        style: TextStyle(
-                          color: textMuted(context),
-                          fontSize: 11,
-                        ),
-                      ),
-                    ],
-                    if (server.coverEnabled) ...[
-                      const SizedBox(width: 8),
-                      const Text('🎭', style: TextStyle(fontSize: 12)),
-                      const SizedBox(width: 2),
-                      Text(
-                        'Cover',
-                        style: TextStyle(
-                          color: textMuted(context),
-                          fontSize: 11,
-                        ),
-                      ),
-                    ],
-                    if (server.dnsFallbackEnabled) ...[
-                      const SizedBox(width: 8),
-                      const Text('🔌', style: TextStyle(fontSize: 12)),
-                      const SizedBox(width: 2),
-                      Text(
-                        'DNS',
-                        style: TextStyle(
-                          color: textMuted(context),
-                          fontSize: 11,
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
-              ],
-            ),
-            trailing: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                Text(
-                  server.pingText,
-                  style: TextStyle(
-                    color: server.ping != null &&
-                            server.ping! > 0 &&
-                            server.ping! < 100
-                        ? Colors.green
-                        : textMuted(context),
-                    fontWeight: FontWeight.w600,
+              ),
+              subtitle: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    server.fullAddress,
+                    style: TextStyle(color: textMuted(context)),
                   ),
-                ),
-                if (provider.isConnected &&
-                    server.batteryAwareEnabled &&
-                    provider.batteryLevel < 30)
-                  const Text(
-                    '🔋 Low',
-                    style: TextStyle(fontSize: 10, color: Colors.orange),
+                  const SizedBox(height: 4),
+                  Row(
+                    children: [
+                      Icon(
+                        _getProtocolIcon(server.protocol),
+                        size: 14,
+                        color: _getProtocolColor(server.protocol),
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        server.protocol.toUpperCase(),
+                        style: TextStyle(
+                          color: textMuted(context),
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      if (server.sniEnabled) ...[
+                        const SizedBox(width: 8),
+                        const Icon(Icons.shield_outlined, size: 14),
+                        const SizedBox(width: 2),
+                        Text(
+                          'SNI',
+                          style: TextStyle(
+                            color: textMuted(context),
+                            fontSize: 11,
+                          ),
+                        ),
+                      ],
+                      if (server.coverEnabled) ...[
+                        const SizedBox(width: 8),
+                        const Icon(Icons.theater_comedy, size: 14),
+                        const SizedBox(width: 2),
+                        Text(
+                          'Cover',
+                          style: TextStyle(
+                            color: textMuted(context),
+                            fontSize: 11,
+                          ),
+                        ),
+                      ],
+                      if (server.dnsFallbackEnabled) ...[
+                        const SizedBox(width: 8),
+                        const Icon(Icons.dns, size: 14),
+                        const SizedBox(width: 2),
+                        Text(
+                          'DNS',
+                          style: TextStyle(
+                            color: textMuted(context),
+                            fontSize: 11,
+                          ),
+                        ),
+                      ],
+                    ],
                   ),
-              ],
+                ],
+              ),
+              trailing: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Text(
+                    server.pingText,
+                    style: TextStyle(
+                      color: server.ping != null &&
+                              server.ping! > 0 &&
+                              server.ping! < 100
+                          ? Colors.green
+                          : textMuted(context),
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  if (provider.isConnected &&
+                      server.batteryAwareEnabled &&
+                      provider.batteryLevel < 30)
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.battery_alert,
+                          size: 12,
+                          color: Colors.orange,
+                        ),
+                        const SizedBox(width: 2),
+                        const Text(
+                          'Low',
+                          style: TextStyle(fontSize: 10, color: Colors.orange),
+                        ),
+                      ],
+                    ),
+                ],
+              ),
+              isThreeLine: true,
             ),
-            isThreeLine: true,
-          ),
-          
-          if (server.metadata != null)
-            _buildMetadataFooter(context, server.metadata),
-        ],
+            
+            if (server.metadata != null)
+              _buildMetadataFooter(context, server.metadata),
+          ],
+        ),
       ),
     );
+  }
+
+  IconData _getProtocolIcon(String protocol) {
+    switch (protocol.toLowerCase()) {
+      case 'guarch':
+        return Icons.security;
+      case 'grouk':
+        return Icons.flash_on;
+      case 'zhip':
+        return Icons.bolt;
+      default:
+        return Icons.shield;
+    }
+  }
+
+  Color _getProtocolColor(String protocol) {
+    switch (protocol.toLowerCase()) {
+      case 'guarch':
+        return Colors.blue;
+      case 'grouk':
+        return Colors.purple;
+      case 'zhip':
+        return Colors.amber;
+      default:
+        return Colors.grey;
+    }
   }
 
   Widget _buildMetadataFooter(BuildContext context, dynamic metadata) {
@@ -315,9 +386,10 @@ class _HomeTab extends StatelessWidget {
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  metadata.announcement.icon,
-                  style: const TextStyle(fontSize: 16),
+                Icon(
+                  Icons.campaign,
+                  size: 16,
+                  color: metadata.announcement.color,
                 ),
                 const SizedBox(width: 8),
                 Expanded(
@@ -339,7 +411,11 @@ class _HomeTab extends StatelessWidget {
             if (hasAnnouncement) const SizedBox(height: 10),
             Row(
               children: [
-                const Text('📊', style: TextStyle(fontSize: 14)),
+                Icon(
+                  Icons.data_usage,
+                  size: 14,
+                  color: accentColor(context),
+                ),
                 const SizedBox(width: 8),
                 Expanded(
                   child: Column(
@@ -375,9 +451,10 @@ class _HomeTab extends StatelessWidget {
             if (hasAnnouncement || hasQuota) const SizedBox(height: 8),
             Row(
               children: [
-                Text(
-                  metadata.isExpired ? '⏰' : '📅',
-                  style: const TextStyle(fontSize: 14),
+                Icon(
+                  metadata.isExpired ? Icons.error : Icons.calendar_today,
+                  size: 14,
+                  color: metadata.isExpired ? Colors.red : accentColor(context),
                 ),
                 const SizedBox(width: 8),
                 Text(
@@ -410,7 +487,7 @@ class _HomeTab extends StatelessWidget {
         color = textPrimary(context);
         break;
       case VpnStatus.connected:
-        text = '🎯 Guarch Activated';
+        text = 'Guarch Activated';
         color = Colors.green;
         break;
       case VpnStatus.disconnecting:
@@ -418,17 +495,28 @@ class _HomeTab extends StatelessWidget {
         color = textPrimary(context);
         break;
       case VpnStatus.error:
-        text = '❌ Failed - Tap to Stop VPN';
+        text = 'Failed - Tap to Stop VPN';
         color = Colors.red;
         break;
     }
-    return Text(
-      text,
-      style: TextStyle(
-        color: color,
-        fontSize: 16,
-        fontWeight: FontWeight.w600,
-      ),
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        if (status == VpnStatus.connected)
+          Icon(Icons.shield, size: 18, color: Colors.green),
+        if (status == VpnStatus.connected) const SizedBox(width: 6),
+        if (status == VpnStatus.error)
+          const Icon(Icons.error, size: 18, color: Colors.red),
+        if (status == VpnStatus.error) const SizedBox(width: 6),
+        Text(
+          text,
+          style: TextStyle(
+            color: color,
+            fontSize: 16,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      ],
     );
   }
 
@@ -442,7 +530,7 @@ class _HomeTab extends StatelessWidget {
           children: [
             Row(
               children: [
-                const Text('🎭', style: TextStyle(fontSize: 20)),
+                Icon(Icons.theater_comedy, size: 20, color: accentColor(context)),
                 const SizedBox(width: 12),
                 Expanded(
                   child: Column(
@@ -482,7 +570,7 @@ class _HomeTab extends StatelessWidget {
               const SizedBox(height: 12),
               Row(
                 children: [
-                  const Text('🔄', style: TextStyle(fontSize: 20)),
+                  Icon(Icons.shield_outlined, size: 20, color: accentColor(context)),
                   const SizedBox(width: 12),
                   Expanded(
                     child: Column(
@@ -515,13 +603,13 @@ class _HomeTab extends StatelessWidget {
               const SizedBox(height: 12),
               Row(
                 children: [
-                  const Text('🔌', style: TextStyle(fontSize: 20)),
+                  const Icon(Icons.dns, size: 20, color: Colors.orange),
                   const SizedBox(width: 12),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(
+                        const Text(
                           'DNS Fallback Mode',
                           style: TextStyle(
                             fontWeight: FontWeight.w600,
@@ -549,9 +637,10 @@ class _HomeTab extends StatelessWidget {
               const SizedBox(height: 12),
               Row(
                 children: [
-                  Text(
-                    provider.batteryLevel < 30 ? '🔋' : '💾',
-                    style: const TextStyle(fontSize: 20),
+                  Icon(
+                    provider.batteryLevel < 30 ? Icons.battery_alert : Icons.data_saver_on,
+                    size: 20,
+                    color: accentColor(context),
                   ),
                   const SizedBox(width: 12),
                   Expanded(
