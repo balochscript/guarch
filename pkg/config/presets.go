@@ -55,7 +55,7 @@ func IranStealthPreset() *ServerConfig {
 			CertPin:  "",
 		},
 		
-		SNI: SNIConfig{
+		SNI: &SNIConfig{
 			Enabled: true,
 			Mode:    "weighted",
 			Domains: []SNIDomain{
@@ -72,7 +72,7 @@ func IranStealthPreset() *ServerConfig {
 			HealthCheckTimeout:  Duration{5 * time.Second},
 		},
 		
-		Cover: CoverConfig{
+		Cover: &CoverConfig{
 			Enabled: true,
 			Mode:    "stealth",
 			Domains: []CoverDomain{
@@ -129,7 +129,7 @@ func IranStealthPreset() *ServerConfig {
 			},
 		},
 		
-		DNS: DNSConfig{
+		DNS: &DNSConfig{
 			Enabled:         true,
 			Domain:          "tunnel.example.com",
 			Servers:         []string{"8.8.8.8:53", "1.1.1.1:53", "208.67.222.222:53"},
@@ -138,19 +138,19 @@ func IranStealthPreset() *ServerConfig {
 			Timeout:         Duration{5 * time.Second},
 		},
 		
-		UTLS: UTLSConfig{
+		UTLS: &UTLSConfig{
 			Enabled:     true,
 			Fingerprint: "chrome_auto",
 			Options:     []string{"chrome_120", "chrome_119", "firefox_121", "edge_120"},
 		},
 		
-		Fragment: FragmentConfig{
+		Fragment: &FragmentConfig{
 			Enabled: false,
 			MinSize: 64,
 			MaxSize: 256,
 		},
 		
-		Modes: ModesConfig{
+		Modes: &ModesConfig{
 			Stealth: ModeSettings{
 				CoverRate:   "high",
 				Padding:     1024,
@@ -171,7 +171,7 @@ func IranStealthPreset() *ServerConfig {
 			},
 		},
 		
-		Metadata: Metadata{
+		Metadata: &Metadata{
 			Country: "IR",
 			ISPHint: "MCI/Irancell",
 			Notes:   "Optimized for Iranian networks with heavy filtering",
@@ -226,7 +226,7 @@ func IranWhitelistPreset() *ServerConfig {
 			HandshakeTimeout: 15,
 		},
 		
-		SNI: SNIConfig{
+		SNI: &SNIConfig{
 			Enabled: true,
 			Mode:    "weighted",
 			Domains: []SNIDomain{
@@ -241,7 +241,7 @@ func IranWhitelistPreset() *ServerConfig {
 			HealthCheckTimeout:  Duration{5 * time.Second},
 		},
 		
-		Cover: CoverConfig{
+		Cover: &CoverConfig{
 			Enabled: true,
 			Mode:    "stealth",
 			Domains: []CoverDomain{
@@ -284,7 +284,7 @@ func IranWhitelistPreset() *ServerConfig {
 			},
 		},
 		
-		DNS: DNSConfig{
+		DNS: &DNSConfig{
 			Enabled:         true,
 			Domain:          "tunnel.example.com",
 			Servers:         []string{"8.8.8.8:53", "1.1.1.1:53", "208.67.222.222:53"},
@@ -293,17 +293,17 @@ func IranWhitelistPreset() *ServerConfig {
 			Timeout:         Duration{5 * time.Second},
 		},
 		
-		UTLS: UTLSConfig{
+		UTLS: &UTLSConfig{
 			Enabled:     true,
 			Fingerprint: "chrome_auto",
 			Options:     []string{"chrome_120", "edge_120", "firefox_121"},
 		},
 		
-		Fragment: FragmentConfig{
+		Fragment: &FragmentConfig{
 			Enabled: false,
 		},
 		
-		Modes: ModesConfig{
+		Modes: &ModesConfig{
 			Stealth: ModeSettings{
 				CoverRate:   "high",
 				Padding:     1024,
@@ -324,7 +324,7 @@ func IranWhitelistPreset() *ServerConfig {
 			},
 		},
 		
-		Metadata: Metadata{
+		Metadata: &Metadata{
 			Country: "IR",
 			ISPHint: "MCI/Irancell/TCI",
 			Notes:   "Whitelist bypass using Iranian allowed domains (digikala, aparat, snapp, divar)",
@@ -344,7 +344,7 @@ func GlobalStealthPreset() *ServerConfig {
 			CertPin:  "",
 		},
 		
-		SNI: SNIConfig{
+		SNI: &SNIConfig{
 			Enabled: true,
 			Mode:    "weighted",
 			Domains: []SNIDomain{
@@ -359,7 +359,7 @@ func GlobalStealthPreset() *ServerConfig {
 			HealthCheckTimeout:  Duration{5 * time.Second},
 		},
 		
-		Cover: CoverConfig{
+		Cover: &CoverConfig{
 			Enabled: true,
 			Mode:    "stealth",
 			Domains: []CoverDomain{
@@ -402,7 +402,7 @@ func GlobalStealthPreset() *ServerConfig {
 			},
 		},
 		
-		DNS: DNSConfig{
+		DNS: &DNSConfig{
 			Enabled:         false,
 			Domain:          "tunnel.example.com",
 			Servers:         []string{"8.8.8.8:53", "1.1.1.1:53"},
@@ -410,17 +410,17 @@ func GlobalStealthPreset() *ServerConfig {
 			SwitchThreshold: 5,
 		},
 		
-		UTLS: UTLSConfig{
+		UTLS: &UTLSConfig{
 			Enabled:     true,
 			Fingerprint: "chrome_auto",
 			Options:     []string{"chrome_120", "firefox_121", "safari_17"},
 		},
 		
-		Fragment: FragmentConfig{
+		Fragment: &FragmentConfig{
 			Enabled: false,
 		},
 		
-		Modes: ModesConfig{
+		Modes: &ModesConfig{
 			Stealth: ModeSettings{
 				CoverRate:   "high",
 				Padding:     1024,
@@ -438,7 +438,7 @@ func GlobalStealthPreset() *ServerConfig {
 			},
 		},
 		
-		Metadata: Metadata{
+		Metadata: &Metadata{
 			Country: "Global",
 			Notes:   "General purpose stealth configuration",
 			Tags:    []string{"global", "stealth"},
@@ -477,27 +477,27 @@ func MinimalPreset() *ServerConfig {
 			PSK:      "REPLACE_WITH_YOUR_PSK",
 		},
 		
-		SNI: SNIConfig{
+		SNI: &SNIConfig{
 			Enabled: false,
 		},
 		
-		Cover: CoverConfig{
+		Cover: &CoverConfig{
 			Enabled: false,
 		},
 		
-		DNS: DNSConfig{
+		DNS: &DNSConfig{
 			Enabled: false,
 		},
 		
-		UTLS: UTLSConfig{
+		UTLS: &UTLSConfig{
 			Enabled: false,
 		},
 		
-		Fragment: FragmentConfig{
+		Fragment: &FragmentConfig{
 			Enabled: false,
 		},
 		
-		Modes: ModesConfig{
+		Modes: &ModesConfig{
 			Fast: ModeSettings{
 				CoverRate:   "off",
 				Padding:     0,
@@ -505,7 +505,7 @@ func MinimalPreset() *ServerConfig {
 			},
 		},
 		
-		Metadata: Metadata{
+		Metadata: &Metadata{
 			Notes: "Minimal configuration - maximum speed, no stealth features",
 			Tags:  []string{"minimal", "fast", "no-censorship"},
 		},
