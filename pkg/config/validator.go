@@ -29,38 +29,40 @@ func (v *Validator) Validate(cfg *ServerConfig) error {
 		}
 	}
 	
-	if cfg.SNI.Enabled {
-		if err := v.validateSNI(&cfg.SNI); err != nil {
+	if cfg.SNI != nil && cfg.SNI.Enabled {
+		if err := v.validateSNI(cfg.SNI); err != nil {
 			return fmt.Errorf("sni: %w", err)
 		}
 	}
 	
-	if cfg.Cover.Enabled {
-		if err := v.validateCover(&cfg.Cover); err != nil {
+	if cfg.Cover != nil && cfg.Cover.Enabled {
+		if err := v.validateCover(cfg.Cover); err != nil {
 			return fmt.Errorf("cover: %w", err)
 		}
 	}
 	
-	if cfg.DNS.Enabled {
-		if err := v.validateDNS(&cfg.DNS); err != nil {
+	if cfg.DNS != nil && cfg.DNS.Enabled {
+		if err := v.validateDNS(cfg.DNS); err != nil {
 			return fmt.Errorf("dns: %w", err)
 		}
 	}
 	
-	if cfg.UTLS.Enabled {
-		if err := v.validateUTLS(&cfg.UTLS); err != nil {
+	if cfg.UTLS != nil && cfg.UTLS.Enabled {
+		if err := v.validateUTLS(cfg.UTLS); err != nil {
 			return fmt.Errorf("utls: %w", err)
 		}
 	}
 	
-	if cfg.Fragment.Enabled {
-		if err := v.validateFragment(&cfg.Fragment); err != nil {
+	if cfg.Fragment != nil && cfg.Fragment.Enabled {
+		if err := v.validateFragment(cfg.Fragment); err != nil {
 			return fmt.Errorf("fragment: %w", err)
 		}
 	}
 
-	if err := v.validateMetadata(&cfg.Metadata); err != nil {
-		return fmt.Errorf("metadata: %w", err)
+	if cfg.Metadata != nil {
+		if err := v.validateMetadata(cfg.Metadata); err != nil {
+			return fmt.Errorf("metadata: %w", err)
+		}
 	}
 	
 	return nil
@@ -154,6 +156,10 @@ func (v *Validator) validateSNI(sni *SNIConfig) error {
 		return fmt.Errorf("no domains specified")
 	}
 	
+	if sni.Mode == "" {
+		return fmt.Errorf("mode is required")
+	}
+	
 	validModes := map[string]bool{
 		"random":     true,
 		"weighted":   true,
@@ -206,6 +212,10 @@ func (v *Validator) validateSNI(sni *SNIConfig) error {
 func (v *Validator) validateCover(cover *CoverConfig) error {
 	if len(cover.Domains) == 0 {
 		return fmt.Errorf("no domains specified")
+	}
+	
+	if cover.Mode == "" {
+		return fmt.Errorf("mode is required")
 	}
 	
 	validModes := map[string]bool{
@@ -294,15 +304,15 @@ func (v *Validator) validateUTLS(utls *UTLSConfig) error {
 }
 
 func (v *Validator) validateFragment(frag *FragmentConfig) error {
-	if frag.MinSize < 0 {
-		return fmt.Errorf("negative min_size")
+	if frag.MinSize <= 0 {
+		return fmt.Errorf("min_size is required and must be positive")
 	}
 	
-	if frag.MaxSize < 0 {
-		return fmt.Errorf("negative max_size")
+	if frag.MaxSize <= 0 {
+		return fmt.Errorf("max_size is required and must be positive")
 	}
 	
-	if frag.MaxSize > 0 && frag.MinSize > frag.MaxSize {
+	if frag.MinSize > frag.MaxSize {
 		return fmt.Errorf("min_size > max_size")
 	}
 	
