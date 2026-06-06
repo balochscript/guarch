@@ -29,9 +29,8 @@ class AppProvider extends ChangeNotifier {
 
   int _batteryLevel = 100;
   bool _dataSaverEnabled = false;
-
   bool _debugModeEnabled = false;
-  bool get debugModeEnabled => _debugModeEnabled;
+  bool _vpnModeEnabled = true;
 
   int _connectionTimeout = 15;
   int _maxRetryAttempts = 3;
@@ -41,6 +40,9 @@ class AppProvider extends ChangeNotifier {
   int _bufferSize = 32768;
 
   AppSettings? _appSettings;
+  
+  bool get debugModeEnabled => _debugModeEnabled;
+  bool get vpnModeEnabled => _vpnModeEnabled;
   
   bool get globalSniEnabled => _appSettings?.globalSniEnabled ?? true;
   String get globalSniMode => _appSettings?.globalSniMode ?? 'weighted';
@@ -99,6 +101,7 @@ class AppProvider extends ChangeNotifier {
       _activeServerId = _prefs.getString('active_server');
       _batteryLevel = _prefs.getInt('battery_level') ?? 100;
       _dataSaverEnabled = _prefs.getBool('data_saver') ?? false;
+      _vpnModeEnabled = _prefs.getBool('vpn_mode_enabled') ?? true;
       
       _debugModeEnabled = _prefs.getBool('debug_mode') ?? false;
       _connectionTimeout = _prefs.getInt('connection_timeout') ?? 15;
@@ -111,7 +114,7 @@ class AppProvider extends ChangeNotifier {
       _appSettings = await AppSettings.load();
       
       _loadServers();
-      FlutterLog.d('Provider', 'Prefs loaded. servers=${_servers.length} active=$_activeServerId');
+      FlutterLog.d('Provider', 'Prefs loaded. servers=${_servers.length} active=$_activeServerId vpnMode=$_vpnModeEnabled');
     } catch (e) {
       FlutterLog.e('Provider', 'Prefs FAILED', e);
     }
@@ -216,6 +219,16 @@ class AppProvider extends ChangeNotifier {
     FlutterLog.d('Provider', '=== init DONE ===');
   }
 
+  Future<void> toggleVpnMode() async {
+    _vpnModeEnabled = !_vpnModeEnabled;
+    await _prefs.setBool('vpn_mode_enabled', _vpnModeEnabled);
+    
+    final mode = _vpnModeEnabled ? 'VPN' : 'Proxy';
+    _addLog('🔄 Switched to $mode mode');
+    
+    notifyListeners();
+  }
+
   void _loadServers() {
     try {
       final data = _prefs.getString('servers');
@@ -313,7 +326,8 @@ class AppProvider extends ChangeNotifier {
       server = _appSettings!.applyToServer(server);
     }
     
-    FlutterLog.d('Provider', '  ${server.protocol} → ${server.fullAddress}');
+    final mode = _vpnModeEnabled ? 'VPN' : 'Proxy';
+    FlutterLog.d('Provider', '  Mode: $mode, ${server.protocol} → ${server.fullAddress}');
 
     if (server.psk.isEmpty) {
       _addLog('❌ Error: PSK is required');
@@ -326,8 +340,12 @@ class AppProvider extends ChangeNotifier {
     }
 
     _status = VpnStatus.connecting;
-    _addLog('🏹 Connecting to ${server.name}...');
+    _addLog('🏹 Connecting to ${server.name} ($mode mode)...');
     _addLog('📡 Protocol: ${server.protocolLabel}');
+    
+    if (!_vpnModeEnabled) {
+      _addLog('🔌 Proxy Mode: SOCKS5 on 127.0.0.1:7070');
+    }
     
     if (_debugModeEnabled) {
       _addLog('🐛 Debug: Engine timeout=${_connectionTimeout}s, Retries=$_maxRetryAttempts');
@@ -352,6 +370,7 @@ class AppProvider extends ChangeNotifier {
       
       final success = await _engine.connectWithConfig(
         jsonEncode(configJson),
+        _vpnModeEnabled,
       ).timeout(
         Duration(seconds: _connectionTimeout),
         onTimeout: () {
@@ -397,7 +416,7 @@ class AppProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
-      await _engine.disconnect().timeout(
+      await _engine.disconnect(_vpnModeEnabled).timeout(
         const Duration(seconds: 5),
         onTimeout: () => true,
       );
