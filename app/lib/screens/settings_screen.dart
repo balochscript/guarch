@@ -9,6 +9,7 @@ import 'package:guarch/screens/advanced_settings_screen.dart';
 import 'package:guarch/screens/sni_settings_screen.dart';
 import 'package:guarch/screens/cover_settings_screen.dart';
 import 'package:guarch/screens/dns_settings_screen.dart';
+import 'package:guarch/models/connection_state.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 class SettingsScreen extends StatelessWidget {
@@ -333,30 +334,89 @@ class SettingsScreen extends StatelessWidget {
               ),
 
               const SizedBox(height: 24),
-              _sectionTitle(context, 'VPN Mode'),
+              _sectionTitle(context, 'Connection Mode'),
               Card(
                 child: Column(
                   children: [
-                    ListTile(
-                      leading: Icon(Icons.vpn_lock, color: accentColor(context)),
+                    SwitchListTile(
+                      secondary: Icon(
+                        provider.vpnModeEnabled ? Icons.vpn_lock : Icons.settings_ethernet,
+                        color: accentColor(context),
+                      ),
                       title: Text(
-                        'System-wide VPN',
+                        provider.vpnModeEnabled ? 'VPN Mode (System-wide)' : 'Proxy Mode (SOCKS5)',
                         style: TextStyle(color: textSecondary(context)),
                       ),
                       subtitle: Text(
-                        'Routes all device traffic through tunnel',
+                        provider.vpnModeEnabled
+                            ? 'All device traffic routes through VPN tunnel'
+                            : 'Only proxy-aware apps • Listening on 127.0.0.1:7070',
                         style: TextStyle(color: textMuted(context), fontSize: 12),
                       ),
-                      trailing: const Icon(
-                        Icons.check_circle,
-                        color: Colors.green,
-                        size: 20,
-                      ),
+                      value: provider.vpnModeEnabled,
+                      onChanged: (_) {
+                        if (provider.status == VpnStatus.connected) {
+                          showDialog(
+                            context: context,
+                            builder: (ctx) => AlertDialog(
+                              title: const Text('Reconnection Required'),
+                              content: const Text(
+                                'Changing connection mode requires disconnecting first. Continue?',
+                              ),
+                              actions: [
+                                TextButton(
+                                  onPressed: () => Navigator.pop(ctx),
+                                  child: const Text('Cancel'),
+                                ),
+                                TextButton(
+                                  onPressed: () {
+                                    Navigator.pop(ctx);
+                                    provider.disconnect().then((_) {
+                                      provider.toggleVpnMode();
+                                    });
+                                  },
+                                  child: const Text('Disconnect & Change'),
+                                ),
+                              ],
+                            ),
+                          );
+                        } else {
+                          provider.toggleVpnMode();
+                        }
+                      },
                     ),
+                    
+                    if (!provider.vpnModeEnabled)
+                      Container(
+                        margin: const EdgeInsets.all(12),
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: Colors.orange.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: Colors.orange.withOpacity(0.3)),
+                        ),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.info_outline, color: Colors.orange, size: 20),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Text(
+                                'Apps must support SOCKS5 proxy (127.0.0.1:7070) to use this mode',
+                                style: TextStyle(
+                                  color: textSecondary(context),
+                                  fontSize: 12,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    
                     Divider(
                       height: 1,
                       color: accentColor(context).withOpacity(0.1),
                     ),
+                    
                     ListTile(
                       leading: const Text('📱', style: TextStyle(fontSize: 20)),
                       title: Text(
