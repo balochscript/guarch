@@ -1,4 +1,3 @@
-// mobile/tun.go - Enhanced TUN interface with Split Tunneling & DNS Leak Prevention
 package mobile
 
 import (
@@ -23,25 +22,17 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/transport/udp"
 	"gvisor.dev/gvisor/pkg/waiter"
 	"golang.org/x/net/proxy"
+	"log"
 )
-
-// ═══════════════════════════════════════════════════════════════
-// Global State
-// ═══════════════════════════════════════════════════════════════
 
 var (
 	tunStack      *stack.Stack
 	tunCtx        context.Context
 	tunCancel     context.CancelFunc
 	tunMu         sync.RWMutex
-	goLogFile     *os.File
 	tunStats      *TUNStats
 	splitTunnelCfg *SplitTunnelConfig
 )
-
-// ═══════════════════════════════════════════════════════════════
-// Statistics
-// ═══════════════════════════════════════════════════════════════
 
 type TUNStats struct {
 	mu                sync.RWMutex
@@ -112,25 +103,17 @@ func (s *TUNStats) ToJSON() string {
 	)
 }
 
-// ═══════════════════════════════════════════════════════════════
-// Split Tunneling Configuration
-// ═══════════════════════════════════════════════════════════════
-
 type SplitTunnelConfig struct {
 	mu sync.RWMutex
 	
-	// Mode: "off", "whitelist", "blacklist"
 	Mode string
 	
-	// Package names (e.g., "com.whatsapp")
 	Whitelist map[string]bool
 	Blacklist map[string]bool
 	
-	// Domain-based bypass
-	DomainWhitelist map[string]bool // e.g., "*.google.com"
+	DomainWhitelist map[string]bool
 	DomainBlacklist map[string]bool
 	
-	// IP-based bypass
 	IPWhitelist []*net.IPNet
 	IPBlacklist []*net.IPNet
 }
@@ -153,13 +136,11 @@ func (c *SplitTunnelConfig) ShouldBypass(dest string) bool {
 		return false
 	}
 	
-	// Check domain-based rules
 	host, _, _ := net.SplitHostPort(dest)
 	if host == "" {
 		host = dest
 	}
 	
-	// Whitelist mode: bypass only if in whitelist
 	if c.Mode == "whitelist" {
 		for domain := range c.DomainWhitelist {
 			if matchDomain(host, domain) {
@@ -169,7 +150,6 @@ func (c *SplitTunnelConfig) ShouldBypass(dest string) bool {
 		return false
 	}
 	
-	// Blacklist mode: bypass if NOT in blacklist
 	if c.Mode == "blacklist" {
 		for domain := range c.DomainBlacklist {
 			if matchDomain(host, domain) {
@@ -187,7 +167,6 @@ func matchDomain(host, pattern string) bool {
 		return true
 	}
 	
-	// Wildcard matching (e.g., "*.google.com" matches "www.google.com")
 	if strings.HasPrefix(pattern, "*.") {
 		suffix := pattern[2:]
 		return strings.HasSuffix(host, suffix)
@@ -196,49 +175,14 @@ func matchDomain(host, pattern string) bool {
 	return false
 }
 
-// ═══════════════════════════════════════════════════════════════
-// Logging
-// ═══════════════════════════════════════════════════════════════
-
-func initGoLog() {
-	if goLogFile != nil {
-		return
-	}
-	
-	for _, p := range []string{
-		"/data/data/com.guarch.app/files/go_debug.log",
-		"/data/user/0/com.guarch.app/files/go_debug.log",
-		"/storage/emulated/0/Android/data/com.guarch.app/files/go_debug.log",
-	} {
-		f, err := os.OpenFile(p, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
-		if err == nil {
-			goLogFile = f
-			goLog("=== Go logger started (v1.0.1) ===")
-			return
-		}
-	}
-}
-
-func goLog(msg string) {
-	if goLogFile != nil {
-		fmt.Fprintf(goLogFile, "[%s] %s\n", time.Now().Format("15:04:05.000"), msg)
-		goLogFile.Sync()
-	}
-}
-
-// ═══════════════════════════════════════════════════════════════
-// Main TUN Interface
-// ═══════════════════════════════════════════════════════════════
-
 func (e *Engine) StartTun(fd int32, socksPort int32) (retErr error) {
-	initGoLog()
-	goLog(fmt.Sprintf(">>> StartTun fd=%d socksPort=%d", fd, socksPort))
+	log.Printf("[TUN] >>> StartTun fd=%d socksPort=%d", fd, socksPort)
 	e.logInfo(fmt.Sprintf("StartTun: fd=%d socksPort=%d", fd, socksPort))
 
 	defer func() {
 		if r := recover(); r != nil {
 			msg := fmt.Sprintf("PANIC in StartTun: %v\n%s", r, debug.Stack())
-			goLog(msg)
+			log.Println("[TUN]", msg)
 			e.logError(msg)
 			retErr = fmt.Errorf("panic: %v", r)
 		}
@@ -247,9 +191,8 @@ func (e *Engine) StartTun(fd int32, socksPort int32) (retErr error) {
 	tunMu.Lock()
 	defer tunMu.Unlock()
 
-	// Stop previous instance
 	if tunStack != nil {
-		goLog("Closing previous stack...")
+		log.Println("[TUN] Closing previous stack...")
 		if tunCancel != nil {
 			tunCancel()
 		}
@@ -262,35 +205,30 @@ func (e *Engine) StartTun(fd int32, socksPort int32) (retErr error) {
 		return fmt.Errorf("invalid fd: %d", fd)
 	}
 
-	// Initialize stats
 	tunStats = &TUNStats{startTime: time.Now()}
 	splitTunnelCfg = NewSplitTunnelConfig()
 
-	// Create context
 	tunCtx, tunCancel = context.WithCancel(context.Background())
 
-	// ══ Step 1: Wait for SOCKS5 ══
 	socksAddr := fmt.Sprintf("127.0.0.1:%d", socksPort)
-	goLog("Step 1: Waiting for SOCKS5 on " + socksAddr)
+	log.Println("[TUN] Step 1: Waiting for SOCKS5 on " + socksAddr)
 
 	if err := waitForSOCKS5(socksAddr, 60*time.Second); err != nil {
-		goLog("Step 1: SOCKS5 not ready ❌")
+		log.Println("[TUN] Step 1: SOCKS5 not ready ❌")
 		e.logError("SOCKS5 not ready")
 		return err
 	}
-	goLog("Step 1: SOCKS5 ready ✅")
+	log.Println("[TUN] Step 1: SOCKS5 ready ✅")
 
-	// ══ Step 2: SOCKS5 dialer ══
-	goLog("Step 2: Creating SOCKS5 dialer...")
+	log.Println("[TUN] Step 2: Creating SOCKS5 dialer...")
 	dialer, err := proxy.SOCKS5("tcp", socksAddr, nil, proxy.Direct)
 	if err != nil {
-		goLog(fmt.Sprintf("Step 2: FAILED: %v", err))
+		log.Printf("[TUN] Step 2: FAILED: %v", err)
 		return fmt.Errorf("SOCKS5 dialer: %w", err)
 	}
-	goLog("Step 2: SOCKS5 dialer ✅")
+	log.Println("[TUN] Step 2: SOCKS5 dialer ✅")
 
-	// ══ Step 3: gVisor network stack ══
-	goLog("Step 3: Creating gVisor stack...")
+	log.Println("[TUN] Step 3: Creating gVisor stack...")
 	s := stack.New(stack.Options{
 		NetworkProtocols: []stack.NetworkProtocolFactory{
 			ipv4.NewProtocol,
@@ -301,10 +239,9 @@ func (e *Engine) StartTun(fd int32, socksPort int32) (retErr error) {
 			udp.NewProtocol,
 		},
 	})
-	goLog("Step 3: Stack created ✅")
+	log.Println("[TUN] Step 3: Stack created ✅")
 
-	// ══ Step 4: Link endpoint from TUN fd ══
-	goLog("Step 4: Creating link endpoint from fd...")
+	log.Println("[TUN] Step 4: Creating link endpoint from fd...")
 	linkEP, err := fdbased.New(&fdbased.Options{
 		FDs:            []int{int(fd)},
 		MTU:            1500,
@@ -312,63 +249,55 @@ func (e *Engine) StartTun(fd int32, socksPort int32) (retErr error) {
 	})
 	if err != nil {
 		s.Close()
-		goLog(fmt.Sprintf("Step 4: FAILED: %v", err))
+		log.Printf("[TUN] Step 4: FAILED: %v", err)
 		return fmt.Errorf("fdbased: %w", err)
 	}
-	goLog("Step 4: Link endpoint ✅")
+	log.Println("[TUN] Step 4: Link endpoint ✅")
 
-	// ══ Step 5: Create NIC ══
-	goLog("Step 5: Creating NIC...")
+	log.Println("[TUN] Step 5: Creating NIC...")
 	const nicID tcpip.NICID = 1
 	if tcpipErr := s.CreateNIC(nicID, linkEP); tcpipErr != nil {
 		s.Close()
-		goLog(fmt.Sprintf("Step 5: FAILED: %v", tcpipErr))
+		log.Printf("[TUN] Step 5: FAILED: %v", tcpipErr)
 		return fmt.Errorf("CreateNIC: %v", tcpipErr)
 	}
 	
 	s.SetPromiscuousMode(nicID, true)
 	s.SetSpoofing(nicID, true)
-	goLog("Step 5: NIC ✅")
+	log.Println("[TUN] Step 5: NIC ✅")
 
-	// ══ Step 6: Set routes ══
-	goLog("Step 6: Setting routes...")
+	log.Println("[TUN] Step 6: Setting routes...")
 	s.SetRouteTable([]tcpip.Route{
 		{Destination: header.IPv4EmptySubnet, NIC: nicID},
 		{Destination: header.IPv6EmptySubnet, NIC: nicID},
 	})
-	goLog("Step 6: Routes ✅")
+	log.Println("[TUN] Step 6: Routes ✅")
 
-	// ══ Step 7: TCP forwarder with split tunneling ══
-	goLog("Step 7: Setting up TCP forwarder...")
+	log.Println("[TUN] Step 7: Setting up TCP forwarder...")
 	tcpFwd := tcp.NewForwarder(s, 0, 65535, func(r *tcp.ForwarderRequest) {
 		handleTCPConnection(r, dialer, e)
 	})
 	s.SetTransportProtocolHandler(tcp.ProtocolNumber, tcpFwd.HandlePacket)
-	goLog("Step 7: TCP forwarder ✅")
+	log.Println("[TUN] Step 7: TCP forwarder ✅")
 
-	// ══ Step 8: UDP forwarder with DNS leak prevention ══
-	goLog("Step 8: Setting up UDP forwarder...")
+	log.Println("[TUN] Step 8: Setting up UDP forwarder...")
 	udpFwd := udp.NewForwarder(s, func(r *udp.ForwarderRequest) {
 		handleUDPConnection(r, e)
 	})
 	s.SetTransportProtocolHandler(udp.ProtocolNumber, udpFwd.HandlePacket)
-	goLog("Step 8: UDP forwarder ✅")
+	log.Println("[TUN] Step 8: UDP forwarder ✅")
 
 	tunStack = s
-	goLog("=== TUN STARTED (gVisor v1.0.1) ✅ ===")
+	log.Println("[TUN] === TUN STARTED (gVisor v1.0.1) ✅ ===")
 	e.logInfo("TUN started ✅")
 	
 	return nil
 }
 
-// ═══════════════════════════════════════════════════════════════
-// TCP Connection Handler
-// ═══════════════════════════════════════════════════════════════
-
 func handleTCPConnection(r *tcp.ForwarderRequest, dialer proxy.Dialer, e *Engine) {
 	defer func() {
 		if rec := recover(); rec != nil {
-			goLog(fmt.Sprintf("PANIC in handleTCPConnection: %v", rec))
+			log.Printf("[TUN] PANIC in handleTCPConnection: %v", rec)
 		}
 	}()
 
@@ -377,12 +306,10 @@ func handleTCPConnection(r *tcp.ForwarderRequest, dialer proxy.Dialer, e *Engine
 	
 	tunStats.RecordTCPConn()
 	
-	// Check split tunneling
 	if splitTunnelCfg.ShouldBypass(dst) {
 		tunStats.RecordSplitBypass()
-		goLog(fmt.Sprintf("TCP bypass (split tunnel): %s", dst))
+		log.Printf("[TUN] TCP bypass (split tunnel): %s", dst)
 		
-		// Direct connection (bypass VPN)
 		directConn, err := net.DialTimeout("tcp", dst, 10*time.Second)
 		if err != nil {
 			r.Complete(true)
@@ -405,7 +332,6 @@ func handleTCPConnection(r *tcp.ForwarderRequest, dialer proxy.Dialer, e *Engine
 	
 	tunStats.RecordSplitTunneled()
 	
-	// Create endpoint
 	var wq waiter.Queue
 	ep, tcpErr := r.CreateEndpoint(&wq)
 	if tcpErr != nil {
@@ -416,25 +342,20 @@ func handleTCPConnection(r *tcp.ForwarderRequest, dialer proxy.Dialer, e *Engine
 
 	tunConn := gonet.NewTCPConn(&wq, ep)
 	
-	// Connect through SOCKS5
 	remoteConn, err := dialer.Dial("tcp", dst)
 	if err != nil {
 		tunConn.Close()
-		goLog(fmt.Sprintf("TCP dial failed: %s -> %v", dst, err))
+		log.Printf("[TUN] TCP dial failed: %s -> %v", dst, err)
 		return
 	}
 	
 	relayTCP(tunConn, remoteConn, tunStats)
 }
 
-// ═══════════════════════════════════════════════════════════════
-// UDP Connection Handler (with DNS leak prevention)
-// ═══════════════════════════════════════════════════════════════
-
 func handleUDPConnection(r *udp.ForwarderRequest, e *Engine) {
 	defer func() {
 		if rec := recover(); rec != nil {
-			goLog(fmt.Sprintf("PANIC in handleUDPConnection: %v", rec))
+			log.Printf("[TUN] PANIC in handleUDPConnection: %v", rec)
 		}
 	}()
 
@@ -443,22 +364,19 @@ func handleUDPConnection(r *udp.ForwarderRequest, e *Engine) {
 	
 	tunStats.RecordUDPConn()
 	
-	// DNS leak prevention: block UDP/53 to non-VPN DNS
 	if id.LocalPort == 53 {
 		if !isAllowedDNSServer(id.LocalAddress.String()) {
 			tunStats.RecordDNSBlocked()
-			goLog(fmt.Sprintf("🛡️ DNS leak blocked: %s", dst))
+			log.Printf("[TUN] 🛡️ DNS leak blocked: %s", dst)
 			return
 		}
 		tunStats.RecordDNSAllowed()
 	}
 	
-	// Check split tunneling
 	if splitTunnelCfg.ShouldBypass(dst) {
 		tunStats.RecordSplitBypass()
-		goLog(fmt.Sprintf("UDP bypass (split tunnel): %s", dst))
+		log.Printf("[TUN] UDP bypass (split tunnel): %s", dst)
 		
-		// Direct UDP connection
 		directConn, err := net.DialTimeout("udp", dst, 5*time.Second)
 		if err != nil {
 			return
@@ -478,7 +396,6 @@ func handleUDPConnection(r *udp.ForwarderRequest, e *Engine) {
 	
 	tunStats.RecordSplitTunneled()
 	
-	// Create endpoint
 	var wq waiter.Queue
 	ep, udpErr := r.CreateEndpoint(&wq)
 	if udpErr != nil {
@@ -487,7 +404,6 @@ func handleUDPConnection(r *udp.ForwarderRequest, e *Engine) {
 	
 	tunConn := gonet.NewUDPConn(&wq, ep)
 	
-	// Connect through VPN
 	remoteConn, err := net.DialTimeout("udp", dst, 5*time.Second)
 	if err != nil {
 		tunConn.Close()
@@ -497,34 +413,25 @@ func handleUDPConnection(r *udp.ForwarderRequest, e *Engine) {
 	relayUDP(tunConn, remoteConn, tunStats)
 }
 
-// ═══════════════════════════════════════════════════════════════
-// DNS Leak Prevention
-// ═══════════════════════════════════════════════════════════════
-
 func isAllowedDNSServer(ip string) bool {
-	// Allow only these DNS servers (all go through VPN)
 	allowedDNS := map[string]bool{
-		"8.8.8.8":         true, // Google DNS
+		"8.8.8.8":         true,
 		"8.8.4.4":         true,
-		"1.1.1.1":         true, // Cloudflare DNS
+		"1.1.1.1":         true,
 		"1.0.0.1":         true,
-		"208.67.222.222":  true, // OpenDNS
+		"208.67.222.222":  true,
 		"208.67.220.220":  true,
-		"9.9.9.9":         true, // Quad9
+		"9.9.9.9":         true,
 		"149.112.112.112": true,
 	}
 	
 	return allowedDNS[ip]
 }
 
-// ═══════════════════════════════════════════════════════════════
-// Relay Functions
-// ═══════════════════════════════════════════════════════════════
-
 func relayTCP(local, remote net.Conn, stats *TUNStats) {
 	defer func() {
 		if r := recover(); r != nil {
-			goLog(fmt.Sprintf("PANIC in relayTCP: %v", r))
+			log.Printf("[TUN] PANIC in relayTCP: %v", r)
 		}
 	}()
 	defer local.Close()
@@ -532,7 +439,6 @@ func relayTCP(local, remote net.Conn, stats *TUNStats) {
 
 	done := make(chan struct{}, 2)
 
-	// Local → Remote
 	go func() {
 		buf := make([]byte, 32768)
 		for {
@@ -548,7 +454,6 @@ func relayTCP(local, remote net.Conn, stats *TUNStats) {
 		done <- struct{}{}
 	}()
 
-	// Remote → Local
 	go func() {
 		buf := make([]byte, 32768)
 		for {
@@ -570,7 +475,7 @@ func relayTCP(local, remote net.Conn, stats *TUNStats) {
 func relayUDP(local *gonet.UDPConn, remote net.Conn, stats *TUNStats) {
 	defer func() {
 		if r := recover(); r != nil {
-			goLog(fmt.Sprintf("PANIC in relayUDP: %v", r))
+			log.Printf("[TUN] PANIC in relayUDP: %v", r)
 		}
 	}()
 	defer local.Close()
@@ -580,7 +485,6 @@ func relayUDP(local *gonet.UDPConn, remote net.Conn, stats *TUNStats) {
 
 	done := make(chan struct{}, 2)
 
-	// Local → Remote
 	go func() {
 		buf := make([]byte, 2048)
 		for {
@@ -596,7 +500,6 @@ func relayUDP(local *gonet.UDPConn, remote net.Conn, stats *TUNStats) {
 		done <- struct{}{}
 	}()
 
-	// Remote → Local
 	go func() {
 		buf := make([]byte, 2048)
 		for {
@@ -615,15 +518,10 @@ func relayUDP(local *gonet.UDPConn, remote net.Conn, stats *TUNStats) {
 	<-done
 }
 
-// ═══════════════════════════════════════════════════════════════
-// Stop TUN
-// ═══════════════════════════════════════════════════════════════
-
 func (e *Engine) StopTun() {
-	initGoLog()
 	defer func() {
 		if r := recover(); r != nil {
-			goLog(fmt.Sprintf("PANIC in StopTun: %v", r))
+			log.Printf("[TUN] PANIC in StopTun: %v", r)
 		}
 	}()
 
@@ -631,11 +529,11 @@ func (e *Engine) StopTun() {
 	defer tunMu.Unlock()
 
 	if tunStack == nil {
-		goLog("StopTun: nothing to stop")
+		log.Println("[TUN] StopTun: nothing to stop")
 		return
 	}
 
-	goLog("StopTun: closing gVisor stack...")
+	log.Println("[TUN] StopTun: closing gVisor stack...")
 	
 	if tunCancel != nil {
 		tunCancel()
@@ -644,13 +542,9 @@ func (e *Engine) StopTun() {
 	tunStack.Close()
 	tunStack = nil
 	
-	goLog("StopTun: done ✅")
+	log.Println("[TUN] StopTun: done ✅")
 	e.logInfo("TUN stopped ✅")
 }
-
-// ═══════════════════════════════════════════════════════════════
-// Split Tunneling API
-// ═══════════════════════════════════════════════════════════════
 
 func (e *Engine) SetSplitTunnelMode(mode string) bool {
 	if splitTunnelCfg == nil {
@@ -704,10 +598,6 @@ func (e *Engine) RemoveSplitTunnelDomain(domain string, isWhitelist bool) bool {
 	return true
 }
 
-// ═══════════════════════════════════════════════════════════════
-// Statistics API
-// ═══════════════════════════════════════════════════════════════
-
 func (e *Engine) GetTUNStats() string {
 	if tunStats == nil {
 		return `{"error": "TUN not started"}`
@@ -715,37 +605,16 @@ func (e *Engine) GetTUNStats() string {
 	return tunStats.ToJSON()
 }
 
-// ═══════════════════════════════════════════════════════════════
-// Logging API
-// ═══════════════════════════════════════════════════════════════
-
-func ReadGoLog() string {
-	for _, p := range []string{
-		"/data/data/com.guarch.app/files/go_debug.log",
-		"/data/user/0/com.guarch.app/files/go_debug.log",
-		"/storage/emulated/0/Android/data/com.guarch.app/files/go_debug.log",
-	} {
-		data, err := os.ReadFile(p)
-		if err == nil {
-			return string(data)
-		}
-	}
-	return "No Go log available"
-}
-
 func ClearGoLog() {
-	for _, p := range []string{
-		"/data/data/com.guarch.app/files/go_debug.log",
-		"/data/user/0/com.guarch.app/files/go_debug.log",
-		"/storage/emulated/0/Android/data/com.guarch.app/files/go_debug.log",
-	} {
-		os.WriteFile(p, []byte(""), 0644)
+	goLogMu.Lock()
+	defer goLogMu.Unlock()
+	
+	if goLogFile != nil {
+		goLogFile.Truncate(0)
+		goLogFile.Seek(0, 0)
+		log.Println("[Go] Log cleared")
 	}
 }
-
-// ═══════════════════════════════════════════════════════════════
-// Helpers
-// ═══════════════════════════════════════════════════════════════
 
 func waitForSOCKS5(addr string, timeout time.Duration) error {
 	deadline := time.Now().Add(timeout)
