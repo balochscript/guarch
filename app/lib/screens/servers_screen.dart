@@ -147,9 +147,17 @@ class ServersScreen extends StatelessWidget {
                 children: [
                   Row(
                     children: [
-                      Text(
-                        server.pingEmoji,
-                        style: const TextStyle(fontSize: 28),
+                      Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: _getProtocolColor(server.protocol).withOpacity(0.15),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Icon(
+                          _getProtocolIcon(server.protocol),
+                          size: 28,
+                          color: _getProtocolColor(server.protocol),
+                        ),
                       ),
                       const SizedBox(width: 12),
                       Expanded(
@@ -195,9 +203,10 @@ class ServersScreen extends StatelessWidget {
                             const SizedBox(height: 4),
                             Row(
                               children: [
-                                Text(
-                                  server.protocolEmoji,
-                                  style: const TextStyle(fontSize: 12),
+                                Icon(
+                                  _getProtocolIcon(server.protocol),
+                                  size: 12,
+                                  color: _getProtocolColor(server.protocol),
                                 ),
                                 const SizedBox(width: 4),
                                 Text(
@@ -268,12 +277,22 @@ class ServersScreen extends StatelessWidget {
                           ],
                           if (server.coverEnabled) ...[
                             const SizedBox(height: 2),
-                            Text(
-                              '🎭 ${server.coverDomains.length} sites',
-                              style: TextStyle(
-                                fontSize: 10,
-                                color: textMuted(context),
-                              ),
+                            Row(
+                              children: [
+                                Icon(
+                                  Icons.theater_comedy,
+                                  size: 10,
+                                  color: textMuted(context),
+                                ),
+                                const SizedBox(width: 2),
+                                Text(
+                                  '${server.coverDomains.length} sites',
+                                  style: TextStyle(
+                                    fontSize: 10,
+                                    color: textMuted(context),
+                                  ),
+                                ),
+                              ],
                             ),
                           ],
                           if (server.lastTested != null) ...[
@@ -348,6 +367,32 @@ class ServersScreen extends StatelessWidget {
         );
       },
     );
+  }
+
+  IconData _getProtocolIcon(String protocol) {
+    switch (protocol.toLowerCase()) {
+      case 'guarch':
+        return Icons.security;
+      case 'grouk':
+        return Icons.flash_on;
+      case 'zhip':
+        return Icons.bolt;
+      default:
+        return Icons.shield;
+    }
+  }
+
+  Color _getProtocolColor(String protocol) {
+    switch (protocol.toLowerCase()) {
+      case 'guarch':
+        return Colors.blue;
+      case 'grouk':
+        return Colors.purple;
+      case 'zhip':
+        return Colors.amber;
+      default:
+        return Colors.grey;
+    }
   }
 
   Widget _actionButton(
@@ -508,27 +553,27 @@ class ServersScreen extends StatelessWidget {
                       ],
                     ),
                   ),
-                  child: Column(
+                  child: const Column(
                     children: [
-                      const Icon(
+                      Icon(
                         Icons.qr_code_scanner,
                         size: 48,
                         color: Colors.white,
                       ),
-                      const SizedBox(height: 12),
+                      SizedBox(height: 12),
                       Text(
                         'Point camera at QR code',
-                        style: const TextStyle(
+                        style: TextStyle(
                           color: Colors.white,
                           fontSize: 16,
                           fontWeight: FontWeight.w500,
                         ),
                       ),
-                      const SizedBox(height: 4),
+                      SizedBox(height: 4),
                       Text(
                         'Will automatically scan when detected',
                         style: TextStyle(
-                          color: Colors.white.withOpacity(0.7),
+                          color: Colors.white70,
                           fontSize: 13,
                         ),
                       ),
@@ -723,9 +768,10 @@ class ServersScreen extends StatelessWidget {
             children: [
               Row(
                 children: [
-                  Text(
-                    server.protocolEmoji,
-                    style: const TextStyle(fontSize: 32),
+                  Icon(
+                    _getProtocolIcon(server.protocol),
+                    size: 32,
+                    color: _getProtocolColor(server.protocol),
                   ),
                   const SizedBox(width: 12),
                   Expanded(
