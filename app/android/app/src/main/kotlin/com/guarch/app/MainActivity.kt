@@ -28,12 +28,14 @@ class MainActivity : FlutterActivity() {
     private var vpnPermissionResult: MethodChannel.Result? = null
     private var pendingConfig: String? = null
     private var pendingSocksPort: Int = 7070
+    private var currentVpnMode: Boolean = true
     private var methodChannel: MethodChannel? = null
     private var eventSink: EventChannel.EventSink? = null
     private var goEngine: Any? = null
     private var batteryReceiver: BroadcastReceiver? = null
 
     private var vpnAndTunStarted = false
+    private var proxyOnlyStarted = false
     private var currentBatteryLevel = 100
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
@@ -55,7 +57,7 @@ class MainActivity : FlutterActivity() {
                     "setUserSettings" -> handleSetUserSettings(call.arguments, result)
                     "connect" -> handleConnectLegacy(call.arguments, result)
                     "connectWithConfig" -> handleConnectWithConfig(call.arguments, result)
-                    "disconnect" -> handleDisconnect(result)
+                    "disconnect" -> handleDisconnect(call.arguments, result)
                     "getStatus" -> handleGetStatus(result)
                     "getStats" -> handleGetStats(result)
                     "setBatteryLevel" -> handleSetBatteryLevel(call.arguments, result)
@@ -149,7 +151,7 @@ class MainActivity : FlutterActivity() {
     }
 
     private fun updateBatteryLevel(level: Int) {
-        if (goEngine != null && vpnAndTunStarted) {
+        if (goEngine != null && (vpnAndTunStarted || proxyOnlyStarted)) {
             try {
                 goEngine!!.javaClass.getMethod("setBatteryLevel", Int::class.java)
                     .invoke(goEngine, level)
@@ -218,13 +220,23 @@ class MainActivity : FlutterActivity() {
         }
 
         pendingConfig = config
+        currentVpnMode = true
         startVpnAndConnect(result)
     }
 
     private fun handleConnectWithConfig(arguments: Any?, result: MethodChannel.Result) {
         CrashLogger.d(TAG, "=== handleConnectWithConfig (v1.0.1) ===")
 
-        val configJson = arguments as? String
+        @Suppress("UNCHECKED_CAST")
+        val params = arguments as? Map<String, Any>
+        if (params == null) {
+            result.error("NULL_PARAMS", "Parameters are null", null)
+            return
+        }
+
+        val configJson = params["config"] as? String
+        val vpnMode = params["vpnMode"] as? Boolean ?: true
+
         if (configJson == null) {
             result.error("NULL_CONFIG", "Config JSON is null", null)
             return
@@ -236,6 +248,9 @@ class MainActivity : FlutterActivity() {
             return
         }
 
+        currentVpnMode = vpnMode
+        val mode = if (vpnMode) "VPN" else "Proxy"
+
         val socksPort = try {
             val json = org.json.JSONObject(configJson)
             json.optInt("socks_port", 7070)
@@ -244,19 +259,99 @@ class MainActivity : FlutterActivity() {
             7070
         }
 
+        CrashLogger.d(TAG, "  Mode: $mode")
         CrashLogger.d(TAG, "  Config: ${configJson.take(200)}...")
         CrashLogger.d(TAG, "  SOCKS5 Port: $socksPort")
         
         pendingConfig = configJson
         pendingSocksPort = socksPort
 
-        if (vpnAndTunStarted && GuarchService.isRunning) {
-            CrashLogger.d(TAG, "  VPN/TUN already running — reconnecting...")
-            reconnectGoEngine(result)
+        if (vpnMode) {
+            if (vpnAndTunStarted && GuarchService.isRunning) {
+                CrashLogger.d(TAG, "  VPN/TUN already running — reconnecting...")
+                reconnectGoEngine(result)
+            } else {
+                CrashLogger.d(TAG, "  Starting VPN + TUN + Go engine...")
+                startVpnAndConnect(result)
+            }
         } else {
-            CrashLogger.d(TAG, "  Starting VPN + TUN + Go engine...")
-            startVpnAndConnect(result)
+            if (proxyOnlyStarted) {
+                CrashLogger.d(TAG, "  Proxy already running — reconnecting...")
+                reconnectGoEngine(result)
+            } else {
+                CrashLogger.d(TAG, "  Starting Proxy-only mode (SOCKS5 on :$socksPort)...")
+                startProxyOnly(result)
+            }
         }
+    }
+
+    private fun startProxyOnly(result: MethodChannel.Result) {
+        CrashLogger.d(TAG, "=== startProxyOnly ===")
+        
+        Thread {
+            try {
+                val config = pendingConfig
+                if (config != null && goEngine != null) {
+                    CrashLogger.d(TAG, "  Loading config to Go engine...")
+                    try {
+                        goEngine!!.javaClass.getMethod("loadConfigJSON", String::class.java)
+                            .invoke(goEngine, config)
+                        CrashLogger.d(TAG, "  Config loaded ✅")
+                    } catch (e: Throwable) {
+                        CrashLogger.e(TAG, "  Config load failed", unwrapException(e))
+                        runOnUiThread {
+                            sendEvent("error", "Config load failed")
+                            result.success(false)
+                        }
+                        return@Thread
+                    }
+
+                    CrashLogger.d(TAG, "  Starting SOCKS5 proxy on port $pendingSocksPort...")
+                    try {
+                        val startProxyMethod = goEngine!!.javaClass.getMethod(
+                            "startProxyOnly",
+                            Int::class.java
+                        )
+                        val started = startProxyMethod.invoke(goEngine, pendingSocksPort) as? Boolean ?: false
+                        
+                        if (!started) {
+                            CrashLogger.e(TAG, "  startProxyOnly() returned false")
+                            runOnUiThread {
+                                sendEvent("error", "Proxy start failed")
+                                result.success(false)
+                            }
+                            return@Thread
+                        }
+                        
+                        CrashLogger.d(TAG, "  Proxy started successfully ✅")
+                        proxyOnlyStarted = true
+                        
+                        runOnUiThread {
+                            sendEvent("status", "connected")
+                            result.success(true)
+                        }
+                        
+                    } catch (e: Throwable) {
+                        val real = unwrapException(e)
+                        CrashLogger.e(TAG, "  Proxy start failed", real)
+                        runOnUiThread {
+                            sendEvent("error", "Proxy error: ${real.message}")
+                            result.success(false)
+                        }
+                    }
+                } else {
+                    runOnUiThread {
+                        result.success(false)
+                    }
+                }
+            } catch (e: Throwable) {
+                CrashLogger.e(TAG, "  startProxyOnly crashed", e)
+                runOnUiThread {
+                    sendEvent("error", "Setup failed: ${e.message}")
+                    result.success(false)
+                }
+            }
+        }.start()
     }
 
     private fun reconnectGoEngine(result: MethodChannel.Result) {
@@ -273,17 +368,33 @@ class MainActivity : FlutterActivity() {
                     CrashLogger.e(TAG, "  loadConfigJSON failed", unwrapException(e))
                 }
 
-                CrashLogger.d(TAG, "  Calling connect()...")
-                val connectMethod = goEngine!!.javaClass.getMethod("connect")
-                val success = connectMethod.invoke(goEngine) as? Boolean ?: false
-                
-                CrashLogger.d(TAG, "  Go reconnect: $success")
-                
-                runOnUiThread {
-                    if (success) {
-                        sendEvent("status", "connected")
+                if (currentVpnMode) {
+                    CrashLogger.d(TAG, "  Calling connect() (VPN mode)...")
+                    val connectMethod = goEngine!!.javaClass.getMethod("connect")
+                    val success = connectMethod.invoke(goEngine) as? Boolean ?: false
+                    
+                    CrashLogger.d(TAG, "  Go reconnect: $success")
+                    
+                    runOnUiThread {
+                        if (success) {
+                            sendEvent("status", "connected")
+                        }
+                        result.success(success)
                     }
-                    result.success(success)
+                } else {
+                    CrashLogger.d(TAG, "  Restarting proxy...")
+                    val startProxyMethod = goEngine!!.javaClass.getMethod(
+                        "startProxyOnly",
+                        Int::class.java
+                    )
+                    val success = startProxyMethod.invoke(goEngine, pendingSocksPort) as? Boolean ?: false
+                    
+                    runOnUiThread {
+                        if (success) {
+                            sendEvent("status", "connected")
+                        }
+                        result.success(success)
+                    }
                 }
             } catch (e: Throwable) {
                 val real = unwrapException(e)
@@ -510,40 +621,56 @@ class MainActivity : FlutterActivity() {
         }
     }
 
-    private fun handleDisconnect(result: MethodChannel.Result) {
+    private fun handleDisconnect(arguments: Any?, result: MethodChannel.Result) {
         CrashLogger.d(TAG, "=== handleDisconnect ===")
+        
+        val vpnMode = arguments as? Boolean ?: currentVpnMode
+        CrashLogger.d(TAG, "  VPN Mode: $vpnMode")
         
         Thread {
             try {
                 if (goEngine != null) {
-                    try {
-                        CrashLogger.d(TAG, "  Calling Go disconnect()...")
-                        goEngine!!.javaClass.getMethod("disconnect").invoke(goEngine)
-                        CrashLogger.d(TAG, "  Go disconnect ✅")
-                    } catch (e: Throwable) {
-                        CrashLogger.e(TAG, "  Go disconnect error", unwrapException(e))
-                    }
+                    if (vpnMode || vpnAndTunStarted) {
+                        try {
+                            CrashLogger.d(TAG, "  Calling Go disconnect()...")
+                            goEngine!!.javaClass.getMethod("disconnect").invoke(goEngine)
+                            CrashLogger.d(TAG, "  Go disconnect ✅")
+                        } catch (e: Throwable) {
+                            CrashLogger.e(TAG, "  Go disconnect error", unwrapException(e))
+                        }
 
-                    try {
-                        CrashLogger.d(TAG, "  Stopping TUN...")
-                        goEngine!!.javaClass.getMethod("stopTun").invoke(goEngine)
-                        CrashLogger.d(TAG, "  TUN stopped ✅")
-                    } catch (e: Throwable) {
-                        CrashLogger.e(TAG, "  TUN stop error", unwrapException(e))
+                        try {
+                            CrashLogger.d(TAG, "  Stopping TUN...")
+                            goEngine!!.javaClass.getMethod("stopTun").invoke(goEngine)
+                            CrashLogger.d(TAG, "  TUN stopped ✅")
+                        } catch (e: Throwable) {
+                            CrashLogger.e(TAG, "  TUN stop error", unwrapException(e))
+                        }
+
+                        try {
+                            CrashLogger.d(TAG, "  Stopping VPN service...")
+                            startService(Intent(this@MainActivity, GuarchService::class.java).apply {
+                                action = GuarchService.ACTION_STOP
+                            })
+                            CrashLogger.d(TAG, "  VPN service stopped ✅")
+                        } catch (e: Throwable) {
+                            CrashLogger.e(TAG, "  VPN stop error", e)
+                        }
+
+                        vpnAndTunStarted = false
+                    } else {
+                        try {
+                            CrashLogger.d(TAG, "  Stopping proxy-only mode...")
+                            goEngine!!.javaClass.getMethod("stopProxyOnly").invoke(goEngine)
+                            CrashLogger.d(TAG, "  Proxy stopped ✅")
+                        } catch (e: Throwable) {
+                            CrashLogger.e(TAG, "  Proxy stop error", unwrapException(e))
+                        }
+
+                        proxyOnlyStarted = false
                     }
                 }
 
-                try {
-                    CrashLogger.d(TAG, "  Stopping VPN service...")
-                    startService(Intent(this@MainActivity, GuarchService::class.java).apply {
-                        action = GuarchService.ACTION_STOP
-                    })
-                    CrashLogger.d(TAG, "  VPN service stopped ✅")
-                } catch (e: Throwable) {
-                    CrashLogger.e(TAG, "  VPN stop error", e)
-                }
-
-                vpnAndTunStarted = false
                 sendEvent("status", "disconnected")
 
             } catch (e: Throwable) {
@@ -734,7 +861,8 @@ class MainActivity : FlutterActivity() {
                     .invoke(goEngine) as? String
                 result.success(status ?: "disconnected")
             } else {
-                result.success(if (GuarchService.isRunning) "connected" else "disconnected")
+                val isRunning = if (currentVpnMode) GuarchService.isRunning else proxyOnlyStarted
+                result.success(if (isRunning) "connected" else "disconnected")
             }
         } catch (_: Throwable) {
             result.success("disconnected")
@@ -911,6 +1039,7 @@ class MainActivity : FlutterActivity() {
     }
 
     private fun requestVpnPermission(result: MethodChannel.Result) {
+        currentVpnMode = true
         startVpnAndConnect(result)
     }
 
