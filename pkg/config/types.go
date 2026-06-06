@@ -1,4 +1,3 @@
-
 package config
 
 import (
@@ -7,17 +6,17 @@ import (
 )
 
 type ServerConfig struct {
-	Version   int              `json:"version"`
-	Server    ServerInfo       `json:"server"`
-	Transport *TransportConfig `json:"transport,omitempty"`
-	SocksPort int              `json:"socks_port,omitempty"`
-	SNI       SNIConfig        `json:"sni,omitempty"`
-	Cover     CoverConfig      `json:"cover,omitempty"`
-	DNS       DNSConfig        `json:"dns,omitempty"`
-	UTLS      UTLSConfig       `json:"utls,omitempty"`
-	Fragment  FragmentConfig   `json:"fragmentation,omitempty"`
-	Modes     ModesConfig      `json:"modes,omitempty"`
-	Metadata  Metadata         `json:"metadata,omitempty"`
+	Version   int               `json:"version"`
+	Server    ServerInfo        `json:"server"`
+	Transport *TransportConfig  `json:"transport,omitempty"`
+	SocksPort int               `json:"socks_port,omitempty"`
+	SNI       *SNIConfig        `json:"sni,omitempty"`
+	Cover     *CoverConfig      `json:"cover,omitempty"`
+	DNS       *DNSConfig        `json:"dns,omitempty"`
+	UTLS      *UTLSConfig       `json:"utls,omitempty"`
+	Fragment  *FragmentConfig   `json:"fragmentation,omitempty"`
+	Modes     *ModesConfig      `json:"modes,omitempty"`
+	Metadata  *Metadata         `json:"metadata,omitempty"`
 }
 
 type ServerInfo struct {
@@ -29,16 +28,16 @@ type ServerInfo struct {
 }
 
 type TransportConfig struct {
-	Type             string                       `json:"type"`
-	Host             string                       `json:"host,omitempty"`
-	Port             int                          `json:"port,omitempty"`
-	Path             string                       `json:"path,omitempty"`
-	UseTLS           bool                         `json:"use_tls"`
-	Headers          map[string]string            `json:"headers,omitempty"`
-	DialTimeout      int                          `json:"dial_timeout,omitempty"`
-	HandshakeTimeout int                          `json:"handshake_timeout,omitempty"`
-	FallbackOrder    []string                     `json:"fallback_order,omitempty"`
-	Experimental     ExperimentalTransportConfig  `json:"experimental,omitempty"`
+	Type             string                      `json:"type"`
+	Host             string                      `json:"host,omitempty"`
+	Port             int                         `json:"port,omitempty"`
+	Path             string                      `json:"path,omitempty"`
+	UseTLS           bool                        `json:"use_tls"`
+	Headers          map[string]string           `json:"headers,omitempty"`
+	DialTimeout      int                         `json:"dial_timeout,omitempty"`
+	HandshakeTimeout int                         `json:"handshake_timeout,omitempty"`
+	FallbackOrder    []string                    `json:"fallback_order,omitempty"`
+	Experimental     ExperimentalTransportConfig `json:"experimental,omitempty"`
 }
 
 type ExperimentalTransportConfig struct {
