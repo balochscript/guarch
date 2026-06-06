@@ -1,9 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+import 'package:battery_plus/battery_plus.dart';
 import 'package:guarch/app.dart';
 import 'package:guarch/providers/app_provider.dart';
-import 'package:guarch/screens/import_screen.dart';
 import 'package:guarch/screens/about_screen.dart';
 import 'package:guarch/screens/advanced_settings_screen.dart';
 import 'package:guarch/screens/sni_settings_screen.dart';
@@ -12,8 +11,48 @@ import 'package:guarch/screens/dns_settings_screen.dart';
 import 'package:guarch/models/connection_state.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-class SettingsScreen extends StatelessWidget {
+class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
+
+  @override
+  State<SettingsScreen> createState() => _SettingsScreenState();
+}
+
+class _SettingsScreenState extends State<SettingsScreen> {
+  final Battery _battery = Battery();
+  int _batteryLevel = 100;
+
+  @override
+  void initState() {
+    super.initState();
+    _initBattery();
+  }
+
+  Future<void> _initBattery() async {
+    try {
+      final level = await _battery.batteryLevel;
+      if (mounted) {
+        setState(() {
+          _batteryLevel = level;
+        });
+        final provider = Provider.of<AppProvider>(context, listen: false);
+        provider.setBatteryLevel(level);
+      }
+
+      _battery.onBatteryStateChanged.listen((BatteryState state) async {
+        final level = await _battery.batteryLevel;
+        if (mounted) {
+          setState(() {
+            _batteryLevel = level;
+          });
+          final provider = Provider.of<AppProvider>(context, listen: false);
+          provider.setBatteryLevel(level);
+        }
+      });
+    } catch (e) {
+      debugPrint('Battery init failed: $e');
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -78,19 +117,31 @@ class SettingsScreen extends StatelessWidget {
                 child: Column(
                   children: [
                     ListTile(
-                      leading: const Text('🔋', style: TextStyle(fontSize: 24)),
+                      leading: Icon(
+                        _batteryLevel < 20
+                            ? Icons.battery_alert
+                            : _batteryLevel < 50
+                                ? Icons.battery_3_bar
+                                : _batteryLevel < 80
+                                    ? Icons.battery_5_bar
+                                    : Icons.battery_full,
+                        color: _batteryLevel < 30
+                            ? Colors.orange
+                            : Colors.green,
+                        size: 28,
+                      ),
                       title: Text(
                         'Battery Level',
                         style: TextStyle(color: textSecondary(context)),
                       ),
                       subtitle: Text(
-                        '${provider.batteryLevel}% • ${_batteryStatus(provider.batteryLevel)}',
+                        '$_batteryLevel% • ${_batteryStatus(_batteryLevel)}',
                         style: TextStyle(color: textMuted(context), fontSize: 12),
                       ),
                       trailing: Text(
-                        '${provider.batteryLevel}%',
+                        '$_batteryLevel%',
                         style: TextStyle(
-                          color: provider.batteryLevel < 30
+                          color: _batteryLevel < 30
                               ? Colors.orange
                               : Colors.green,
                           fontWeight: FontWeight.w600,
@@ -102,7 +153,11 @@ class SettingsScreen extends StatelessWidget {
                       color: accentColor(context).withOpacity(0.1),
                     ),
                     SwitchListTile(
-                      secondary: const Text('💾', style: TextStyle(fontSize: 24)),
+                      secondary: Icon(
+                        Icons.data_saver_on,
+                        color: accentColor(context),
+                        size: 28,
+                      ),
                       title: Text(
                         'Data Saver Mode',
                         style: TextStyle(color: textSecondary(context)),
@@ -119,61 +174,12 @@ class SettingsScreen extends StatelessWidget {
               ),
 
               const SizedBox(height: 24),
-              _sectionTitle(context, 'Import / Export'),
-              Card(
-                child: Column(
-                  children: [
-                    ListTile(
-                      leading: Icon(Icons.input, color: accentColor(context)),
-                      title: Text(
-                        'Import Config',
-                        style: TextStyle(color: textSecondary(context)),
-                      ),
-                      subtitle: Text(
-                        'From guarch://, grouk://, zhip:// link or JSON',
-                        style: TextStyle(color: textMuted(context), fontSize: 12),
-                      ),
-                      trailing: Icon(
-                        Icons.arrow_forward_ios,
-                        size: 16,
-                        color: textMuted(context),
-                      ),
-                      onTap: () => Navigator.push(
-                        context,
-                        MaterialPageRoute(builder: (_) => const ImportScreen()),
-                      ),
-                    ),
-                    Divider(
-                      height: 1,
-                      color: accentColor(context).withOpacity(0.1),
-                    ),
-                    ListTile(
-                      leading: Icon(
-                        Icons.content_paste,
-                        color: accentColor(context),
-                      ),
-                      title: Text(
-                        'Quick Import from Clipboard',
-                        style: TextStyle(color: textSecondary(context)),
-                      ),
-                      trailing: Icon(
-                        Icons.arrow_forward_ios,
-                        size: 16,
-                        color: textMuted(context),
-                      ),
-                      onTap: () => _importClipboard(context, provider),
-                    ),
-                  ],
-                ),
-              ),
-
-              const SizedBox(height: 24),
               _sectionTitle(context, 'Connection'),
               Card(
                 child: Column(
                   children: [
                     ListTile(
-                      leading: Icon(Icons.shield, color: accentColor(context)),
+                      leading: Icon(Icons.shield_outlined, color: accentColor(context)),
                       title: Text(
                         'SNI Protection',
                         style: TextStyle(color: textSecondary(context)),
@@ -265,28 +271,6 @@ class SettingsScreen extends StatelessWidget {
                         context,
                         MaterialPageRoute(builder: (_) => const DNSSettingsScreen()),
                       ),
-                    ),
-                    Divider(
-                      height: 1,
-                      color: accentColor(context).withOpacity(0.1),
-                    ),
-                    ListTile(
-                      leading: Icon(Icons.speed, color: accentColor(context)),
-                      title: Text(
-                        'Ping All Servers',
-                        style: TextStyle(color: textSecondary(context)),
-                      ),
-                      trailing: Icon(
-                        Icons.arrow_forward_ios,
-                        size: 16,
-                        color: textMuted(context),
-                      ),
-                      onTap: () {
-                        provider.pingAllServers();
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('Pinging all servers...')),
-                        );
-                      },
                     ),
                     Divider(
                       height: 1,
@@ -418,7 +402,11 @@ class SettingsScreen extends StatelessWidget {
                     ),
                     
                     ListTile(
-                      leading: const Text('📱', style: TextStyle(fontSize: 20)),
+                      leading: Icon(
+                        Icons.phone_android,
+                        color: accentColor(context),
+                        size: 24,
+                      ),
                       title: Text(
                         'Platform',
                         style: TextStyle(color: textSecondary(context)),
@@ -439,7 +427,8 @@ class SettingsScreen extends StatelessWidget {
                   children: [
                     _protocolTile(
                       context,
-                      '🏹',
+                      Icons.security,
+                      Colors.blue,
                       'Guarch',
                       'TLS 1.3 / TCP — Maximum stealth',
                       'Cover traffic, traffic shaping, decoy server',
@@ -450,7 +439,8 @@ class SettingsScreen extends StatelessWidget {
                     ),
                     _protocolTile(
                       context,
-                      '🌩️',
+                      Icons.flash_on,
+                      Colors.purple,
                       'Grouk',
                       'Raw UDP — Maximum speed',
                       'Custom reliable UDP, AIMD congestion control',
@@ -461,7 +451,8 @@ class SettingsScreen extends StatelessWidget {
                     ),
                     _protocolTile(
                       context,
-                      '⚡',
+                      Icons.bolt,
+                      Colors.amber,
                       'Zhip',
                       'QUIC / UDP — Balanced',
                       'HTTP/3 transport, 0-RTT, cover traffic',
@@ -476,7 +467,11 @@ class SettingsScreen extends StatelessWidget {
                 child: Column(
                   children: [
                     ListTile(
-                      leading: const Text('🎯', style: TextStyle(fontSize: 24)),
+                      leading: Icon(
+                        Icons.info,
+                        color: accentColor(context),
+                        size: 28,
+                      ),
                       title: Text(
                         'About Guarch',
                         style: TextStyle(color: textSecondary(context)),
@@ -500,7 +495,10 @@ class SettingsScreen extends StatelessWidget {
                       color: accentColor(context).withOpacity(0.1),
                     ),
                     ListTile(
-                      leading: Icon(Icons.code, color: accentColor(context)),
+                      leading: Icon(
+                        Icons.code,
+                        color: accentColor(context),
+                      ),
                       title: Text(
                         'Source Code',
                         style: TextStyle(color: textSecondary(context)),
@@ -518,37 +516,28 @@ class SettingsScreen extends StatelessWidget {
                         Uri.parse('https://github.com/balochscript/guarch'),
                       ),
                     ),
-                    Divider(
-                      height: 1,
-                      color: accentColor(context).withOpacity(0.1),
-                    ),
-                    ListTile(
-                      leading: const Text('📱', style: TextStyle(fontSize: 24)),
-                      title: Text(
-                        'Version',
-                        style: TextStyle(color: textSecondary(context)),
+                  ],
+                ),
+              ),
+
+              const SizedBox(height: 32),
+              Center(
+                child: Column(
+                  children: [
+                    Text(
+                      'Guarch',
+                      style: TextStyle(
+                        color: textMuted(context),
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
                       ),
-                      trailing: Text(
-                        '1.0.1',
-                        style: TextStyle(color: textMuted(context)),
-                      ),
                     ),
-                    Divider(
-                      height: 1,
-                      color: accentColor(context).withOpacity(0.1),
-                    ),
-                    ListTile(
-                      leading: const Text('🏹', style: TextStyle(fontSize: 24)),
-                      title: Text(
-                        'Protocols',
-                        style: TextStyle(color: textSecondary(context)),
-                      ),
-                      trailing: Text(
-                        'Guarch • Grouk • Zhip',
-                        style: TextStyle(
-                          color: textMuted(context),
-                          fontSize: 12,
-                        ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Version 1.0.1',
+                      style: TextStyle(
+                        color: textMuted(context).withOpacity(0.7),
+                        fontSize: 12,
                       ),
                     ),
                   ],
@@ -579,13 +568,18 @@ class SettingsScreen extends StatelessWidget {
 
   Widget _protocolTile(
     BuildContext context,
-    String emoji,
+    IconData icon,
+    Color iconColor,
     String name,
     String subtitle,
     String details,
   ) {
     return ListTile(
-      leading: Text(emoji, style: const TextStyle(fontSize: 24)),
+      leading: Icon(
+        icon,
+        color: iconColor,
+        size: 28,
+      ),
       title: Text(name, style: TextStyle(color: textSecondary(context))),
       subtitle: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -618,16 +612,16 @@ class SettingsScreen extends StatelessWidget {
 
     final parts = <String>[];
     if (counts.containsKey('guarch')) {
-      parts.add('🏹 ${counts['guarch']} Guarch');
+      parts.add('${counts['guarch']} Guarch');
     }
     if (counts.containsKey('grouk')) {
-      parts.add('🌩️ ${counts['grouk']} Grouk');
+      parts.add('${counts['grouk']} Grouk');
     }
     if (counts.containsKey('zhip')) {
-      parts.add('⚡ ${counts['zhip']} Zhip');
+      parts.add('${counts['zhip']} Zhip');
     }
 
-    return '${provider.servers.length} servers: ${parts.join(', ')}';
+    return '${provider.servers.length} servers: ${parts.join(' • ')}';
   }
 
   String _batteryStatus(int level) {
@@ -635,26 +629,5 @@ class SettingsScreen extends StatelessWidget {
     if (level < 30) return 'Low (cover reduced)';
     if (level < 50) return 'Medium';
     return 'Good';
-  }
-
-  void _importClipboard(BuildContext context, AppProvider provider) async {
-    final data = await Clipboard.getData(Clipboard.kTextPlain);
-    if (data?.text != null && data!.text!.isNotEmpty) {
-      provider.importConfig(data.text!);
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Config imported from clipboard'),
-            backgroundColor: Colors.green,
-          ),
-        );
-      }
-    } else {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Clipboard is empty')),
-        );
-      }
-    }
   }
 }
