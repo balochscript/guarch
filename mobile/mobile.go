@@ -82,6 +82,7 @@ type Engine struct {
 	batteryLevel     int
 	dataSaverMode    bool
 	retryCount       int
+	proxyOnlyMode    bool
 }
 
 type engineStats struct {
@@ -153,6 +154,7 @@ func New() *Engine {
 			DialTimeout:      30,
 			HandshakeTimeout: 15,
 		},
+		proxyOnlyMode: false,
 	}
 }
 
@@ -336,6 +338,59 @@ func (e *Engine) SetDataSaverMode(enabled bool) {
 	e.logInfo(fmt.Sprintf("Data saver mode: %v", enabled))
 }
 
+func (e *Engine) StartProxyOnly(socksPort int) bool {
+	defer e.recoverPanic("StartProxyOnly")
+
+	log.Println("[Engine] === StartProxyOnly ===")
+	log.Printf("[Engine] SOCKS5 Port: %d", socksPort)
+
+	e.mu.Lock()
+	if e.status == "connected" || e.status == "connecting" {
+		log.Printf("[Engine] Already in state: %s", e.status)
+		e.mu.Unlock()
+		return false
+	}
+
+	if e.config == nil {
+		e.mu.Unlock()
+		log.Println("[Engine] ERROR: No config loaded")
+		e.logError("No config loaded")
+		return false
+	}
+
+	e.proxyOnlyMode = true
+	e.userSettings.SocksPort = socksPort
+	e.setStatus("connecting")
+	e.mu.Unlock()
+
+	e.logInfo(fmt.Sprintf("Starting Proxy-Only mode on 127.0.0.1:%d", socksPort))
+
+	err := e.connectInternal()
+	if err != nil {
+		log.Printf("[Engine] Proxy-only connection failed: %v", err)
+		e.logError("Proxy connection failed: " + err.Error())
+		e.setStatus("disconnected")
+		return false
+	}
+
+	e.setStatus("connected")
+	log.Println("[Engine] ✓ Proxy-only mode started!")
+	e.logInfo("✓ Proxy-only mode active (SOCKS5 only, no VPN)")
+	return true
+}
+
+func (e *Engine) StopProxyOnly() bool {
+	defer e.recoverPanic("StopProxyOnly")
+
+	log.Println("[Engine] === StopProxyOnly ===")
+
+	e.mu.Lock()
+	e.proxyOnlyMode = false
+	e.mu.Unlock()
+
+	return e.Disconnect()
+}
+
 func (e *Engine) Connect() bool {
 	defer e.recoverPanic("Connect")
 
@@ -360,6 +415,7 @@ func (e *Engine) Connect() bool {
 
 	e.setStatus("connecting")
 	e.retryCount = 0
+	e.proxyOnlyMode = false
 	e.mu.Unlock()
 
 	go e.connectWithRetry()
@@ -1198,6 +1254,7 @@ func (e *Engine) Disconnect() bool {
 	}
 
 	e.usingDNSFallback.Store(false)
+	e.proxyOnlyMode = false
 	e.setStatus("disconnected")
 	log.Println("[Engine] ✓ Disconnected")
 	e.logInfo("✓ Disconnected")
