@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"net"
-	"os"
 	"runtime/debug"
 	"strings"
 	"sync"
