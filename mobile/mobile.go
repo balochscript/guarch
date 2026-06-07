@@ -188,7 +188,7 @@ func (e *Engine) SetUserSettings(jsonStr string) bool {
 	e.logDebug(fmt.Sprintf("User settings updated: dial_timeout=%d, handshake_timeout=%d",
 		settings.DialTimeout, settings.HandshakeTimeout))
 	
-	log.Println("[Engine] SetUserSettings SUCCESS ✅")
+	log.Println("[Engine] SetUserSettings SUCCESS")
 	return true
 }
 
@@ -374,8 +374,8 @@ func (e *Engine) StartProxyOnly(socksPort int32) bool {
 	}
 
 	e.setStatus("connected")
-	log.Println("[Engine] ✓ Proxy-only mode started!")
-	e.logInfo("✓ Proxy-only mode active (SOCKS5 only, no VPN)")
+	log.Println("[Engine] Proxy-only mode started!")
+	e.logInfo("Proxy-only mode active (SOCKS5 only, no VPN)")
 	return true
 }
 
@@ -434,8 +434,8 @@ func (e *Engine) connectWithRetry() {
 		err := e.connectInternal()
 		if err == nil {
 			e.setStatus("connected")
-			log.Println("[Engine] ✓ Connected successfully!")
-			e.logInfo("✓ Connected successfully!")
+			log.Println("[Engine] Connected successfully!")
+			e.logInfo("Connected successfully!")
 			return
 		}
 
@@ -465,8 +465,8 @@ func (e *Engine) connectWithRetry() {
 			e.setStatus("disconnected")
 		} else {
 			e.setStatus("connected")
-			log.Println("[Engine] ✓ Connected via DNS fallback!")
-			e.logInfo("✓ Connected via DNS fallback!")
+			log.Println("[Engine] Connected via DNS fallback!")
+			e.logInfo("Connected via DNS fallback!")
 		}
 	} else {
 		log.Println("[Engine] DNS fallback not available or not enabled")
@@ -528,9 +528,29 @@ func (e *Engine) connectInternal() error {
 		coverCfg := e.buildCoverConfig(resolvedCfg.Cover)
 		
 		maxPadding := config.GetMaxPaddingForMode(resolvedCfg.Cover.Mode)
-		modeCfg := &cover.ModeConfig{
-			MaxPadding: maxPadding,
+		if resolvedCfg.MaxPadding > 0 {
+			maxPadding = resolvedCfg.MaxPadding
+			log.Printf("[Engine] Using custom max padding: %d", maxPadding)
 		}
+		
+		batteryThreshold := resolvedCfg.BatteryThreshold
+		if batteryThreshold == 0 {
+			batteryThreshold = 20
+		}
+		
+		hysteresisDelay := time.Duration(resolvedCfg.HysteresisDelay) * time.Second
+		if hysteresisDelay == 0 {
+			hysteresisDelay = 30 * time.Second
+		}
+		
+		modeCfg := &cover.ModeConfig{
+			MaxPadding:       maxPadding,
+			BatteryThreshold: batteryThreshold,
+			HysteresisDelay:  hysteresisDelay,
+		}
+		
+		log.Printf("[Engine] ModeConfig: MaxPadding=%d, BatteryThreshold=%d%%, HysteresisDelay=%v", 
+			maxPadding, batteryThreshold, hysteresisDelay)
 		
 		adaptiveCover := cover.NewAdaptiveCover(modeCfg)
 
@@ -544,8 +564,9 @@ func (e *Engine) connectInternal() error {
 
 		if resolvedCfg.Cover.Adaptive.BatteryAware {
 			adaptiveCover.SetBatteryAware(true)
-			if currentBattery < 20 {
-				log.Println("[Engine] Low battery detected - reducing cover activity")
+			if currentBattery < batteryThreshold {
+				log.Printf("[Engine] Low battery detected (%d%% < %d%%) - reducing cover activity", 
+					currentBattery, batteryThreshold)
 			}
 		}
 		
@@ -624,27 +645,37 @@ func (e *Engine) connectGuarch(cfg *config.ServerConfig, coverMgr *cover.Manager
 		log.Printf("[Engine] Dial failed: %v", err)
 		return fmt.Errorf("connector dial failed: %w", err)
 	}
-	log.Println("[Engine] TCP connection established ✅")
+	log.Println("[Engine] TCP connection established")
 
 	maxPadding := 0
+	paddingEnabled := false
+	
 	if cfg.Cover != nil {
 		maxPadding = config.GetMaxPaddingForMode(cfg.Cover.Mode)
+		paddingEnabled = true
+	}
+	
+	if cfg.PaddingEnabled {
+		paddingEnabled = true
+		if cfg.MaxPadding > 0 {
+			maxPadding = cfg.MaxPadding
+		}
 	}
 	
 	handshakeCfg := &transport.HandshakeConfig{
 		PSK:            []byte(cfg.Server.PSK),
 		MaxPadding:     maxPadding,
-		PaddingEnabled: maxPadding > 0,
+		PaddingEnabled: paddingEnabled,
 	}
 
-	log.Printf("[Engine] Performing handshake (padding: %d)...", maxPadding)
+	log.Printf("[Engine] Performing handshake (padding: %v, max: %d)...", paddingEnabled, maxPadding)
 	sc, err := transport.Handshake(rawConn, false, handshakeCfg)
 	if err != nil {
 		rawConn.Close()
 		log.Printf("[Engine] Handshake failed: %v", err)
 		return fmt.Errorf("handshake failed: %w", err)
 	}
-	log.Println("[Engine] Handshake complete ✅")
+	log.Println("[Engine] Handshake complete")
 
 	if coverMgr != nil {
 		coverMgr.SendOne()
@@ -733,7 +764,7 @@ func (e *Engine) connectGrouk(cfg *config.ServerConfig, coverMgr *cover.Manager)
 		log.Printf("[Engine] Grouk handshake failed: %v", err)
 		return fmt.Errorf("Grouk handshake failed: %w", err)
 	}
-	log.Println("[Engine] Grouk handshake complete ✅")
+	log.Println("[Engine] Grouk handshake complete")
 
 	e.mu.Lock()
 	e.groukSession = session
@@ -801,7 +832,7 @@ func (e *Engine) connectZhip(cfg *config.ServerConfig, coverMgr *cover.Manager) 
 		log.Printf("[Engine] QUIC dial failed: %v", err)
 		return fmt.Errorf("QUIC dial failed: %w", err)
 	}
-	log.Println("[Engine] QUIC connection established ✅")
+	log.Println("[Engine] QUIC connection established")
 
 	log.Println("[Engine] Performing Zhip authentication...")
 	if err := transport.ZhipClientAuth(conn, []byte(cfg.Server.PSK)); err != nil {
@@ -809,7 +840,7 @@ func (e *Engine) connectZhip(cfg *config.ServerConfig, coverMgr *cover.Manager) 
 		log.Printf("[Engine] Zhip auth failed: %v", err)
 		return fmt.Errorf("Zhip auth failed: %w", err)
 	}
-	log.Println("[Engine] Zhip auth complete ✅")
+	log.Println("[Engine] Zhip auth complete")
 
 	if coverMgr != nil {
 		coverMgr.SendOne()
@@ -864,8 +895,8 @@ func (e *Engine) enableDNSFallback() error {
 		e.callback.OnDNSFallback(true)
 	}
 
-	log.Println("[Engine] DNS Fallback Mode Active ⚠️")
-	e.logWarn("⚠️ DNS Fallback Mode Active (Reduced Speed ~50Kbps)")
+	log.Println("[Engine] DNS Fallback Mode Active")
+	e.logWarn("DNS Fallback Mode Active (Reduced Speed ~50Kbps)")
 
 	return e.startSOCKS5(func() (io.ReadWriteCloser, error) {
 		sessionID := uint32(time.Now().UnixNano() & 0xFFFFFFFF)
@@ -923,7 +954,7 @@ func (e *Engine) startSOCKS5(openStream func() (io.ReadWriteCloser, error)) erro
 	e.listener = ln
 	e.mu.Unlock()
 
-	log.Printf("[Engine] SOCKS5 server listening on %s ✅", listenAddr)
+	log.Printf("[Engine] SOCKS5 server listening on %s", listenAddr)
 	e.logInfo(fmt.Sprintf("SOCKS5 server listening on %s", listenAddr))
 
 	go e.statsReporter()
@@ -1191,8 +1222,8 @@ func (e *Engine) sniRotator() {
 				e.stats.sniSwitches++
 				e.stats.mu.Unlock()
 
-				log.Printf("[Engine] SNI rotated: %s → %s", oldSNI, newSNI)
-				e.logInfo(fmt.Sprintf("SNI rotated: %s → %s", oldSNI, newSNI))
+				log.Printf("[Engine] SNI rotated: %s to %s", oldSNI, newSNI)
+				e.logInfo(fmt.Sprintf("SNI rotated: %s to %s", oldSNI, newSNI))
 
 				if e.callback != nil {
 					e.callback.OnSNIRotation(newSNI)
@@ -1263,8 +1294,8 @@ func (e *Engine) Disconnect() bool {
 	e.usingDNSFallback.Store(false)
 	e.proxyOnlyMode = false
 	e.setStatus("disconnected")
-	log.Println("[Engine] ✓ Disconnected")
-	e.logInfo("✓ Disconnected")
+	log.Println("[Engine] Disconnected")
+	e.logInfo("Disconnected")
 
 	return true
 }
