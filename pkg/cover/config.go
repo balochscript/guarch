@@ -22,7 +22,9 @@ type Config struct {
 }
 
 type ModeConfig struct {
-	MaxPadding int
+	MaxPadding       int
+	BatteryThreshold int
+	HysteresisDelay  time.Duration
 }
 
 func NewConfig() *Config {
