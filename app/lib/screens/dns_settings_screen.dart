@@ -181,10 +181,10 @@ class DNSSettingsScreen extends StatelessWidget {
               Card(
                 child: Column(
                   children: [
-                    SwitchListTile(
-                      secondary: Icon(Icons.fingerprint, color: accentColor(context)),
+                    ListTile(
+                      leading: Icon(Icons.fingerprint, color: accentColor(context)),
                       title: Text(
-                        'Enable UTLS',
+                        'UTLS Support',
                         style: TextStyle(
                           color: textSecondary(context),
                           fontWeight: FontWeight.w600,
@@ -194,54 +194,51 @@ class DNSSettingsScreen extends StatelessWidget {
                         'Mimic real browser TLS fingerprint',
                         style: TextStyle(color: textMuted(context), fontSize: 13),
                       ),
-                      value: provider.globalUtlsEnabled,
-                      onChanged: (_) => provider.toggleGlobalUtls(),
-                    ),
-                    
-                    if (provider.globalUtlsEnabled) ...[
-                      Divider(height: 1, color: accentColor(context).withOpacity(0.1)),
-                      
-                      Padding(
-                        padding: const EdgeInsets.all(16),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'Fingerprint',
-                              style: TextStyle(
-                                color: textSecondary(context),
-                                fontSize: 13,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                            const SizedBox(height: 8),
-                            DropdownButtonFormField<String>(
-                              value: provider.globalUtlsFingerprint,
-                              decoration: const InputDecoration(
-                                border: OutlineInputBorder(),
-                              ),
-                              items: [
-                                'chrome_auto',
-                                'chrome_120',
-                                'chrome_119',
-                                'firefox_121',
-                                'firefox_120',
-                                'edge_120',
-                                'safari_17',
-                              ].map((fp) {
-                                return DropdownMenuItem(
-                                  value: fp,
-                                  child: Text(fp),
-                                );
-                              }).toList(),
-                              onChanged: (v) {
-                                if (v != null) provider.setGlobalUtlsFingerprint(v);
-                              },
-                            ),
-                          ],
+                      trailing: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: Colors.orange.withOpacity(0.2),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: Colors.orange, width: 1.5),
+                        ),
+                        child: const Text(
+                          'Coming Soon',
+                          style: TextStyle(
+                            color: Colors.orange,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                          ),
                         ),
                       ),
-                    ],
+                    ),
+                    
+                    Divider(height: 1, color: accentColor(context).withOpacity(0.1)),
+                    
+                    Container(
+                      margin: const EdgeInsets.all(12),
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.blue.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: Colors.blue.withOpacity(0.3)),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.info_outline, color: Colors.blue, size: 20),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Text(
+                              'UTLS will be added in next update. Currently uses Go standard TLS (secure but detectable by advanced DPI).',
+                              style: TextStyle(
+                                color: textSecondary(context),
+                                fontSize: 12,
+                                height: 1.4,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
                   ],
                 ),
               ),
@@ -252,7 +249,7 @@ class DNSSettingsScreen extends StatelessWidget {
                 child: Column(
                   children: [
                     SwitchListTile(
-                      secondary: const Text('✂️', style: TextStyle(fontSize: 20)),
+                      secondary: Icon(Icons.cut, size: 20, color: accentColor(context)),
                       title: Text(
                         'Enable Fragmentation',
                         style: TextStyle(
@@ -517,7 +514,7 @@ class DNSSettingsScreen extends StatelessWidget {
               Navigator.pop(ctx);
               ScaffoldMessenger.of(context).showSnackBar(
                 const SnackBar(
-                  content: Text('✅ DNS & Security reset to defaults'),
+                  content: Text('DNS & Security reset to defaults'),
                   backgroundColor: Colors.green,
                 ),
               );
