@@ -14,7 +14,7 @@ import 'package:qr_flutter/qr_flutter.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
-import 'package:google_mlkit_barcode_scanning/google_mlkit_barcode_scanning.dart';
+import 'package:google_mlkit_barcode_scanning/google_mlkit_barcode_scanning.dart' as mlkit;
 
 class ServersScreen extends StatelessWidget {
   const ServersScreen({super.key});
@@ -623,11 +623,11 @@ class ServersScreen extends StatelessWidget {
         );
       }
 
-      final inputImage = InputImage.fromFilePath(image.path);
-      final barcodeScanner = BarcodeScanner();
+      final inputImage = mlkit.InputImage.fromFilePath(image.path);
+      final barcodeScanner = mlkit.BarcodeScanner();
 
       try {
-        final List<Barcode> barcodes = await barcodeScanner.processImage(inputImage);
+        final List<mlkit.Barcode> barcodes = await barcodeScanner.processImage(inputImage);
         
         if (context.mounted) {
           Navigator.pop(context);
