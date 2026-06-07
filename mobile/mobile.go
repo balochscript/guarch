@@ -54,6 +54,10 @@ type UserSettings struct {
 	HandshakeTimeout int `json:"handshake_timeout"`
 }
 
+func SetProtectFunc(protectFd func(fd int) error) {
+	transport.ProtectSocket = protectFd
+}
+
 type Engine struct {
 	mu       sync.RWMutex
 	callback Callback
@@ -358,6 +362,8 @@ func (e *Engine) StartProxyOnly(socksPort int32) bool {
 		return false
 	}
 
+	e.ctx, e.cancel = context.WithCancel(context.Background())
+
 	e.proxyOnlyMode = true
 	e.userSettings.SocksPort = int(socksPort)
 	e.setStatus("connecting")
@@ -409,6 +415,8 @@ func (e *Engine) Connect() bool {
 		e.logError("No config loaded")
 		return false
 	}
+
+	e.ctx, e.cancel = context.WithCancel(context.Background())
 
 	log.Printf("[Engine] Server: %s", e.config.Server.Address)
 	log.Printf("[Engine] Protocol: %s", e.config.Server.Protocol)
