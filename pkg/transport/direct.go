@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"syscall"
 	"time"
 )
 
@@ -11,6 +12,8 @@ type DirectTransport struct {
 	config *Config
 	conn   net.Conn
 }
+
+var ProtectSocket func(fd int) error
 
 func NewDirectTransport(cfg *Config) *DirectTransport {
 	return &DirectTransport{
@@ -26,20 +29,33 @@ func (d *DirectTransport) Dial(ctx context.Context) (net.Conn, error) {
 		timeout = 30 * time.Second
 	}
 
-	dialCtx, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
-
 	dialer := &net.Dialer{
 		Timeout: timeout,
+		Control: protectControl,
 	}
 
-	conn, err := dialer.DialContext(dialCtx, "tcp", address)
+	conn, err := dialer.DialContext(ctx, "tcp", address)
 	if err != nil {
 		return nil, fmt.Errorf("direct dial failed: %w", err)
 	}
 
 	d.conn = conn
 	return conn, nil
+}
+
+func protectControl(network, address string, c syscall.RawConn) error {
+	var protectErr error
+	
+	err := c.Control(func(fd uintptr) {
+		if ProtectSocket != nil {
+			protectErr = ProtectSocket(int(fd))
+		}
+	})
+	
+	if err != nil {
+		return err
+	}
+	return protectErr
 }
 
 func (d *DirectTransport) Name() string {
