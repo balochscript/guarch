@@ -302,16 +302,16 @@ func (e *Engine) ExportConfigJSON() string {
 	return string(data)
 }
 
-func (e *Engine) SetBatteryLevel(level int) {
+func (e *Engine) SetBatteryLevel(level int32) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
-	e.batteryLevel = level
+	e.batteryLevel = int(level)
 	log.Printf("[Engine] Battery level: %d%%", level)
 	e.logDebug(fmt.Sprintf("Battery level: %d%%", level))
 
 	if e.adaptiveCover != nil {
-		e.adaptiveCover.SetBatteryLevel(level)
+		e.adaptiveCover.SetBatteryLevel(int(level))
 		
 		if e.config != nil && e.config.Cover != nil && e.config.Cover.Adaptive.BatteryAware && level < 20 {
 			log.Printf("[Engine] Low battery warning (%d%%)", level)
@@ -338,7 +338,7 @@ func (e *Engine) SetDataSaverMode(enabled bool) {
 	e.logInfo(fmt.Sprintf("Data saver mode: %v", enabled))
 }
 
-func (e *Engine) StartProxyOnly(socksPort int) bool {
+func (e *Engine) StartProxyOnly(socksPort int32) bool {
 	defer e.recoverPanic("StartProxyOnly")
 
 	log.Println("[Engine] === StartProxyOnly ===")
@@ -359,7 +359,7 @@ func (e *Engine) StartProxyOnly(socksPort int) bool {
 	}
 
 	e.proxyOnlyMode = true
-	e.userSettings.SocksPort = socksPort
+	e.userSettings.SocksPort = int(socksPort)
 	e.setStatus("connecting")
 	e.mu.Unlock()
 
@@ -669,6 +669,13 @@ func (e *Engine) mergeTimeoutSettings(cfg *config.ServerConfig, userSettings *Us
 
 	if merged.Transport == nil {
 		merged.Transport = &config.TransportConfig{}
+	}
+
+	if merged.DNS == nil {
+		merged.DNS = &config.DNSConfig{
+			Enabled: false,
+			Servers: []string{"8.8.8.8:53", "1.1.1.1:53"},
+		}
 	}
 
 	if merged.Transport.DialTimeout == 0 && userSettings.DialTimeout > 0 {
