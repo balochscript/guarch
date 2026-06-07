@@ -38,7 +38,7 @@ class _AdvancedSettingsScreenState extends State<AdvancedSettingsScreen> {
     await AppSettings.setSocksPort(port);
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('✓ SOCKS port updated to $port')),
+        SnackBar(content: Text('SOCKS port updated to $port')),
       );
     }
   }
@@ -197,6 +197,171 @@ class _AdvancedSettingsScreenState extends State<AdvancedSettingsScreen> {
               ),
 
               const SizedBox(height: 24),
+              _sectionTitle(context, 'Anti-Detection'),
+              Card(
+                child: Column(
+                  children: [
+                    SwitchListTile(
+                      secondary: Icon(Icons.shield, color: accentColor(context)),
+                      title: Text(
+                        'Decoy Server',
+                        style: TextStyle(color: textSecondary(context)),
+                      ),
+                      subtitle: Text(
+                        'Serve fake CDN pages to probing requests',
+                        style: TextStyle(color: textMuted(context), fontSize: 12),
+                      ),
+                      value: provider.globalDecoyEnabled,
+                      onChanged: (_) => provider.toggleGlobalDecoy(),
+                    ),
+                    
+                    Divider(height: 1, color: accentColor(context).withOpacity(0.1)),
+                    
+                    SwitchListTile(
+                      secondary: Icon(Icons.security, color: accentColor(context)),
+                      title: Text(
+                        'Probe Detection',
+                        style: TextStyle(color: textSecondary(context)),
+                      ),
+                      subtitle: Text(
+                        'Detect and block suspicious scanning attempts',
+                        style: TextStyle(color: textMuted(context), fontSize: 12),
+                      ),
+                      value: provider.globalProbeDetectionEnabled,
+                      onChanged: (_) => provider.toggleGlobalProbeDetection(),
+                    ),
+                    
+                    if (provider.globalProbeDetectionEnabled) ...[
+                      Divider(height: 1, color: accentColor(context).withOpacity(0.1)),
+                      
+                      Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Text(
+                                  'Max Requests per Window',
+                                  style: TextStyle(color: textSecondary(context)),
+                                ),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                                  decoration: BoxDecoration(
+                                    color: accentColor(context).withOpacity(0.1),
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  child: Text(
+                                    '${provider.globalProbeMaxRate}',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.w600,
+                                      color: accentColor(context),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 8),
+                            Slider(
+                              value: provider.globalProbeMaxRate.toDouble(),
+                              min: 1,
+                              max: 100,
+                              divisions: 19,
+                              label: '${provider.globalProbeMaxRate}',
+                              onChanged: (v) => provider.setGlobalProbeMaxRate(v.toInt()),
+                            ),
+                            const SizedBox(height: 16),
+                            
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Text(
+                                  'Detection Window',
+                                  style: TextStyle(color: textSecondary(context)),
+                                ),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                                  decoration: BoxDecoration(
+                                    color: accentColor(context).withOpacity(0.1),
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  child: Text(
+                                    '${provider.globalProbeWindow} min',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.w600,
+                                      color: accentColor(context),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 8),
+                            Slider(
+                              value: provider.globalProbeWindow.toDouble(),
+                              min: 1,
+                              max: 60,
+                              divisions: 11,
+                              label: '${provider.globalProbeWindow} min',
+                              onChanged: (v) => provider.setGlobalProbeWindow(v.toInt()),
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              'Block IPs making more than ${provider.globalProbeMaxRate} requests within ${provider.globalProbeWindow} minutes',
+                              style: TextStyle(
+                                color: textMuted(context),
+                                fontSize: 11,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+
+              const SizedBox(height: 16),
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.blue.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.blue.withOpacity(0.3)),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        const Icon(Icons.info_outline, color: Colors.blue, size: 20),
+                        const SizedBox(width: 8),
+                        Text(
+                          'About Anti-Detection',
+                          style: TextStyle(
+                            fontWeight: FontWeight.w600,
+                            color: textSecondary(context),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
+                      '• Decoy Server: Responds with fake CDN pages to scanning tools\n'
+                      '• Probe Detection: Identifies automated scanning attempts\n'
+                      '• Helps hide the fact that this is a proxy server\n'
+                      '• Lower threshold = more aggressive blocking',
+                      style: TextStyle(
+                        color: textMuted(context),
+                        fontSize: 13,
+                        height: 1.5,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+              const SizedBox(height: 24),
               Container(
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
@@ -290,6 +455,27 @@ class _AdvancedSettingsScreenState extends State<AdvancedSettingsScreen> {
                       _buildInfoRow('Retry Delay', '${provider.retryDelay}s'),
                       const SizedBox(height: 8),
                       _buildInfoRow('Buffer Size', '${provider.bufferSize ~/ 1024} KB'),
+                      const SizedBox(height: 16),
+                      Divider(color: accentColor(context).withOpacity(0.1)),
+                      const SizedBox(height: 16),
+                      Text(
+                        'Anti-Detection',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w600,
+                          fontSize: 13,
+                          color: textSecondary(context),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      _buildInfoRow('Decoy Server', provider.globalDecoyEnabled ? 'Enabled' : 'Disabled'),
+                      const SizedBox(height: 8),
+                      _buildInfoRow('Probe Detection', provider.globalProbeDetectionEnabled ? 'Enabled' : 'Disabled'),
+                      if (provider.globalProbeDetectionEnabled) ...[
+                        const SizedBox(height: 8),
+                        _buildInfoRow('Max Requests', '${provider.globalProbeMaxRate}'),
+                        const SizedBox(height: 8),
+                        _buildInfoRow('Window', '${provider.globalProbeWindow} min'),
+                      ],
                     ],
                   ),
                 ),
@@ -369,7 +555,7 @@ class _AdvancedSettingsScreenState extends State<AdvancedSettingsScreen> {
                     if (port == null || port < 1024 || port > 65535) {
                       ScaffoldMessenger.of(context).showSnackBar(
                         const SnackBar(
-                          content: Text('❌ Invalid port. Must be 1024-65535'),
+                          content: Text('Invalid port. Must be 1024-65535'),
                           backgroundColor: Colors.red,
                         ),
                       );
@@ -386,7 +572,7 @@ class _AdvancedSettingsScreenState extends State<AdvancedSettingsScreen> {
           Container(
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
-              color: Colors.blue.shade50,
+              color: Colors.blue.withOpacity(0.1),
               borderRadius: BorderRadius.circular(8),
             ),
             child: Row(
@@ -395,7 +581,7 @@ class _AdvancedSettingsScreenState extends State<AdvancedSettingsScreen> {
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
-                    'ℹ️  Valid range: 1024-65535 | Avoid: 1080, 8080, 3128',
+                    'Valid range: 1024-65535 | Avoid: 1080, 8080, 3128',
                     style: TextStyle(fontSize: 12, color: Colors.blue.shade900),
                   ),
                 ),
@@ -596,7 +782,7 @@ class _AdvancedSettingsScreenState extends State<AdvancedSettingsScreen> {
                 Navigator.pop(context);
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(
-                    content: Text('✅ Settings reset to defaults'),
+                    content: Text('Settings reset to defaults'),
                     backgroundColor: Colors.green,
                   ),
                 );
