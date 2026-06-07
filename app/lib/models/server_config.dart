@@ -28,6 +28,15 @@ class ServerConfig {
   
   String shapingPattern;
   int maxPadding;
+
+  bool paddingEnabled;
+  String trafficPattern;
+  int batteryThreshold;
+  int hysteresisDelay;
+  bool decoyEnabled;
+  bool probeDetectionEnabled;
+  int probeMaxRate;
+  int probeWindow;
   
   TransportConfig? transport;
   
@@ -64,6 +73,14 @@ class ServerConfig {
     this.dataSaverEnabled = false,
     this.shapingPattern = 'web_browsing',
     this.maxPadding = 1024,
+    this.paddingEnabled = false,
+    this.trafficPattern = 'web',
+    this.batteryThreshold = 20,
+    this.hysteresisDelay = 30,
+    this.decoyEnabled = true,
+    this.probeDetectionEnabled = true,
+    this.probeMaxRate = 10,
+    this.probeWindow = 5,
     this.transport,
     this.ping,
     this.realDelay,
@@ -161,6 +178,15 @@ class ServerConfig {
       if (realDelay != null) 'real_delay': realDelay,
       if (lastTested != null) 'last_tested': lastTested!.toIso8601String(),
       'created_at': createdAt.toIso8601String(),
+      'padding_enabled': paddingEnabled,
+      'max_padding': maxPadding,
+      'traffic_pattern': trafficPattern,
+      'battery_threshold': batteryThreshold,
+      'hysteresis_delay': hysteresisDelay,
+      'decoy_enabled': decoyEnabled,
+      'probe_detection_enabled': probeDetectionEnabled,
+      'probe_max_rate': probeMaxRate,
+      'probe_window': probeWindow,
     };
 
     if (transport != null) {
@@ -266,6 +292,15 @@ class ServerConfig {
       dataSaverEnabled: cover['adaptive']?['data_saver_mode'] ?? false,
       shapingPattern: cover['mode'] ?? json['shaping_pattern'] ?? 'web_browsing',
       maxPadding: json['max_padding'] ?? 1024,
+
+      paddingEnabled: json['padding_enabled'] ?? false,
+      trafficPattern: json['traffic_pattern'] ?? 'web',
+      batteryThreshold: json['battery_threshold'] ?? 20,
+      hysteresisDelay: json['hysteresis_delay'] ?? 30,
+      decoyEnabled: json['decoy_enabled'] ?? true,
+      probeDetectionEnabled: json['probe_detection_enabled'] ?? true,
+      probeMaxRate: json['probe_max_rate'] ?? 10,
+      probeWindow: json['probe_window'] ?? 5,
       
       ping: json['ping'],
       realDelay: json['real_delay'],
@@ -357,6 +392,14 @@ class ServerConfig {
     bool? dataSaverEnabled,
     String? shapingPattern,
     int? maxPadding,
+    bool? paddingEnabled,
+    String? trafficPattern,
+    int? batteryThreshold,
+    int? hysteresisDelay,
+    bool? decoyEnabled,
+    bool? probeDetectionEnabled,
+    int? probeMaxRate,
+    int? probeWindow,
     bool? isActive,
     int? ping,
     int? realDelay,
@@ -388,6 +431,14 @@ class ServerConfig {
       dataSaverEnabled: dataSaverEnabled ?? this.dataSaverEnabled,
       shapingPattern: shapingPattern ?? this.shapingPattern,
       maxPadding: maxPadding ?? this.maxPadding,
+      paddingEnabled: paddingEnabled ?? this.paddingEnabled,
+      trafficPattern: trafficPattern ?? this.trafficPattern,
+      batteryThreshold: batteryThreshold ?? this.batteryThreshold,
+      hysteresisDelay: hysteresisDelay ?? this.hysteresisDelay,
+      decoyEnabled: decoyEnabled ?? this.decoyEnabled,
+      probeDetectionEnabled: probeDetectionEnabled ?? this.probeDetectionEnabled,
+      probeMaxRate: probeMaxRate ?? this.probeMaxRate,
+      probeWindow: probeWindow ?? this.probeWindow,
       ping: ping ?? this.ping,
       realDelay: realDelay ?? this.realDelay,
       lastTested: lastTested ?? this.lastTested,
