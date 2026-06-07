@@ -65,11 +65,11 @@ class AppSettings {
     this.socksPort = _defaultSocksPort,
     this.dialTimeout = _defaultDialTimeout,
     this.handshakeTimeout = _defaultHandshakeTimeout,
-    this.globalSniEnabled = true,
+    this.globalSniEnabled = false,
     this.globalSniMode = 'weighted',
     this.globalSniRotationMinutes = 5,
     List<SNIDomain>? globalSniDomains,
-    this.globalCoverEnabled = true,
+    this.globalCoverEnabled = false,
     this.globalCoverMode = 'balanced',
     this.globalBatteryAware = true,
     this.globalDataSaver = false,
@@ -83,8 +83,8 @@ class AppSettings {
     this.globalFragmentEnabled = false,
     this.globalFragmentMinSize = 64,
     this.globalFragmentMaxSize = 256,
-  })  : globalSniDomains = globalSniDomains ?? _defaultSniDomains(),
-        globalCoverDomains = globalCoverDomains ?? _defaultCoverDomains(),
+  })  : globalSniDomains = globalSniDomains ?? [],
+        globalCoverDomains = globalCoverDomains ?? [],
         globalDnsServers = globalDnsServers ?? ['8.8.8.8:53', '1.1.1.1:53'];
 
   static List<SNIDomain> _defaultSniDomains() => [
@@ -100,23 +100,53 @@ class AppSettings {
         CoverDomain(domain: 'github.com', weight: 15, paths: ['/', '/explore']),
       ];
 
+  factory AppSettings.defaults() {
+    return AppSettings(
+      socksPort: _defaultSocksPort,
+      dialTimeout: _defaultDialTimeout,
+      handshakeTimeout: _defaultHandshakeTimeout,
+      globalSniEnabled: false,
+      globalSniMode: 'weighted',
+      globalSniRotationMinutes: 5,
+      globalSniDomains: [],
+      globalCoverEnabled: false,
+      globalCoverMode: 'balanced',
+      globalBatteryAware: true,
+      globalDataSaver: false,
+      globalCoverDomains: [],
+      globalDnsEnabled: false,
+      globalDnsDomain: 'tunnel.example.com',
+      globalDnsServers: ['8.8.8.8:53', '1.1.1.1:53'],
+      globalDnsSwitchThreshold: 3,
+      globalUtlsEnabled: true,
+      globalUtlsFingerprint: 'chrome_auto',
+      globalFragmentEnabled: false,
+      globalFragmentMinSize: 64,
+      globalFragmentMaxSize: 256,
+    );
+  }
+
   static Future<AppSettings> load() async {
     final prefs = await SharedPreferences.getInstance();
     
-    List<SNIDomain> sniDomains = _defaultSniDomains();
+    List<SNIDomain> sniDomains = [];
     final sniDomainsJson = prefs.getStringList(_keyGlobalSniDomains);
     if (sniDomainsJson != null && sniDomainsJson.isNotEmpty) {
       try {
         sniDomains = sniDomainsJson.map((d) => SNIDomain.fromJson(jsonDecode(d))).toList();
-      } catch (_) {}
+      } catch (_) {
+        sniDomains = [];
+      }
     }
     
-    List<CoverDomain> coverDomains = _defaultCoverDomains();
+    List<CoverDomain> coverDomains = [];
     final coverDomainsJson = prefs.getStringList(_keyGlobalCoverDomains);
     if (coverDomainsJson != null && coverDomainsJson.isNotEmpty) {
       try {
         coverDomains = coverDomainsJson.map((d) => CoverDomain.fromJson(jsonDecode(d))).toList();
-      } catch (_) {}
+      } catch (_) {
+        coverDomains = [];
+      }
     }
     
     List<String> dnsServers = ['8.8.8.8:53', '1.1.1.1:53'];
@@ -129,11 +159,11 @@ class AppSettings {
       socksPort: prefs.getInt(_keySocksPort) ?? _defaultSocksPort,
       dialTimeout: prefs.getInt(_keyDialTimeout) ?? _defaultDialTimeout,
       handshakeTimeout: prefs.getInt(_keyHandshakeTimeout) ?? _defaultHandshakeTimeout,
-      globalSniEnabled: prefs.getBool(_keyGlobalSniEnabled) ?? true,
+      globalSniEnabled: prefs.getBool(_keyGlobalSniEnabled) ?? false,
       globalSniMode: prefs.getString(_keyGlobalSniMode) ?? 'weighted',
       globalSniRotationMinutes: prefs.getInt(_keyGlobalSniRotationMinutes) ?? 5,
       globalSniDomains: sniDomains,
-      globalCoverEnabled: prefs.getBool(_keyGlobalCoverEnabled) ?? true,
+      globalCoverEnabled: prefs.getBool(_keyGlobalCoverEnabled) ?? false,
       globalCoverMode: prefs.getString(_keyGlobalCoverMode) ?? 'balanced',
       globalBatteryAware: prefs.getBool(_keyGlobalBatteryAware) ?? true,
       globalDataSaver: prefs.getBool(_keyGlobalDataSaver) ?? false,
@@ -281,7 +311,7 @@ class AppSettings {
   }
 
   ServerConfig applyToServer(ServerConfig server) {
-    if (server.sniDomains.isEmpty && globalSniEnabled) {
+    if (server.sniDomains.isEmpty && globalSniEnabled && globalSniDomains.isNotEmpty) {
       server = server.copyWith(
         sniEnabled: true,
         sniMode: globalSniMode,
@@ -289,7 +319,7 @@ class AppSettings {
       );
     }
     
-    if (server.coverDomains.isEmpty && globalCoverEnabled) {
+    if (server.coverDomains.isEmpty && globalCoverEnabled && globalCoverDomains.isNotEmpty) {
       server = server.copyWith(
         coverEnabled: true,
         coverDomains: globalCoverDomains,
