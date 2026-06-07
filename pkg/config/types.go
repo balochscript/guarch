@@ -15,6 +15,17 @@ type ServerConfig struct {
 	DNS       *DNSConfig        `json:"dns,omitempty"`
 	UTLS      *UTLSConfig       `json:"utls,omitempty"`
 	Fragment  *FragmentConfig   `json:"fragmentation,omitempty"`
+	
+	PaddingEnabled          bool   `json:"padding_enabled,omitempty"`
+	MaxPadding              int    `json:"max_padding,omitempty"`
+	TrafficPattern          string `json:"traffic_pattern,omitempty"`
+	BatteryThreshold        int    `json:"battery_threshold,omitempty"`
+	HysteresisDelay         int    `json:"hysteresis_delay,omitempty"`
+	DecoyEnabled            bool   `json:"decoy_enabled,omitempty"`
+	ProbeDetectionEnabled   bool   `json:"probe_detection_enabled,omitempty"`
+	ProbeMaxRate            int    `json:"probe_max_rate,omitempty"`
+	ProbeWindow             int    `json:"probe_window,omitempty"`
+	
 	Modes     *ModesConfig      `json:"modes,omitempty"`
 	Metadata  *Metadata         `json:"metadata,omitempty"`
 }
