@@ -67,6 +67,17 @@ class AppProvider extends ChangeNotifier {
   int get globalFragmentMinSize => _appSettings?.globalFragmentMinSize ?? 64;
   int get globalFragmentMaxSize => _appSettings?.globalFragmentMaxSize ?? 256;
 
+  bool get globalPaddingEnabled => _appSettings?.globalPaddingEnabled ?? false;
+  int get globalMaxPadding => _appSettings?.globalMaxPadding ?? 256;
+  String get globalTrafficPattern => _appSettings?.globalTrafficPattern ?? 'web';
+  int get globalBatteryThreshold => _appSettings?.globalBatteryThreshold ?? 20;
+  int get globalHysteresisDelay => _appSettings?.globalHysteresisDelay ?? 30;
+  bool get globalExpertMode => _appSettings?.globalExpertMode ?? false;
+  bool get globalDecoyEnabled => _appSettings?.globalDecoyEnabled ?? true;
+  bool get globalProbeDetectionEnabled => _appSettings?.globalProbeDetectionEnabled ?? true;
+  int get globalProbeMaxRate => _appSettings?.globalProbeMaxRate ?? 10;
+  int get globalProbeWindow => _appSettings?.globalProbeWindow ?? 5;
+
   int get connectionTimeout => _connectionTimeout;
   int get maxRetryAttempts => _maxRetryAttempts;
   int get retryDelay => _retryDelay;
@@ -140,13 +151,13 @@ class AppProvider extends ChangeNotifier {
             _status = VpnStatus.connected;
             _connectTime ??= DateTime.now();
             _startStatsTimer();
-            _addLog('✅ Connected successfully');
+            _addLog('Connected successfully');
             notifyListeners();
           }
           break;
         case 'connecting':
           _status = VpnStatus.connecting;
-          _addLog('🔄 Connecting...');
+          _addLog('Connecting...');
           notifyListeners();
           break;
         case 'disconnected':
@@ -154,12 +165,12 @@ class AppProvider extends ChangeNotifier {
           _stopStatsTimer();
           _connectTime = null;
           _stats = const ConnectionStats();
-          _addLog('⚫ Disconnected');
+          _addLog('Disconnected');
           notifyListeners();
           break;
         case 'error':
           _status = VpnStatus.error;
-          _addLog('❌ Connection error');
+          _addLog('Connection error');
           notifyListeners();
           break;
         default:
@@ -187,7 +198,7 @@ class AppProvider extends ChangeNotifier {
 
     _errorSub = _engine.errorStream.listen((error) {
       FlutterLog.e('Engine', 'Error event: $error');
-      _addLog('⚠️ Error: $error');
+      _addLog('Error: $error');
       
       if (_status == VpnStatus.connecting) {
         _status = VpnStatus.error;
@@ -197,7 +208,7 @@ class AppProvider extends ChangeNotifier {
 
     _sniSub = _engine.sniStream.listen((newSNI) {
       FlutterLog.d('Provider', 'SNI rotated: $newSNI');
-      _addLog('🔄 SNI: $newSNI');
+      _addLog('SNI: $newSNI');
       _stats = _stats.copyWith(
         currentSNI: newSNI,
         sniSwitches: _stats.sniSwitches + 1,
@@ -208,16 +219,16 @@ class AppProvider extends ChangeNotifier {
     _dnsSub = _engine.dnsFallbackStream.listen((enabled) {
       FlutterLog.d('Provider', 'DNS fallback: $enabled');
       if (enabled) {
-        _addLog('⚠️ DNS Fallback Mode Active (Reduced Speed)');
+        _addLog('DNS Fallback Mode Active (Reduced Speed)');
       } else {
-        _addLog('✅ TLS Mode Restored');
+        _addLog('TLS Mode Restored');
       }
       _stats = _stats.copyWith(dnsFallbackUsed: enabled);
       notifyListeners();
     });
 
     if (_servers.isNotEmpty) {
-      _addLog('📡 Auto-pinging ${_servers.length} servers...');
+      _addLog('Auto-pinging ${_servers.length} servers...');
       notifyListeners();
       pingAllServers();
     }
@@ -230,7 +241,7 @@ class AppProvider extends ChangeNotifier {
     await _prefs.setBool('vpn_mode_enabled', _vpnModeEnabled);
     
     final mode = _vpnModeEnabled ? 'VPN' : 'Proxy';
-    _addLog('🔄 Switched to $mode mode');
+    _addLog('Switched to $mode mode');
     
     notifyListeners();
   }
@@ -260,7 +271,7 @@ class AppProvider extends ChangeNotifier {
   void addServer(ServerConfig server) {
     _servers.add(server);
     _saveServers();
-    _addLog('➕ Server added: ${server.name} (${server.fullAddress})');
+    _addLog('Server added: ${server.name} (${server.fullAddress})');
     notifyListeners();
     
     pingServer(server).then((ping) {
@@ -281,7 +292,7 @@ class AppProvider extends ChangeNotifier {
     if (index >= 0) {
       _servers[index] = server;
       _saveServers();
-      _addLog('✏️ Server updated: ${server.name}');
+      _addLog('Server updated: ${server.name}');
       notifyListeners();
     }
   }
@@ -297,7 +308,7 @@ class AppProvider extends ChangeNotifier {
       }
       
       _saveServers();
-      _addLog('🗑️ Server removed: $name');
+      _addLog('Server removed: $name');
     } catch (e) {
       FlutterLog.e('Provider', 'removeServer FAILED', e);
     }
@@ -307,7 +318,7 @@ class AppProvider extends ChangeNotifier {
   void setActiveServer(String id) {
     _activeServerId = id;
     _prefs.setString('active_server', id);
-    _addLog('⭐ Active: ${activeServer?.name}');
+    _addLog('Active: ${activeServer?.name}');
     notifyListeners();
   }
 
@@ -316,7 +327,7 @@ class AppProvider extends ChangeNotifier {
 
     if (activeServer == null) {
       FlutterLog.w('Provider', '  No active server');
-      _addLog('❌ No server selected');
+      _addLog('No server selected');
       notifyListeners();
       return;
     }
@@ -336,7 +347,7 @@ class AppProvider extends ChangeNotifier {
     FlutterLog.d('Provider', '  Mode: $mode, ${server.protocol} → ${server.fullAddress}');
 
     if (server.psk.isEmpty) {
-      _addLog('❌ Error: PSK is required');
+      _addLog('Error: PSK is required');
       _status = VpnStatus.error;
       notifyListeners();
       await Future.delayed(const Duration(seconds: 2));
@@ -346,27 +357,47 @@ class AppProvider extends ChangeNotifier {
     }
 
     _status = VpnStatus.connecting;
-    _addLog('🏹 Connecting to ${server.name} ($mode mode)...');
-    _addLog('📡 Protocol: ${server.protocolLabel}');
+    _addLog('Connecting to ${server.name} ($mode mode)...');
+    _addLog('Protocol: ${server.protocolLabel}');
     
     if (!_vpnModeEnabled) {
-      _addLog('🔌 Proxy Mode: SOCKS5 on 127.0.0.1:7070');
+      _addLog('Proxy Mode: SOCKS5 on 127.0.0.1:7070');
     }
     
     if (_debugModeEnabled) {
-      _addLog('🐛 Debug: Engine timeout=${_connectionTimeout}s, Retries=$_maxRetryAttempts');
+      _addLog('Debug: Engine timeout=${_connectionTimeout}s, Retries=$_maxRetryAttempts');
     }
     
     if (server.sniEnabled) {
-      _addLog('🔄 SNI rotation: ${server.sniMode} (${server.sniDomains.length} domains)');
+      _addLog('SNI rotation: ${server.sniMode} (${server.sniDomains.length} domains)');
     }
     
     if (server.coverEnabled) {
-      _addLog('🎭 Cover traffic: enabled (${server.coverDomains.length} domains)');
+      _addLog('Cover traffic: enabled (${server.coverDomains.length} domains)');
+    }
+
+    if (server.paddingEnabled) {
+      _addLog('Packet padding: enabled (max ${server.maxPadding} bytes)');
+    }
+
+    if (server.trafficPattern != 'web') {
+      _addLog('Traffic pattern: ${server.trafficPattern}');
+    }
+
+    if (server.batteryThreshold != 20) {
+      _addLog('Battery threshold: ${server.batteryThreshold}%');
+    }
+
+    if (server.decoyEnabled) {
+      _addLog('Decoy server: enabled');
+    }
+
+    if (server.probeDetectionEnabled) {
+      _addLog('Probe detection: enabled (${server.probeMaxRate} req/${server.probeWindow}min)');
     }
     
     if (server.dnsFallbackEnabled) {
-      _addLog('🔌 DNS fallback: enabled (${server.dnsFallbackMode})');
+      _addLog('DNS fallback: enabled (${server.dnsFallbackMode})');
     }
     
     notifyListeners();
@@ -381,7 +412,7 @@ class AppProvider extends ChangeNotifier {
         Duration(seconds: _connectionTimeout),
         onTimeout: () {
           FlutterLog.w('Provider', '  Connect timeout');
-          _addLog('⏱️ Connection timeout (${_connectionTimeout}s)');
+          _addLog('Connection timeout (${_connectionTimeout}s)');
           return false;
         },
       );
@@ -392,18 +423,18 @@ class AppProvider extends ChangeNotifier {
         _status = VpnStatus.connected;
         _connectTime = DateTime.now();
         _startStatsTimer();
-        _addLog('✅ Connected successfully!');
+        _addLog('Connected successfully!');
       } else {
         _status = VpnStatus.error;
-        _addLog('❌ Connection failed');
+        _addLog('Connection failed');
         
         if (!_engine.isNativeAvailable) {
-          _addLog('⚠️ Native engine not available');
+          _addLog('Native engine not available');
         }
       }
     } catch (e) {
       FlutterLog.e('Provider', '  Connect FAILED', e);
-      _addLog('❌ Error: $e');
+      _addLog('Error: $e');
       _status = VpnStatus.error;
     }
 
@@ -418,7 +449,7 @@ class AppProvider extends ChangeNotifier {
     }
 
     _status = VpnStatus.disconnecting;
-    _addLog('🔌 Disconnecting...');
+    _addLog('Disconnecting...');
     notifyListeners();
 
     try {
@@ -434,12 +465,12 @@ class AppProvider extends ChangeNotifier {
     _stats = const ConnectionStats();
     _connectTime = null;
     _stopStatsTimer();
-    _addLog('✅ Disconnected');
+    _addLog('Disconnected');
     notifyListeners();
   }
 
   void toggleConnection() {
-    FlutterLog.d('Provider', '>>> toggleConnection (${_status.name})');
+    FlutterLog.d('Provider', 'toggleConnection (${_status.name})');
     
     if (_status == VpnStatus.connected) {
       disconnect();
@@ -456,7 +487,7 @@ class AppProvider extends ChangeNotifier {
       await _engine.setBatteryLevel(level);
       
       if (activeServer?.batteryAwareEnabled == true && level < 30) {
-        _addLog('🔋 Low battery - reducing cover traffic');
+        _addLog('Low battery - reducing cover traffic');
       }
     }
     
@@ -469,7 +500,7 @@ class AppProvider extends ChangeNotifier {
     
     if (_status == VpnStatus.connected) {
       await _engine.setDataSaverMode(_dataSaverEnabled);
-      _addLog('💾 Data saver: ${_dataSaverEnabled ? "ON" : "OFF"}');
+      _addLog('Data saver: ${_dataSaverEnabled ? "ON" : "OFF"}');
     }
     
     notifyListeners();
@@ -478,49 +509,49 @@ class AppProvider extends ChangeNotifier {
   Future<void> toggleDebugMode() async {
     _debugModeEnabled = !_debugModeEnabled;
     await _prefs.setBool('debug_mode', _debugModeEnabled);
-    _addLog('🐛 Debug mode: ${_debugModeEnabled ? "ON" : "OFF"}');
+    _addLog('Debug mode: ${_debugModeEnabled ? "ON" : "OFF"}');
     notifyListeners();
   }
 
   Future<void> setConnectionTimeout(int seconds) async {
     _connectionTimeout = seconds.clamp(5, 60);
     await _prefs.setInt('connection_timeout', _connectionTimeout);
-    _addLog('⏱️ Connection timeout: ${_connectionTimeout}s');
+    _addLog('Connection timeout: ${_connectionTimeout}s');
     notifyListeners();
   }
 
   Future<void> setMaxRetryAttempts(int attempts) async {
     _maxRetryAttempts = attempts.clamp(1, 10);
     await _prefs.setInt('max_retry_attempts', _maxRetryAttempts);
-    _addLog('🔄 Max retries: $_maxRetryAttempts');
+    _addLog('Max retries: $_maxRetryAttempts');
     notifyListeners();
   }
 
   Future<void> setRetryDelay(int seconds) async {
     _retryDelay = seconds.clamp(1, 30);
     await _prefs.setInt('retry_delay', _retryDelay);
-    _addLog('⏱️ Retry delay: ${_retryDelay}s');
+    _addLog('Retry delay: ${_retryDelay}s');
     notifyListeners();
   }
 
   Future<void> setHandshakeTimeout(int seconds) async {
     _handshakeTimeout = seconds.clamp(10, 120);
     await _prefs.setInt('handshake_timeout', _handshakeTimeout);
-    _addLog('🤝 Handshake timeout: ${_handshakeTimeout}s');
+    _addLog('Handshake timeout: ${_handshakeTimeout}s');
     notifyListeners();
   }
 
   Future<void> setKeepAliveInterval(int seconds) async {
     _keepAliveInterval = seconds.clamp(10, 300);
     await _prefs.setInt('keep_alive_interval', _keepAliveInterval);
-    _addLog('💓 Keep-alive interval: ${_keepAliveInterval}s');
+    _addLog('Keep-alive interval: ${_keepAliveInterval}s');
     notifyListeners();
   }
 
   Future<void> setBufferSize(int bytes) async {
     _bufferSize = [16384, 32768, 65536, 131072].contains(bytes) ? bytes : 32768;
     await _prefs.setInt('buffer_size', _bufferSize);
-    _addLog('📦 Buffer size: ${_bufferSize ~/ 1024} KB');
+    _addLog('Buffer size: ${_bufferSize ~/ 1024} KB');
     notifyListeners();
   }
 
@@ -531,7 +562,7 @@ class AppProvider extends ChangeNotifier {
       globalSniEnabled: !_appSettings!.globalSniEnabled,
     );
     await _appSettings!.save();
-    _addLog('🛡️ Global SNI: ${_appSettings!.globalSniEnabled ? "ON" : "OFF"}');
+    _addLog('Global SNI: ${_appSettings!.globalSniEnabled ? "ON" : "OFF"}');
     notifyListeners();
   }
 
@@ -540,7 +571,7 @@ class AppProvider extends ChangeNotifier {
     
     _appSettings = _appSettings!.copyWith(globalSniMode: mode);
     await _appSettings!.save();
-    _addLog('🔄 SNI mode: $mode');
+    _addLog('SNI mode: $mode');
     notifyListeners();
   }
 
@@ -549,7 +580,7 @@ class AppProvider extends ChangeNotifier {
     
     _appSettings = _appSettings!.copyWith(globalSniRotationMinutes: minutes);
     await _appSettings!.save();
-    _addLog('⏱️ SNI rotation: ${minutes}m');
+    _addLog('SNI rotation: ${minutes}m');
     notifyListeners();
   }
 
@@ -558,7 +589,7 @@ class AppProvider extends ChangeNotifier {
     
     _appSettings = _appSettings!.copyWith(globalSniDomains: domains);
     await _appSettings!.save();
-    _addLog('📋 SNI domains updated (${domains.length} domains)');
+    _addLog('SNI domains updated (${domains.length} domains)');
     notifyListeners();
   }
 
@@ -603,7 +634,7 @@ class AppProvider extends ChangeNotifier {
       ],
     );
     await _appSettings!.save();
-    _addLog('↺ SNI reset to defaults');
+    _addLog('SNI reset to defaults');
     notifyListeners();
   }
 
@@ -614,7 +645,7 @@ class AppProvider extends ChangeNotifier {
       globalCoverEnabled: !_appSettings!.globalCoverEnabled,
     );
     await _appSettings!.save();
-    _addLog('🎭 Global Cover: ${_appSettings!.globalCoverEnabled ? "ON" : "OFF"}');
+    _addLog('Global Cover: ${_appSettings!.globalCoverEnabled ? "ON" : "OFF"}');
     notifyListeners();
   }
 
@@ -623,7 +654,7 @@ class AppProvider extends ChangeNotifier {
     
     _appSettings = _appSettings!.copyWith(globalCoverMode: mode);
     await _appSettings!.save();
-    _addLog('🎭 Cover mode: $mode');
+    _addLog('Cover mode: $mode');
     notifyListeners();
   }
 
@@ -634,7 +665,7 @@ class AppProvider extends ChangeNotifier {
       globalBatteryAware: !_appSettings!.globalBatteryAware,
     );
     await _appSettings!.save();
-    _addLog('🔋 Battery aware: ${_appSettings!.globalBatteryAware ? "ON" : "OFF"}');
+    _addLog('Battery aware: ${_appSettings!.globalBatteryAware ? "ON" : "OFF"}');
     notifyListeners();
   }
 
@@ -643,7 +674,7 @@ class AppProvider extends ChangeNotifier {
     
     _appSettings = _appSettings!.copyWith(globalCoverDomains: domains);
     await _appSettings!.save();
-    _addLog('📋 Cover domains updated (${domains.length} domains)');
+    _addLog('Cover domains updated (${domains.length} domains)');
     notifyListeners();
   }
 
@@ -687,7 +718,7 @@ class AppProvider extends ChangeNotifier {
       ],
     );
     await _appSettings!.save();
-    _addLog('↺ Cover reset to defaults');
+    _addLog('Cover reset to defaults');
     notifyListeners();
   }
 
@@ -698,7 +729,7 @@ class AppProvider extends ChangeNotifier {
       globalDnsEnabled: !_appSettings!.globalDnsEnabled,
     );
     await _appSettings!.save();
-    _addLog('🌐 Global DNS: ${_appSettings!.globalDnsEnabled ? "ON" : "OFF"}');
+    _addLog('Global DNS: ${_appSettings!.globalDnsEnabled ? "ON" : "OFF"}');
     notifyListeners();
   }
 
@@ -707,7 +738,7 @@ class AppProvider extends ChangeNotifier {
     
     _appSettings = _appSettings!.copyWith(globalDnsDomain: domain);
     await _appSettings!.save();
-    _addLog('🌐 DNS domain: $domain');
+    _addLog('DNS domain: $domain');
     notifyListeners();
   }
 
@@ -716,7 +747,7 @@ class AppProvider extends ChangeNotifier {
     
     _appSettings = _appSettings!.copyWith(globalDnsServers: servers);
     await _appSettings!.save();
-    _addLog('📋 DNS servers updated (${servers.length} servers)');
+    _addLog('DNS servers updated (${servers.length} servers)');
     notifyListeners();
   }
 
@@ -742,7 +773,7 @@ class AppProvider extends ChangeNotifier {
     
     _appSettings = _appSettings!.copyWith(globalDnsSwitchThreshold: threshold);
     await _appSettings!.save();
-    _addLog('🔄 DNS switch threshold: $threshold');
+    _addLog('DNS switch threshold: $threshold');
     notifyListeners();
   }
 
@@ -755,7 +786,7 @@ class AppProvider extends ChangeNotifier {
       globalDnsSwitchThreshold: 3,
     );
     await _appSettings!.save();
-    _addLog('↺ DNS reset to defaults');
+    _addLog('DNS reset to defaults');
     notifyListeners();
   }
 
@@ -766,7 +797,7 @@ class AppProvider extends ChangeNotifier {
       globalUtlsEnabled: !_appSettings!.globalUtlsEnabled,
     );
     await _appSettings!.save();
-    _addLog('🔐 Global UTLS: ${_appSettings!.globalUtlsEnabled ? "ON" : "OFF"}');
+    _addLog('Global UTLS: ${_appSettings!.globalUtlsEnabled ? "ON" : "OFF"}');
     notifyListeners();
   }
 
@@ -775,7 +806,7 @@ class AppProvider extends ChangeNotifier {
     
     _appSettings = _appSettings!.copyWith(globalUtlsFingerprint: fingerprint);
     await _appSettings!.save();
-    _addLog('🔐 UTLS fingerprint: $fingerprint');
+    _addLog('UTLS fingerprint: $fingerprint');
     notifyListeners();
   }
 
@@ -786,7 +817,7 @@ class AppProvider extends ChangeNotifier {
       globalFragmentEnabled: !_appSettings!.globalFragmentEnabled,
     );
     await _appSettings!.save();
-    _addLog('✂️ Global Fragment: ${_appSettings!.globalFragmentEnabled ? "ON" : "OFF"}');
+    _addLog('Global Fragment: ${_appSettings!.globalFragmentEnabled ? "ON" : "OFF"}');
     notifyListeners();
   }
 
@@ -798,7 +829,7 @@ class AppProvider extends ChangeNotifier {
       globalFragmentMaxSize: maxSize,
     );
     await _appSettings!.save();
-    _addLog('✂️ Fragment sizes: $minSize-$maxSize bytes');
+    _addLog('Fragment sizes: $minSize-$maxSize bytes');
     notifyListeners();
   }
 
@@ -813,12 +844,100 @@ class AppProvider extends ChangeNotifier {
       globalFragmentMaxSize: 256,
     );
     await _appSettings!.save();
-    _addLog('↺ Security reset to defaults');
+    _addLog('Security reset to defaults');
+    notifyListeners();
+  }
+
+  Future<void> toggleGlobalPadding() async {
+    if (_appSettings == null) return;
+    _appSettings = _appSettings!.copyWith(
+      globalPaddingEnabled: !_appSettings!.globalPaddingEnabled,
+    );
+    await _appSettings!.save();
+    _addLog('Packet Padding: ${_appSettings!.globalPaddingEnabled ? "ON" : "OFF"}');
+    notifyListeners();
+  }
+
+  Future<void> setGlobalMaxPadding(int value) async {
+    if (_appSettings == null) return;
+    _appSettings = _appSettings!.copyWith(globalMaxPadding: value);
+    await _appSettings!.save();
+    _addLog('Max padding set to $value bytes');
+    notifyListeners();
+  }
+
+  Future<void> setGlobalTrafficPattern(String pattern) async {
+    if (_appSettings == null) return;
+    _appSettings = _appSettings!.copyWith(globalTrafficPattern: pattern);
+    await _appSettings!.save();
+    _addLog('Traffic pattern changed to $pattern');
+    notifyListeners();
+  }
+
+  Future<void> setGlobalBatteryThreshold(int value) async {
+    if (_appSettings == null) return;
+    _appSettings = _appSettings!.copyWith(globalBatteryThreshold: value);
+    await _appSettings!.save();
+    _addLog('Battery threshold set to $value%');
+    notifyListeners();
+  }
+
+  Future<void> setGlobalHysteresisDelay(int value) async {
+    if (_appSettings == null) return;
+    _appSettings = _appSettings!.copyWith(globalHysteresisDelay: value);
+    await _appSettings!.save();
+    _addLog('Hysteresis delay set to ${value}s');
+    notifyListeners();
+  }
+
+  Future<void> toggleGlobalExpertMode() async {
+    if (_appSettings == null) return;
+    _appSettings = _appSettings!.copyWith(
+      globalExpertMode: !_appSettings!.globalExpertMode,
+    );
+    await _appSettings!.save();
+    _addLog('Expert mode: ${_appSettings!.globalExpertMode ? "ON" : "OFF"}');
+    notifyListeners();
+  }
+
+  Future<void> toggleGlobalDecoy() async {
+    if (_appSettings == null) return;
+    _appSettings = _appSettings!.copyWith(
+      globalDecoyEnabled: !_appSettings!.globalDecoyEnabled,
+    );
+    await _appSettings!.save();
+    _addLog('Decoy server: ${_appSettings!.globalDecoyEnabled ? "ON" : "OFF"}');
+    notifyListeners();
+  }
+
+  Future<void> toggleGlobalProbeDetection() async {
+    if (_appSettings == null) return;
+    _appSettings = _appSettings!.copyWith(
+      globalProbeDetectionEnabled: !_appSettings!.globalProbeDetectionEnabled,
+    );
+    await _appSettings!.save();
+    _addLog('Probe detection: ${_appSettings!.globalProbeDetectionEnabled ? "ON" : "OFF"}');
+    notifyListeners();
+  }
+
+  Future<void> setGlobalProbeMaxRate(int value) async {
+    if (_appSettings == null) return;
+    _appSettings = _appSettings!.copyWith(globalProbeMaxRate: value);
+    await _appSettings!.save();
+    _addLog('Probe max rate set to $value');
+    notifyListeners();
+  }
+
+  Future<void> setGlobalProbeWindow(int value) async {
+    if (_appSettings == null) return;
+    _appSettings = _appSettings!.copyWith(globalProbeWindow: value);
+    await _appSettings!.save();
+    _addLog('Probe window set to $value min');
     notifyListeners();
   }
 
   Future<int> pingServer(ServerConfig server) async {
-    _addLog('📡 TCP Ping: ${server.name}...');
+    _addLog('TCP Ping: ${server.name}...');
     notifyListeners();
     
     final ping = await _engine.ping(server.address, server.port);
@@ -826,7 +945,7 @@ class AppProvider extends ChangeNotifier {
     if (ping > 0) {
       _addLog('${server.pingEmoji} ${server.name}: ${ping}ms (TCP)');
     } else {
-      _addLog('🔴 ${server.name}: unreachable');
+      _addLog('${server.name}: unreachable');
     }
     
     notifyListeners();
@@ -834,7 +953,7 @@ class AppProvider extends ChangeNotifier {
   }
 
   Future<int> testRealDelay(ServerConfig server) async {
-    _addLog('⏱️ Real Delay Test: ${server.name}...');
+    _addLog('Real Delay Test: ${server.name}...');
     notifyListeners();
     
     final delay = await _engine.testRealDelay(server);
@@ -842,7 +961,7 @@ class AppProvider extends ChangeNotifier {
     if (delay > 0) {
       _addLog('${server.realDelayEmoji} ${server.name}: ${delay}ms (real)');
     } else {
-      _addLog('🔴 ${server.name}: handshake failed');
+      _addLog('${server.name}: handshake failed');
     }
     
     notifyListeners();
@@ -851,7 +970,7 @@ class AppProvider extends ChangeNotifier {
 
   Future<void> pingAllServers({bool includeRealDelay = false}) async {
     final testType = includeRealDelay ? 'TCP + Real Delay' : 'TCP Ping';
-    _addLog('📡 Testing ${_servers.length} servers ($testType)...');
+    _addLog('Testing ${_servers.length} servers ($testType)...');
     notifyListeners();
     
     for (var i = 0; i < _servers.length; i++) {
@@ -875,12 +994,12 @@ class AppProvider extends ChangeNotifier {
     }
     
     _saveServers();
-    _addLog('✅ Test complete! (${_servers.where((s) => (s.ping ?? 0) > 0).length}/${_servers.length} reachable)');
+    _addLog('Test complete! (${_servers.where((s) => (s.ping ?? 0) > 0).length}/${_servers.length} reachable)');
     notifyListeners();
   }
 
   Future<void> testServer(ServerConfig server) async {
-    _addLog('🔍 Full test: ${server.name}...');
+    _addLog('Full test: ${server.name}...');
     notifyListeners();
     
     final ping = await pingServer(server);
@@ -902,9 +1021,9 @@ class AppProvider extends ChangeNotifier {
     }
     
     if (ping > 0 && realDelay != null && realDelay > 0) {
-      _addLog('✅ ${server.name}: TCP=${ping}ms, Real=${realDelay}ms');
+      _addLog('${server.name}: TCP=${ping}ms, Real=${realDelay}ms');
     } else {
-      _addLog('❌ ${server.name}: Test failed');
+      _addLog('${server.name}: Test failed');
     }
   }
 
@@ -925,15 +1044,15 @@ class AppProvider extends ChangeNotifier {
       }
       
       if (server.address.isEmpty) {
-        _addLog('❌ Import failed: empty address');
+        _addLog('Import failed: empty address');
         notifyListeners();
         return;
       }
       
       addServer(server);
-      _addLog('✅ Imported: ${server.name}');
+      _addLog('Imported: ${server.name}');
     } catch (e) {
-      _addLog('❌ Import failed: $e');
+      _addLog('Import failed: $e');
       FlutterLog.e('Provider', 'Import failed', e);
       notifyListeners();
     }
@@ -979,7 +1098,7 @@ class AppProvider extends ChangeNotifier {
 
   void clearLogs() {
     _logs.clear();
-    _addLog('🗑️ Logs cleared');
+    _addLog('Logs cleared');
     notifyListeners();
   }
 
