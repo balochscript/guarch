@@ -1,4 +1,3 @@
-
 package cover
 
 import (
@@ -131,12 +130,6 @@ func ApplyModeToConfig(cfg *Config, mode Mode) error {
 	}
 	
 	return nil
-}
-
-type ModeConfig struct {
-	MaxPadding       int
-	BatteryThreshold int
-	HysteresisDelay  time.Duration
 }
 
 func GetModeConfigForAdaptive(mode Mode) *ModeConfig {
