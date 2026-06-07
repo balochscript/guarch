@@ -46,7 +46,6 @@ class ConnectionStats {
   final Duration duration;
   final int coverRequests;
   
-  // Enhanced stats (v1.0.1)
   final String currentSNI;
   final int sniSwitches;
   final String activityLevel;
@@ -69,7 +68,6 @@ class ConnectionStats {
     this.totalConnections = 0,
   });
 
-  // Formatting methods
   String get uploadSpeedText => _formatSpeed(uploadSpeed);
   String get downloadSpeedText => _formatSpeed(downloadSpeed);
   String get totalUploadText => _formatBytes(totalUpload);
