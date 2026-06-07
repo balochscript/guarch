@@ -1,3 +1,4 @@
+
 package cover
 
 import (
@@ -5,10 +6,6 @@ import (
 	"log"
 	"time"
 )
-
-// ═══════════════════════════════════════════════════════════
-// Mode Types
-// ═══════════════════════════════════════════════════════════
 
 type Mode int
 
@@ -31,7 +28,6 @@ func (m Mode) String() string {
 	}
 }
 
-// ParseMode تبدیل string به Mode
 func ParseMode(s string) Mode {
 	switch s {
 	case "stealth":
@@ -42,17 +38,12 @@ func ParseMode(s string) Mode {
 		return ModeFast
 	default:
 		if s != "" {
-			log.Printf("[mode] ⚠️  unknown mode %q, using 'balanced'", s)
+			log.Printf("[mode] unknown mode %q, using 'balanced'", s)
 		}
 		return ModeBalanced
 	}
 }
 
-// ═══════════════════════════════════════════════════════════
-// ModeConfig - تنظیمات هر mode
-// ═══════════════════════════════════════════════════════════
-
-// ModeSettings تنظیمات یک mode
 type ModeSettings struct {
 	Mode             Mode
 	CoverEnabled     bool
@@ -65,7 +56,6 @@ type ModeSettings struct {
 	IdleInterval     time.Duration
 }
 
-// GetModeSettings دریافت تنظیمات یک mode
 func GetModeSettings(mode Mode) *ModeSettings {
 	switch mode {
 	case ModeStealth:
@@ -110,11 +100,6 @@ func GetModeSettings(mode Mode) *ModeSettings {
 	}
 }
 
-// ═══════════════════════════════════════════════════════════
-// ApplyModeToConfig - اعمال mode به config موجود
-// ═══════════════════════════════════════════════════════════
-
-// ApplyModeToConfig اعمال mode به یک config موجود
 func ApplyModeToConfig(cfg *Config, mode Mode) error {
 	if cfg == nil {
 		return fmt.Errorf("nil config")
@@ -122,13 +107,11 @@ func ApplyModeToConfig(cfg *Config, mode Mode) error {
 	
 	settings := GetModeSettings(mode)
 	
-	// اگه mode=fast، cover رو غیرفعال کن
 	if mode == ModeFast {
 		cfg.Enabled = false
 		return nil
 	}
 	
-	// اگه domain نداریم، خطا بده
 	if len(cfg.Domains) == 0 {
 		return fmt.Errorf("no domains in config")
 	}
@@ -136,12 +119,10 @@ func ApplyModeToConfig(cfg *Config, mode Mode) error {
 	cfg.Enabled = settings.CoverEnabled
 	cfg.IdleTraffic = settings.IdleTraffic
 	
-	// محدود کردن تعداد domain های فعال
 	if settings.CoverDomainCount < len(cfg.Domains) {
 		cfg.Domains = cfg.Domains[:settings.CoverDomainCount]
 	}
 	
-	// تنظیم intervals برای balanced mode
 	if mode == ModeBalanced {
 		for i := range cfg.Domains {
 			cfg.Domains[i].MinInterval = cfg.Domains[i].MinInterval * 2
@@ -152,32 +133,46 @@ func ApplyModeToConfig(cfg *Config, mode Mode) error {
 	return nil
 }
 
-// ═══════════════════════════════════════════════════════════
-// ModeConfig for Adaptive/Shaping
-// ═══════════════════════════════════════════════════════════
+type ModeConfig struct {
+	MaxPadding       int
+	BatteryThreshold int
+	HysteresisDelay  time.Duration
+}
 
-// ← حذف شد: type ModeConfig struct (چون در config.go تعریف شده)
-
-// GetModeConfigForAdaptive دریافت ModeConfig برای adaptive
 func GetModeConfigForAdaptive(mode Mode) *ModeConfig {
 	settings := GetModeSettings(mode)
 	return &ModeConfig{
-		MaxPadding: settings.MaxPadding,
+		MaxPadding:       settings.MaxPadding,
+		BatteryThreshold: 20,
+		HysteresisDelay:  30 * time.Second,
 	}
 }
 
-// GetModeConfig همان GetModeConfigForAdaptive (برای backward compatibility)
-// این تابع در zhip-server/main.go استفاده میشه
 func GetModeConfig(mode Mode) *ModeConfig {
 	return GetModeConfigForAdaptive(mode)
 }
 
-// ═══════════════════════════════════════════════════════════
-// ConfigForMode - ساخت Config کامل از روی mode
-// ═══════════════════════════════════════════════════════════
+func ModeConfigFromSettings(maxPadding, batteryThreshold, hysteresisDelay int) *ModeConfig {
+	delay := time.Duration(hysteresisDelay) * time.Second
+	if delay == 0 {
+		delay = 30 * time.Second
+	}
 
-// ConfigForMode ساخت Config کامل برای یک mode (با domain های پیش‌فرض)
-// این تابع در zhip-server/main.go استفاده میشه
+	if maxPadding == 0 {
+		maxPadding = 256
+	}
+
+	if batteryThreshold == 0 {
+		batteryThreshold = 20
+	}
+
+	return &ModeConfig{
+		MaxPadding:       maxPadding,
+		BatteryThreshold: batteryThreshold,
+		HysteresisDelay:  delay,
+	}
+}
+
 func ConfigForMode(mode Mode) *Config {
 	settings := GetModeSettings(mode)
 	
@@ -186,18 +181,15 @@ func ConfigForMode(mode Mode) *Config {
 	cfg.IdleTraffic = settings.IdleTraffic
 	cfg.MaxConcurrent = 3
 	
-	// اگه mode=fast، بدون domain برگردون
 	if mode == ModeFast {
 		return cfg
 	}
 	
-	// ساخت domain های پیش‌فرض
 	cfg.Domains = getDefaultDomainsForMode(mode)
 	
 	return cfg
 }
 
-// getDefaultDomainsForMode دریافت لیست domain های پیش‌فرض برای mode
 func getDefaultDomainsForMode(mode Mode) []DomainConfig {
 	switch mode {
 	case ModeStealth:
@@ -272,7 +264,6 @@ func getDefaultDomainsForMode(mode Mode) []DomainConfig {
 		}
 	
 	case ModeFast:
-		// Fast mode بدون cover traffic
 		return []DomainConfig{}
 	
 	default:
