@@ -85,18 +85,151 @@ class CoverSettingsScreen extends StatelessWidget {
                 ),
 
                 const SizedBox(height: 24),
+                _sectionTitle(context, 'Traffic Obfuscation'),
+                Card(
+                  child: Column(
+                    children: [
+                      SwitchListTile(
+                        secondary: Icon(Icons.lock, color: accentColor(context), size: 20),
+                        title: Text(
+                          'Packet Padding',
+                          style: TextStyle(color: textSecondary(context)),
+                        ),
+                        subtitle: Text(
+                          'Add random bytes to hide real packet sizes',
+                          style: TextStyle(color: textMuted(context), fontSize: 12),
+                        ),
+                        value: provider.globalPaddingEnabled,
+                        onChanged: (_) => provider.toggleGlobalPadding(),
+                      ),
+                      
+                      if (provider.globalPaddingEnabled) ...[
+                        Divider(height: 1, color: accentColor(context).withOpacity(0.1)),
+                        Padding(
+                          padding: const EdgeInsets.all(16),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                children: [
+                                  Text(
+                                    'Max Padding Size',
+                                    style: TextStyle(color: textSecondary(context)),
+                                  ),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                                    decoration: BoxDecoration(
+                                      color: accentColor(context).withOpacity(0.1),
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                    child: Text(
+                                      '${provider.globalMaxPadding} bytes',
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.w600,
+                                        color: accentColor(context),
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 8),
+                              Slider(
+                                value: provider.globalMaxPadding.toDouble(),
+                                min: 64,
+                                max: 2048,
+                                divisions: 10,
+                                label: '${provider.globalMaxPadding} bytes',
+                                onChanged: (v) => provider.setGlobalMaxPadding(v.toInt()),
+                              ),
+                              Text(
+                                'Smart padding rounds to web-realistic sizes. Larger = better obfuscation but more bandwidth.',
+                                style: TextStyle(
+                                  color: textMuted(context),
+                                  fontSize: 11,
+                                  height: 1.4,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+
+                const SizedBox(height: 24),
+                _sectionTitle(context, 'Traffic Shaping Pattern'),
+                Card(
+                  child: Column(
+                    children: [
+                      RadioListTile<String>(
+                        title: Row(
+                          children: [
+                            Icon(Icons.public, size: 20, color: Colors.blue),
+                            const SizedBox(width: 12),
+                            Text('Web Browsing', style: TextStyle(color: textSecondary(context))),
+                          ],
+                        ),
+                        subtitle: Text(
+                          'Normal website browsing (default)',
+                          style: TextStyle(color: textMuted(context), fontSize: 12),
+                        ),
+                        value: 'web',
+                        groupValue: provider.globalTrafficPattern,
+                        onChanged: (v) => provider.setGlobalTrafficPattern(v!),
+                      ),
+                      Divider(height: 1, color: accentColor(context).withOpacity(0.1)),
+                      RadioListTile<String>(
+                        title: Row(
+                          children: [
+                            Icon(Icons.video_library, size: 20, color: Colors.red),
+                            const SizedBox(width: 12),
+                            Text('Video Streaming', style: TextStyle(color: textSecondary(context))),
+                          ],
+                        ),
+                        subtitle: Text(
+                          'Simulate YouTube/Netflix traffic',
+                          style: TextStyle(color: textMuted(context), fontSize: 12),
+                        ),
+                        value: 'video',
+                        groupValue: provider.globalTrafficPattern,
+                        onChanged: (v) => provider.setGlobalTrafficPattern(v!),
+                      ),
+                      Divider(height: 1, color: accentColor(context).withOpacity(0.1)),
+                      RadioListTile<String>(
+                        title: Row(
+                          children: [
+                            Icon(Icons.file_download, size: 20, color: Colors.green),
+                            const SizedBox(width: 12),
+                            Text('File Download', style: TextStyle(color: textSecondary(context))),
+                          ],
+                        ),
+                        subtitle: Text(
+                          'Simulate large file download',
+                          style: TextStyle(color: textMuted(context), fontSize: 12),
+                        ),
+                        value: 'download',
+                        groupValue: provider.globalTrafficPattern,
+                        onChanged: (v) => provider.setGlobalTrafficPattern(v!),
+                      ),
+                    ],
+                  ),
+                ),
+
+                const SizedBox(height: 24),
                 _sectionTitle(context, 'Adaptive Settings'),
                 Card(
                   child: Column(
                     children: [
                       SwitchListTile(
-                        secondary: const Text('🔋', style: TextStyle(fontSize: 20)),
+                        secondary: Icon(Icons.battery_charging_full, size: 20, color: Colors.green),
                         title: Text(
                           'Battery Aware',
                           style: TextStyle(color: textSecondary(context)),
                         ),
                         subtitle: Text(
-                          'Reduce cover traffic on low battery (<30%)',
+                          'Reduce cover traffic on low battery',
                           style: TextStyle(color: textMuted(context), fontSize: 12),
                         ),
                         value: provider.globalBatteryAware,
@@ -104,13 +237,13 @@ class CoverSettingsScreen extends StatelessWidget {
                       ),
                       Divider(height: 1, color: accentColor(context).withOpacity(0.1)),
                       ListTile(
-                        leading: const Text('📊', style: TextStyle(fontSize: 20)),
+                        leading: Icon(Icons.bar_chart, size: 20, color: accentColor(context)),
                         title: Text(
                           'Current Battery',
                           style: TextStyle(color: textSecondary(context)),
                         ),
                         subtitle: Text(
-                          '${provider.batteryLevel}% • ${_batteryStatus(provider.batteryLevel)}',
+                          '${provider.batteryLevel}% - ${_batteryStatus(provider.batteryLevel)}',
                           style: TextStyle(color: textMuted(context), fontSize: 12),
                         ),
                         trailing: Text(
@@ -121,7 +254,168 @@ class CoverSettingsScreen extends StatelessWidget {
                           ),
                         ),
                       ),
+                      Divider(height: 1, color: accentColor(context).withOpacity(0.1)),
+                      Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Text(
+                                  'Low Battery Threshold',
+                                  style: TextStyle(
+                                    color: textSecondary(context),
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                                  decoration: BoxDecoration(
+                                    color: accentColor(context).withOpacity(0.1),
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  child: Text(
+                                    '${provider.globalBatteryThreshold}%',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.w600,
+                                      color: accentColor(context),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 8),
+                            Slider(
+                              value: provider.globalBatteryThreshold.toDouble(),
+                              min: 10,
+                              max: 50,
+                              divisions: 8,
+                              label: '${provider.globalBatteryThreshold}%',
+                              onChanged: (v) => provider.setGlobalBatteryThreshold(v.toInt()),
+                            ),
+                            Text(
+                              'Reduce cover traffic when battery drops below this level',
+                              style: TextStyle(
+                                color: textMuted(context),
+                                fontSize: 11,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
                     ],
+                  ),
+                ),
+
+                const SizedBox(height: 24),
+                _sectionTitle(context, 'Activity Monitor'),
+                Card(
+                  child: ListTile(
+                    leading: Icon(
+                      Icons.speed,
+                      color: _getActivityColor(provider.stats.activityLevel),
+                      size: 28,
+                    ),
+                    title: Text(
+                      'Current Activity Level',
+                      style: TextStyle(color: textSecondary(context)),
+                    ),
+                    subtitle: Text(
+                      'Automatically adjusts cover traffic based on usage',
+                      style: TextStyle(color: textMuted(context), fontSize: 12),
+                    ),
+                    trailing: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: _getActivityColor(provider.stats.activityLevel).withOpacity(0.2),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(
+                          color: _getActivityColor(provider.stats.activityLevel),
+                          width: 1,
+                        ),
+                      ),
+                      child: Text(
+                        _getActivityText(provider.stats.activityLevel).toUpperCase(),
+                        style: TextStyle(
+                          fontWeight: FontWeight.w600,
+                          fontSize: 12,
+                          color: _getActivityColor(provider.stats.activityLevel),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+
+                const SizedBox(height: 24),
+                _sectionTitle(context, 'Advanced Settings'),
+                Card(
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'Hysteresis Delay',
+                                    style: TextStyle(
+                                      color: textSecondary(context),
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    'Wait time before changing activity level',
+                                    style: TextStyle(
+                                      color: textMuted(context),
+                                      fontSize: 11,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                              decoration: BoxDecoration(
+                                color: accentColor(context).withOpacity(0.1),
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: Text(
+                                '${provider.globalHysteresisDelay}s',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w600,
+                                  color: accentColor(context),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 12),
+                        Slider(
+                          value: provider.globalHysteresisDelay.toDouble(),
+                          min: 10,
+                          max: 60,
+                          divisions: 10,
+                          label: '${provider.globalHysteresisDelay}s',
+                          onChanged: (v) => provider.setGlobalHysteresisDelay(v.toInt()),
+                        ),
+                        Text(
+                          'Prevents rapid switching between activity levels. Higher = more stable.',
+                          style: TextStyle(
+                            color: textMuted(context),
+                            fontSize: 11,
+                            height: 1.3,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
 
@@ -180,7 +474,7 @@ class CoverSettingsScreen extends StatelessWidget {
                           ),
                         ),
                         subtitle: Text(
-                          'Weight: ${domain.weight} • Paths: ${domain.paths.length}',
+                          'Weight: ${domain.weight} - Paths: ${domain.paths.length}',
                           style: TextStyle(color: textMuted(context), fontSize: 12),
                         ),
                         trailing: Row(
@@ -229,7 +523,9 @@ class CoverSettingsScreen extends StatelessWidget {
                       Text(
                         '• Sends fake HTTP requests to real websites\n'
                         '• Makes your traffic look like normal browsing\n'
-                        '• Harder to detect VPN usage\n'
+                        '• Packet padding hides real packet sizes\n'
+                        '• Traffic pattern simulates different behaviors\n'
+                        '• Activity monitor auto-adjusts cover rate\n'
                         '• Higher modes = more data usage\n'
                         '• Auto mode adjusts based on your activity\n'
                         '• Battery aware reduces traffic on low battery\n'
@@ -272,6 +568,26 @@ class CoverSettingsScreen extends StatelessWidget {
     if (level < 30) return 'Low (cover reduced)';
     if (level < 50) return 'Medium';
     return 'Good';
+  }
+
+  Color _getActivityColor(String level) {
+    switch (level.toLowerCase()) {
+      case 'idle':
+        return Colors.grey;
+      case 'light':
+        return Colors.blue;
+      case 'medium':
+        return Colors.orange;
+      case 'heavy':
+        return Colors.red;
+      default:
+        return Colors.amber;
+    }
+  }
+
+  String _getActivityText(String level) {
+    if (level.isEmpty) return 'Unknown';
+    return level[0].toUpperCase() + level.substring(1).toLowerCase();
   }
 
   void _showAddDomainDialog(BuildContext context, AppProvider provider) {
@@ -496,7 +812,7 @@ class CoverSettingsScreen extends StatelessWidget {
               Navigator.pop(ctx);
               ScaffoldMessenger.of(context).showSnackBar(
                 const SnackBar(
-                  content: Text('✅ Cover reset to defaults'),
+                  content: Text('Cover reset to defaults'),
                   backgroundColor: Colors.green,
                 ),
               );
