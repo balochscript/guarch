@@ -24,6 +24,26 @@ type Connector struct {
 }
 
 func NewConnector(cfg *config.ServerConfig) *Connector {
+	if cfg == nil {
+		panic("NewConnector: config is nil")
+	}
+	
+	if cfg.Transport == nil {
+		cfg.Transport = &config.TransportConfig{
+			Type:             "direct",
+			DialTimeout:      30,
+			HandshakeTimeout: 15,
+			UseTLS:           true,
+		}
+	}
+	
+	if cfg.DNS == nil {
+		cfg.DNS = &config.DNSConfig{
+			Enabled: false,
+			Servers: []string{"8.8.8.8:53", "1.1.1.1:53"},
+		}
+	}
+	
 	return &Connector{
 		config:  cfg,
 		factory: transport.NewFactory(),
@@ -204,7 +224,7 @@ func (c *Connector) getTransportConfig() *transport.Config {
 	}
 
 	var dnsServers []string
-	if len(c.config.DNS.Servers) > 0 {
+	if c.config.DNS != nil && len(c.config.DNS.Servers) > 0 {
 		dnsServers = c.config.DNS.Servers
 	} else {
 		dnsServers = []string{"8.8.8.8:53", "1.1.1.1:53"}
