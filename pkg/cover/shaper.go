@@ -131,6 +131,19 @@ func (s *Shaper) SetPattern(p Pattern) {
 	s.pattern.Store(int32(p))
 }
 
+func (s *Shaper) SetPatternFromString(pattern string) {
+	var p Pattern
+	switch pattern {
+	case "video":
+		p = PatternVideoStream
+	case "download":
+		p = PatternFileDownload
+	default:
+		p = PatternWebBrowsing
+	}
+	s.SetPattern(p)
+}
+
 func randomInt(min, max int) int {
 	if max <= min {
 		return min
