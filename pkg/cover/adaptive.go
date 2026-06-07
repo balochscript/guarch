@@ -55,10 +55,10 @@ type AdaptiveCover struct {
 	pendingSince    time.Time
 	hysteresisDelay time.Duration
 	
-	batteryLevel     int  // ← اضافه کن
-	batteryAware     bool // ← اضافه کن
-	dataSaverMode    bool // ← اضافه کن
-	batteryThreshold int  // ← اضافه کن
+	batteryLevel     int
+	batteryAware     bool
+	dataSaverMode    bool
+	batteryThreshold int
 }
 
 type trafficSample struct {
@@ -69,13 +69,27 @@ type trafficSample struct {
 const maxTrafficSamples = 10000
 
 func NewAdaptiveCover(modeCfg *ModeConfig) *AdaptiveCover {
+	batteryThreshold := modeCfg.BatteryThreshold
+	if batteryThreshold == 0 {
+		batteryThreshold = 20
+	}
+	
+	hysteresisDelay := modeCfg.HysteresisDelay
+	if hysteresisDelay == 0 {
+		hysteresisDelay = 30 * time.Second
+	}
+	
 	ac := &AdaptiveCover{
-		bytesWindow:     make([]trafficSample, 0, 600),
-		windowSize:      1 * time.Minute,
-		maxPaddingCap:   modeCfg.MaxPadding,
-		doneCh:          make(chan struct{}),
-		hysteresisDelay: 30 * time.Second, 
-		pendingLevel:    ActivityIdle,
+		bytesWindow:      make([]trafficSample, 0, 600),
+		windowSize:       1 * time.Minute,
+		maxPaddingCap:    modeCfg.MaxPadding,
+		doneCh:           make(chan struct{}),
+		hysteresisDelay:  hysteresisDelay,
+		pendingLevel:     ActivityIdle,
+		batteryLevel:     100,
+		batteryAware:     false,
+		dataSaverMode:    false,
+		batteryThreshold: batteryThreshold,
 		levels: []LevelConfig{
 			{
 				Level:            ActivityIdle,
@@ -114,10 +128,6 @@ func NewAdaptiveCover(modeCfg *ModeConfig) *AdaptiveCover {
 				CoverMaxInterval: 6 * time.Second,
 			},
 		},
-		batteryLevel:     100, // ← اضافه کن
-		batteryAware:     false, // ← اضافه کن
-		dataSaverMode:    false, // ← اضافه کن
-		batteryThreshold: 20, // ← اضافه کن
 	}
 
 	go ac.updateLoop()
@@ -241,7 +251,6 @@ func (ac *AdaptiveCover) GetCurrentConfig() LevelConfig {
 func (ac *AdaptiveCover) GetMaxPadding() int {
 	maxPad := ac.GetCurrentConfig().MaxPadding
 	
-	// 🔧 CHANGED: کاهش padding در battery-low یا data-saver
 	if ac.shouldReduceActivity() {
 		maxPad /= 2
 	}
@@ -253,7 +262,6 @@ func (ac *AdaptiveCover) GetCoverInterval() (min, max time.Duration) {
 	cfg := ac.GetCurrentConfig()
 	min, max = cfg.CoverMinInterval, cfg.CoverMaxInterval
 	
-	// 🔧 CHANGED: افزایش interval در battery-low یا data-saver
 	if ac.shouldReduceActivity() {
 		min *= 2
 		max *= 2
@@ -265,9 +273,8 @@ func (ac *AdaptiveCover) GetCoverInterval() (min, max time.Duration) {
 func (ac *AdaptiveCover) GetActiveDomains() int {
 	domains := ac.GetCurrentConfig().ActiveDomains
 	
-	// 🔧 CHANGED: کاهش domains در battery-low یا data-saver
 	if ac.shouldReduceActivity() {
-		domains = (domains + 1) / 2 // نصف کردن (با گرد کردن به بالا)
+		domains = (domains + 1) / 2
 		if domains < 1 {
 			domains = 1
 		}
@@ -276,11 +283,6 @@ func (ac *AdaptiveCover) GetActiveDomains() int {
 	return domains
 }
 
-// ═══════════════════════════════════════════════════════════
-// Battery & Data Saver API
-// ═══════════════════════════════════════════════════════════
-
-// SetBatteryLevel تنظیم سطح باتری
 func (ac *AdaptiveCover) SetBatteryLevel(level int) {
 	ac.mu.Lock()
 	defer ac.mu.Unlock()
@@ -288,7 +290,6 @@ func (ac *AdaptiveCover) SetBatteryLevel(level int) {
 	ac.batteryLevel = level
 }
 
-// SetBatteryAware فعال/غیرفعال کردن battery-aware mode
 func (ac *AdaptiveCover) SetBatteryAware(enabled bool) {
 	ac.mu.Lock()
 	defer ac.mu.Unlock()
@@ -296,7 +297,6 @@ func (ac *AdaptiveCover) SetBatteryAware(enabled bool) {
 	ac.batteryAware = enabled
 }
 
-// SetDataSaverMode فعال/غیرفعال کردن data saver
 func (ac *AdaptiveCover) SetDataSaverMode(enabled bool) {
 	ac.mu.Lock()
 	defer ac.mu.Unlock()
@@ -304,10 +304,21 @@ func (ac *AdaptiveCover) SetDataSaverMode(enabled bool) {
 	ac.dataSaverMode = enabled
 }
 
-// shouldReduceActivity چک کردن نیاز به کاهش فعالیت
+func (ac *AdaptiveCover) SetBatteryThreshold(threshold int) {
+	ac.mu.Lock()
+	defer ac.mu.Unlock()
+	ac.batteryThreshold = threshold
+}
+
+func (ac *AdaptiveCover) SetHysteresisDelay(delay time.Duration) {
+	ac.mu.Lock()
+	defer ac.mu.Unlock()
+	ac.hysteresisDelay = delay
+}
+
 func (ac *AdaptiveCover) shouldReduceActivity() bool {
-    ac.mu.RLock()
-    defer ac.mu.RUnlock()
-    isBatteryLow := ac.batteryAware && ac.batteryLevel < ac.batteryThreshold
-    return isBatteryLow || ac.dataSaverMode
+	ac.mu.RLock()
+	defer ac.mu.RUnlock()
+	isBatteryLow := ac.batteryAware && ac.batteryLevel < ac.batteryThreshold
+	return isBatteryLow || ac.dataSaverMode
 }
