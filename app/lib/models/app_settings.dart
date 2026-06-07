@@ -30,6 +30,17 @@ class AppSettings {
   static const String _keyGlobalFragmentMinSize = 'global_fragment_min_size';
   static const String _keyGlobalFragmentMaxSize = 'global_fragment_max_size';
 
+  static const String _keyGlobalPaddingEnabled = 'global_padding_enabled';
+  static const String _keyGlobalMaxPadding = 'global_max_padding';
+  static const String _keyGlobalTrafficPattern = 'global_traffic_pattern';
+  static const String _keyGlobalBatteryThreshold = 'global_battery_threshold';
+  static const String _keyGlobalHysteresisDelay = 'global_hysteresis_delay';
+  static const String _keyGlobalExpertMode = 'global_expert_mode';
+  static const String _keyGlobalDecoyEnabled = 'global_decoy_enabled';
+  static const String _keyGlobalProbeDetectionEnabled = 'global_probe_detection_enabled';
+  static const String _keyGlobalProbeMaxRate = 'global_probe_max_rate';
+  static const String _keyGlobalProbeWindow = 'global_probe_window';
+
   static const int _defaultSocksPort = 7070;
   static const int _defaultDialTimeout = 30;
   static const int _defaultHandshakeTimeout = 15;
@@ -61,6 +72,17 @@ class AppSettings {
   final int globalFragmentMinSize;
   final int globalFragmentMaxSize;
 
+  final bool globalPaddingEnabled;
+  final int globalMaxPadding;
+  final String globalTrafficPattern;
+  final int globalBatteryThreshold;
+  final int globalHysteresisDelay;
+  final bool globalExpertMode;
+  final bool globalDecoyEnabled;
+  final bool globalProbeDetectionEnabled;
+  final int globalProbeMaxRate;
+  final int globalProbeWindow;
+
   AppSettings({
     this.socksPort = _defaultSocksPort,
     this.dialTimeout = _defaultDialTimeout,
@@ -83,6 +105,16 @@ class AppSettings {
     this.globalFragmentEnabled = false,
     this.globalFragmentMinSize = 64,
     this.globalFragmentMaxSize = 256,
+    this.globalPaddingEnabled = false,
+    this.globalMaxPadding = 256,
+    this.globalTrafficPattern = 'web',
+    this.globalBatteryThreshold = 20,
+    this.globalHysteresisDelay = 30,
+    this.globalExpertMode = false,
+    this.globalDecoyEnabled = true,
+    this.globalProbeDetectionEnabled = true,
+    this.globalProbeMaxRate = 10,
+    this.globalProbeWindow = 5,
   })  : globalSniDomains = globalSniDomains ?? [],
         globalCoverDomains = globalCoverDomains ?? [],
         globalDnsServers = globalDnsServers ?? ['8.8.8.8:53', '1.1.1.1:53'];
@@ -123,6 +155,16 @@ class AppSettings {
       globalFragmentEnabled: false,
       globalFragmentMinSize: 64,
       globalFragmentMaxSize: 256,
+      globalPaddingEnabled: false,
+      globalMaxPadding: 256,
+      globalTrafficPattern: 'web',
+      globalBatteryThreshold: 20,
+      globalHysteresisDelay: 30,
+      globalExpertMode: false,
+      globalDecoyEnabled: true,
+      globalProbeDetectionEnabled: true,
+      globalProbeMaxRate: 10,
+      globalProbeWindow: 5,
     );
   }
 
@@ -177,6 +219,16 @@ class AppSettings {
       globalFragmentEnabled: prefs.getBool(_keyGlobalFragmentEnabled) ?? false,
       globalFragmentMinSize: prefs.getInt(_keyGlobalFragmentMinSize) ?? 64,
       globalFragmentMaxSize: prefs.getInt(_keyGlobalFragmentMaxSize) ?? 256,
+      globalPaddingEnabled: prefs.getBool(_keyGlobalPaddingEnabled) ?? false,
+      globalMaxPadding: prefs.getInt(_keyGlobalMaxPadding) ?? 256,
+      globalTrafficPattern: prefs.getString(_keyGlobalTrafficPattern) ?? 'web',
+      globalBatteryThreshold: prefs.getInt(_keyGlobalBatteryThreshold) ?? 20,
+      globalHysteresisDelay: prefs.getInt(_keyGlobalHysteresisDelay) ?? 30,
+      globalExpertMode: prefs.getBool(_keyGlobalExpertMode) ?? false,
+      globalDecoyEnabled: prefs.getBool(_keyGlobalDecoyEnabled) ?? true,
+      globalProbeDetectionEnabled: prefs.getBool(_keyGlobalProbeDetectionEnabled) ?? true,
+      globalProbeMaxRate: prefs.getInt(_keyGlobalProbeMaxRate) ?? 10,
+      globalProbeWindow: prefs.getInt(_keyGlobalProbeWindow) ?? 5,
     );
   }
 
@@ -210,6 +262,17 @@ class AppSettings {
     await prefs.setBool(_keyGlobalFragmentEnabled, globalFragmentEnabled);
     await prefs.setInt(_keyGlobalFragmentMinSize, globalFragmentMinSize);
     await prefs.setInt(_keyGlobalFragmentMaxSize, globalFragmentMaxSize);
+
+    await prefs.setBool(_keyGlobalPaddingEnabled, globalPaddingEnabled);
+    await prefs.setInt(_keyGlobalMaxPadding, globalMaxPadding);
+    await prefs.setString(_keyGlobalTrafficPattern, globalTrafficPattern);
+    await prefs.setInt(_keyGlobalBatteryThreshold, globalBatteryThreshold);
+    await prefs.setInt(_keyGlobalHysteresisDelay, globalHysteresisDelay);
+    await prefs.setBool(_keyGlobalExpertMode, globalExpertMode);
+    await prefs.setBool(_keyGlobalDecoyEnabled, globalDecoyEnabled);
+    await prefs.setBool(_keyGlobalProbeDetectionEnabled, globalProbeDetectionEnabled);
+    await prefs.setInt(_keyGlobalProbeMaxRate, globalProbeMaxRate);
+    await prefs.setInt(_keyGlobalProbeWindow, globalProbeWindow);
   }
 
   static Future<int> getSocksPort() async {
@@ -251,6 +314,9 @@ class AppSettings {
       _keyGlobalDnsEnabled, _keyGlobalDnsDomain, _keyGlobalDnsServers, _keyGlobalDnsSwitchThreshold,
       _keyGlobalUtlsEnabled, _keyGlobalUtlsFingerprint,
       _keyGlobalFragmentEnabled, _keyGlobalFragmentMinSize, _keyGlobalFragmentMaxSize,
+      _keyGlobalPaddingEnabled, _keyGlobalMaxPadding, _keyGlobalTrafficPattern,
+      _keyGlobalBatteryThreshold, _keyGlobalHysteresisDelay, _keyGlobalExpertMode,
+      _keyGlobalDecoyEnabled, _keyGlobalProbeDetectionEnabled, _keyGlobalProbeMaxRate, _keyGlobalProbeWindow,
     ];
     for (var key in keys) {
       await prefs.remove(key);
@@ -284,6 +350,16 @@ class AppSettings {
     bool? globalFragmentEnabled,
     int? globalFragmentMinSize,
     int? globalFragmentMaxSize,
+    bool? globalPaddingEnabled,
+    int? globalMaxPadding,
+    String? globalTrafficPattern,
+    int? globalBatteryThreshold,
+    int? globalHysteresisDelay,
+    bool? globalExpertMode,
+    bool? globalDecoyEnabled,
+    bool? globalProbeDetectionEnabled,
+    int? globalProbeMaxRate,
+    int? globalProbeWindow,
   }) {
     return AppSettings(
       socksPort: socksPort ?? this.socksPort,
@@ -307,6 +383,16 @@ class AppSettings {
       globalFragmentEnabled: globalFragmentEnabled ?? this.globalFragmentEnabled,
       globalFragmentMinSize: globalFragmentMinSize ?? this.globalFragmentMinSize,
       globalFragmentMaxSize: globalFragmentMaxSize ?? this.globalFragmentMaxSize,
+      globalPaddingEnabled: globalPaddingEnabled ?? this.globalPaddingEnabled,
+      globalMaxPadding: globalMaxPadding ?? this.globalMaxPadding,
+      globalTrafficPattern: globalTrafficPattern ?? this.globalTrafficPattern,
+      globalBatteryThreshold: globalBatteryThreshold ?? this.globalBatteryThreshold,
+      globalHysteresisDelay: globalHysteresisDelay ?? this.globalHysteresisDelay,
+      globalExpertMode: globalExpertMode ?? this.globalExpertMode,
+      globalDecoyEnabled: globalDecoyEnabled ?? this.globalDecoyEnabled,
+      globalProbeDetectionEnabled: globalProbeDetectionEnabled ?? this.globalProbeDetectionEnabled,
+      globalProbeMaxRate: globalProbeMaxRate ?? this.globalProbeMaxRate,
+      globalProbeWindow: globalProbeWindow ?? this.globalProbeWindow,
     );
   }
 
@@ -328,6 +414,24 @@ class AppSettings {
         shapingPattern: globalCoverMode,
       );
     }
+
+    if (!server.paddingEnabled && globalPaddingEnabled) {
+      server = server.copyWith(
+        paddingEnabled: true,
+        maxPadding: globalMaxPadding,
+      );
+    }
+
+    if (server.trafficPattern == 'web' && globalTrafficPattern != 'web') {
+      server = server.copyWith(
+        trafficPattern: globalTrafficPattern,
+      );
+    }
+
+    server = server.copyWith(
+      batteryThreshold: globalBatteryThreshold,
+      hysteresisDelay: globalHysteresisDelay,
+    );
     
     if (!server.dnsFallbackEnabled && globalDnsEnabled) {
       server = server.copyWith(
@@ -337,6 +441,13 @@ class AppSettings {
         dnsFallbackSwitchThreshold: globalDnsSwitchThreshold,
       );
     }
+
+    server = server.copyWith(
+      decoyEnabled: globalDecoyEnabled,
+      probeDetectionEnabled: globalProbeDetectionEnabled,
+      probeMaxRate: globalProbeMaxRate,
+      probeWindow: globalProbeWindow,
+    );
     
     return server;
   }
