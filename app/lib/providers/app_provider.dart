@@ -44,12 +44,12 @@ class AppProvider extends ChangeNotifier {
   bool get debugModeEnabled => _debugModeEnabled;
   bool get vpnModeEnabled => _vpnModeEnabled;
   
-  bool get globalSniEnabled => _appSettings?.globalSniEnabled ?? true;
+  bool get globalSniEnabled => _appSettings?.globalSniEnabled ?? false;
   String get globalSniMode => _appSettings?.globalSniMode ?? 'weighted';
   int get globalSniRotationMinutes => _appSettings?.globalSniRotationMinutes ?? 5;
   List<SNIDomain> get globalSniDomains => _appSettings?.globalSniDomains ?? [];
   
-  bool get globalCoverEnabled => _appSettings?.globalCoverEnabled ?? true;
+  bool get globalCoverEnabled => _appSettings?.globalCoverEnabled ?? false;
   String get globalCoverMode => _appSettings?.globalCoverMode ?? 'balanced';
   bool get globalBatteryAware => _appSettings?.globalBatteryAware ?? true;
   bool get globalDataSaver => _appSettings?.globalDataSaver ?? false;
@@ -57,7 +57,7 @@ class AppProvider extends ChangeNotifier {
   
   bool get globalDnsEnabled => _appSettings?.globalDnsEnabled ?? false;
   String get globalDnsDomain => _appSettings?.globalDnsDomain ?? 'tunnel.example.com';
-  List<String> get globalDnsServers => _appSettings?.globalDnsServers ?? [];
+  List<String> get globalDnsServers => _appSettings?.globalDnsServers ?? ['8.8.8.8:53', '1.1.1.1:53'];
   int get globalDnsSwitchThreshold => _appSettings?.globalDnsSwitchThreshold ?? 3;
   
   bool get globalUtlsEnabled => _appSettings?.globalUtlsEnabled ?? true;
@@ -111,7 +111,13 @@ class AppProvider extends ChangeNotifier {
       _keepAliveInterval = _prefs.getInt('keep_alive_interval') ?? 30;
       _bufferSize = _prefs.getInt('buffer_size') ?? 32768;
       
-      _appSettings = await AppSettings.load();
+      try {
+        _appSettings = await AppSettings.load();
+      } catch (e) {
+        FlutterLog.e('Provider', 'Failed to load app settings', e);
+        _appSettings = AppSettings.defaults();
+        await _appSettings!.save();
+      }
       
       _loadServers();
       FlutterLog.d('Provider', 'Prefs loaded. servers=${_servers.length} active=$_activeServerId vpnMode=$_vpnModeEnabled');
