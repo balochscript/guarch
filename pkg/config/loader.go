@@ -150,6 +150,15 @@ func (l *Loader) applyMinimalDefaults(cfg *ServerConfig) {
 		}
 	}
 	
+	if cfg.Server.Protocol == "grouk" && cfg.Grouk != nil {
+		if cfg.Grouk.FECGroupSize < 2 {
+			cfg.Grouk.FECGroupSize = 4
+		}
+		if cfg.Grouk.FECGroupSize > 16 {
+			cfg.Grouk.FECGroupSize = 16
+		}
+	}
+	
 	if cfg.Modes != nil {
 		if cfg.Modes.Stealth.CoverRate == "" {
 			cfg.Modes.Stealth.CoverRate = "high"
