@@ -15,6 +15,7 @@ type ServerConfig struct {
 	DNS       *DNSConfig        `json:"dns,omitempty"`
 	UTLS      *UTLSConfig       `json:"utls,omitempty"`
 	Fragment  *FragmentConfig   `json:"fragmentation,omitempty"`
+	Grouk     *GroukConfig      `json:"grouk,omitempty"`
 	
 	PaddingEnabled          bool   `json:"padding_enabled,omitempty"`
 	MaxPadding              int    `json:"max_padding,omitempty"`
@@ -53,6 +54,11 @@ type TransportConfig struct {
 
 type ExperimentalTransportConfig struct {
 	EnableHTTP2 bool `json:"enable_http2"`
+}
+
+type GroukConfig struct {
+	EnableFEC    bool `json:"enable_fec"`
+	FECGroupSize int  `json:"fec_group_size"`
 }
 
 type SNIConfig struct {
