@@ -14,12 +14,9 @@ import (
 	"time"
 
 	gcrypto "guarch/pkg/crypto"
+	"guarch/pkg/fec"
 	"guarch/pkg/protocol"
 )
-
-// ═══════════════════════════════════════
-// Grouk Constants
-// ═══════════════════════════════════════
 
 const (
 	groukTypeHandshakeInit byte = 0x01
@@ -68,10 +65,6 @@ const (
 	groukInitialCwnd = 16
 	groukMinCwnd     = 4
 )
-
-// ═══════════════════════════════════════
-// IP Rate Limiter (H2)
-// ═══════════════════════════════════════
 
 type ipRateLimiter struct {
 	mu      sync.Mutex
@@ -152,10 +145,6 @@ func (rl *ipRateLimiter) cleanup() {
 	}
 }
 
-// ═══════════════════════════════════════
-// GroukPacket
-// ═══════════════════════════════════════
-
 type GroukPacket struct {
 	SessionID uint32
 	Type      byte
@@ -192,9 +181,15 @@ func UnmarshalGroukPacket(data []byte) (*GroukPacket, error) {
 	}, nil
 }
 
-// ═══════════════════════════════════════
-// GroukSession
-// ═══════════════════════════════════════
+type GroukSessionStats struct {
+	ID           uint32
+	ActiveStreams int
+	FECEnabled   bool
+	FECSent      uint64
+	FECRecv      uint64
+	FECRecovered uint64
+	RecoveryRate float64
+}
 
 type GroukSession struct {
 	ID         uint32
@@ -210,9 +205,19 @@ type GroukSession struct {
 	closeCh    chan struct{}
 	closeOnce  sync.Once
 	sendMu     sync.Mutex
+
+	fecEnabled   bool
+	fecGroupSize int
+	fecEncoder   *fec.FECGroup
+	fecDecoder   *fec.FECDecoder
+	fecMu        sync.Mutex
+
+	fecSent      atomic.Uint64
+	fecRecv      atomic.Uint64
+	fecRecovered atomic.Uint64
 }
 
-func newGroukSession(id uint32, remote *net.UDPAddr, udpConn *net.UDPConn, sendKey, recvKey []byte) (*GroukSession, error) {
+func newGroukSession(id uint32, remote *net.UDPAddr, udpConn *net.UDPConn, sendKey, recvKey []byte, enableFEC bool, fecGroupSize int) (*GroukSession, error) {
 	sendCipher, err := gcrypto.NewAEADCipher(sendKey)
 	if err != nil {
 		return nil, err
@@ -223,14 +228,26 @@ func newGroukSession(id uint32, remote *net.UDPAddr, udpConn *net.UDPConn, sendK
 	}
 
 	s := &GroukSession{
-		ID:         id,
-		RemoteAddr: remote,
-		sendCipher: sendCipher,
-		recvCipher: recvCipher,
-		conn:       udpConn,
-		acceptCh:   make(chan *GroukStream, 32),
-		closeCh:    make(chan struct{}),
+		ID:           id,
+		RemoteAddr:   remote,
+		sendCipher:   sendCipher,
+		recvCipher:   recvCipher,
+		conn:         udpConn,
+		acceptCh:     make(chan *GroukStream, 32),
+		closeCh:      make(chan struct{}),
+		fecEnabled:   enableFEC,
+		fecGroupSize: fecGroupSize,
 	}
+
+	if enableFEC {
+		if fecGroupSize < 2 || fecGroupSize > 16 {
+			fecGroupSize = 4
+		}
+		s.fecEncoder = fec.NewFECGroup(fecGroupSize)
+		s.fecDecoder = fec.NewFECDecoder(fecGroupSize)
+		log.Printf("[grouk] FEC enabled (session %d, group: %d)", id, fecGroupSize)
+	}
+
 	s.lastActive.Store(time.Now().UnixMilli())
 	go s.keepAlive()
 
@@ -248,6 +265,41 @@ func (s *GroukSession) sendPacket(pktType byte, payload []byte) error {
 	}
 	_, err = s.conn.WriteToUDP(data, s.RemoteAddr)
 	return err
+}
+
+func (s *GroukSession) sendPacketWithFEC(pktType byte, payload []byte) error {
+	s.sendMu.Lock()
+	defer s.sendMu.Unlock()
+
+	pkt := &GroukPacket{SessionID: s.ID, Type: pktType, Payload: payload}
+	data, err := marshalGroukPacket(pkt, s.sendCipher)
+	if err != nil {
+		return err
+	}
+
+	if _, err := s.conn.WriteToUDP(data, s.RemoteAddr); err != nil {
+		return err
+	}
+
+	if s.fecEnabled && pktType == groukTypeData {
+		s.fecMu.Lock()
+		if fecData := s.fecEncoder.Add(data); fecData != nil {
+			fecPkt := &GroukPacket{
+				SessionID: s.ID,
+				Type:      groukTypeFEC,
+				Payload:   fecData,
+			}
+
+			fecBytes, err := marshalGroukPacket(fecPkt, s.sendCipher)
+			if err == nil {
+				s.conn.WriteToUDP(fecBytes, s.RemoteAddr)
+				s.fecSent.Add(1)
+			}
+		}
+		s.fecMu.Unlock()
+	}
+
+	return nil
 }
 
 func (s *GroukSession) sendRawPacket(pktType byte, payload []byte) error {
@@ -292,6 +344,44 @@ func (s *GroukSession) handlePacket(pkt *GroukPacket) {
 
 	case groukTypeClose:
 		s.Close()
+
+	case groukTypeFEC:
+		if s.fecEnabled {
+			s.handleFEC(pkt)
+		}
+	}
+}
+
+func (s *GroukSession) handleFEC(pkt *GroukPacket) {
+	plaintext, err := s.recvCipher.Open(pkt.Payload)
+	if err != nil {
+		return
+	}
+
+	s.fecMu.Lock()
+	defer s.fecMu.Unlock()
+
+	s.fecRecv.Add(1)
+	s.fecDecoder.AddFEC(plaintext)
+
+	if s.fecDecoder.CanRecover() {
+		idx, recoveredData := s.fecDecoder.Recover()
+		if recoveredData != nil && idx >= 0 {
+			s.fecRecovered.Add(1)
+
+			log.Printf("[grouk] FEC recovered packet %d (session %d, total: %d)",
+				idx, s.ID, s.fecRecovered.Load())
+
+			recoveredPkt, err := UnmarshalGroukPacket(recoveredData)
+			if err == nil && recoveredPkt.Type == groukTypeData {
+				plainData, err := s.recvCipher.Open(recoveredPkt.Payload)
+				if err == nil {
+					s.handleData(plainData)
+				}
+			}
+		}
+
+		s.fecDecoder.Reset()
 	}
 }
 
@@ -364,6 +454,11 @@ func (s *GroukSession) sendStreamPacket(streamID uint16, cmd byte, seqNum, ackNu
 	if len(payload) > 0 {
 		copy(buf[groukStreamHdrSize:], payload)
 	}
+
+	if cmd == groukStreamData && s.fecEnabled {
+		return s.sendPacketWithFEC(groukTypeData, buf)
+	}
+
 	return s.sendPacket(groukTypeData, buf)
 }
 
@@ -437,9 +532,31 @@ func (s *GroukSession) IsClosed() bool {
 	return s.closed.Load()
 }
 
-// ═══════════════════════════════════════
-// GroukStream
-// ═══════════════════════════════════════
+func (s *GroukSession) Stats() GroukSessionStats {
+	activeStreams := 0
+	s.streams.Range(func(key, val any) bool {
+		activeStreams++
+		return true
+	})
+
+	stats := GroukSessionStats{
+		ID:            s.ID,
+		ActiveStreams: activeStreams,
+		FECEnabled:    s.fecEnabled,
+	}
+
+	if s.fecEnabled {
+		stats.FECSent = s.fecSent.Load()
+		stats.FECRecv = s.fecRecv.Load()
+		stats.FECRecovered = s.fecRecovered.Load()
+
+		if stats.FECRecv > 0 {
+			stats.RecoveryRate = float64(stats.FECRecovered) / float64(stats.FECRecv) * 100.0
+		}
+	}
+
+	return stats
+}
 
 type GroukStream struct {
 	id      uint16
@@ -677,23 +794,31 @@ func (s *GroukStream) ID() uint16 {
 	return s.id
 }
 
-// ═══════════════════════════════════════
-// Grouk Handshake
-// ═══════════════════════════════════════
-
-func GroukServerHandshake(udpConn *net.UDPConn, pkt *GroukPacket, remote *net.UDPAddr, psk []byte) (*GroukSession, []byte, error) {
+func GroukServerHandshake(udpConn *net.UDPConn, pkt *GroukPacket, remote *net.UDPAddr, psk []byte) (*GroukSession, []byte, bool, int, error) {
 	if pkt.Type != groukTypeHandshakeInit {
-		return nil, nil, fmt.Errorf("grouk: expected INIT got %d", pkt.Type)
+		return nil, nil, false, 0, fmt.Errorf("grouk: expected INIT got %d", pkt.Type)
 	}
 	if len(pkt.Payload) < gcrypto.PublicKeySize {
-		return nil, nil, fmt.Errorf("grouk: INIT too short")
+		return nil, nil, false, 0, fmt.Errorf("grouk: INIT too short")
 	}
 
 	clientPub := pkt.Payload[:gcrypto.PublicKeySize]
 
+	enableFEC := false
+	fecGroupSize := 4
+
+	if len(pkt.Payload) >= gcrypto.PublicKeySize+2 {
+		enableFEC = pkt.Payload[gcrypto.PublicKeySize] == 0x01
+		fecGroupSize = int(pkt.Payload[gcrypto.PublicKeySize+1])
+
+		if fecGroupSize < 2 || fecGroupSize > 16 {
+			fecGroupSize = 4
+		}
+	}
+
 	serverKP, err := gcrypto.GenerateKeyPair()
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, false, 0, err
 	}
 
 	sessionID := generateSessionID()
@@ -707,36 +832,52 @@ func GroukServerHandshake(udpConn *net.UDPConn, pkt *GroukPacket, remote *net.UD
 
 	shared, err := serverKP.SharedSecret(clientPub)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, false, 0, err
 	}
 
 	sendKey, err := gcrypto.DeriveKey(shared, psk, []byte("grouk-server-send-v1"))
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, false, 0, err
 	}
 	recvKey, err := gcrypto.DeriveKey(shared, psk, []byte("grouk-client-send-v1"))
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, false, 0, err
 	}
 
-	session, err := newGroukSession(sessionID, remote, udpConn, sendKey, recvKey)
+	session, err := newGroukSession(sessionID, remote, udpConn, sendKey, recvKey, enableFEC, fecGroupSize)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, false, 0, err
 	}
 
-	return session, shared, nil
+	log.Printf("[grouk] session %d: FEC=%v, size=%d", sessionID, enableFEC, fecGroupSize)
+
+	return session, shared, enableFEC, fecGroupSize, nil
 }
 
-func GroukClientHandshake(udpConn *net.UDPConn, serverAddr *net.UDPAddr, psk []byte) (*GroukSession, error) {
+func GroukClientHandshake(udpConn *net.UDPConn, serverAddr *net.UDPAddr, psk []byte, enableFEC bool, fecGroupSize int) (*GroukSession, error) {
 	clientKP, err := gcrypto.GenerateKeyPair()
 	if err != nil {
 		return nil, err
 	}
 
+	initPayload := make([]byte, gcrypto.PublicKeySize+2)
+	copy(initPayload, clientKP.PublicKey[:])
+
+	if enableFEC {
+		initPayload[gcrypto.PublicKeySize] = 0x01
+		if fecGroupSize < 2 || fecGroupSize > 16 {
+			fecGroupSize = 4
+		}
+		initPayload[gcrypto.PublicKeySize+1] = byte(fecGroupSize)
+	} else {
+		initPayload[gcrypto.PublicKeySize] = 0x00
+		initPayload[gcrypto.PublicKeySize+1] = 0
+	}
+
 	initPkt := &GroukPacket{
 		SessionID: 0,
 		Type:      groukTypeHandshakeInit,
-		Payload:   clientKP.PublicKey[:],
+		Payload:   initPayload,
 	}
 	initData, _ := marshalGroukPacket(initPkt, nil)
 
@@ -793,7 +934,7 @@ func GroukClientHandshake(udpConn *net.UDPConn, serverAddr *net.UDPAddr, psk []b
 		return nil, err
 	}
 
-	session, err := newGroukSession(sessionID, serverAddr, udpConn, sendKey, recvKey)
+	session, err := newGroukSession(sessionID, serverAddr, udpConn, sendKey, recvKey, enableFEC, fecGroupSize)
 	if err != nil {
 		return nil, err
 	}
@@ -826,6 +967,7 @@ func GroukClientHandshake(udpConn *net.UDPConn, serverAddr *net.UDPAddr, psk []b
 		}
 
 		udpConn.SetReadDeadline(time.Time{})
+		log.Printf("[grouk] client handshake complete (FEC: %v, group: %d)", enableFEC, fecGroupSize)
 		return session, nil
 	}
 
@@ -863,10 +1005,6 @@ func generateSessionID() uint32 {
 	}
 	return id
 }
-
-// ═══════════════════════════════════════
-// GroukListener
-// ═══════════════════════════════════════
 
 type pendingSession struct {
 	session   *GroukSession
@@ -940,12 +1078,12 @@ func (gl *GroukListener) readLoop() {
 		if pkt.SessionID == 0 && pkt.Type == groukTypeHandshakeInit {
 			remoteIP := remote.IP.String()
 			if !gl.rateLimiter.Allow(remoteIP) {
-				log.Printf("[grouk] ⚠️  rate limited handshake from %s", remoteIP)
+				log.Printf("[grouk] rate limited handshake from %s", remoteIP)
 				continue
 			}
 
 			if int(gl.pendingCount.Load()) >= gl.maxPending {
-				log.Printf("[grouk] ⚠️  too many pending sessions (%d), rejecting %s",
+				log.Printf("[grouk] too many pending sessions (%d), rejecting %s",
 					gl.pendingCount.Load(), remoteIP)
 				continue
 			}
@@ -964,7 +1102,7 @@ func (gl *GroukListener) readLoop() {
 					pending.session.Close()
 					continue
 				}
-				log.Printf("[grouk] authenticated: %s ✅ (session %d)", remote, pkt.SessionID)
+				log.Printf("[grouk] authenticated: %s (session %d)", remote, pkt.SessionID)
 				gl.sessions.Store(pkt.SessionID, pending.session)
 				gl.pendingAuth.Delete(pkt.SessionID)
 				gl.pendingCount.Add(-1)
@@ -984,7 +1122,7 @@ func (gl *GroukListener) readLoop() {
 }
 
 func (gl *GroukListener) handleHandshake(pkt *GroukPacket, remote *net.UDPAddr) {
-	session, shared, err := GroukServerHandshake(gl.conn, pkt, remote, gl.psk)
+	session, shared, enableFEC, fecGroupSize, err := GroukServerHandshake(gl.conn, pkt, remote, gl.psk)
 	if err != nil {
 		log.Printf("[grouk] handshake failed from %s: %v", remote, err)
 		return
@@ -995,8 +1133,14 @@ func (gl *GroukListener) handleHandshake(pkt *GroukPacket, remote *net.UDPAddr) 
 		createdAt: time.Now(),
 	})
 	gl.pendingCount.Add(1)
-	log.Printf("[grouk] session %d created for %s (waiting for auth, pending=%d)",
-		session.ID, remote, gl.pendingCount.Load())
+
+	fecStatus := "disabled"
+	if enableFEC {
+		fecStatus = fmt.Sprintf("enabled (size=%d)", fecGroupSize)
+	}
+
+	log.Printf("[grouk] session %d created for %s (FEC: %s, pending=%d)",
+		session.ID, remote, fecStatus, gl.pendingCount.Load())
 }
 
 func (gl *GroukListener) cleanupPending() {
