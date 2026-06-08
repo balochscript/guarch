@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "server": {
+    "name": "Iran Grouk Balanced",
+    "address": "YOUR_SERVER:8443",
+    "protocol": "grouk",
+    "psk": "REPLACE_WITH_YOUR_PSK"
+  },
+  "grouk": {
+    "enable_fec": true,
+    "fec_group_size": 6
+  },
+  "dns": {
+    "enabled": false
+  },
+  "metadata": {
+    "country": "IR",
+    "isp_hint": "MCI/Irancell",
+    "notes": "Balanced Grouk with moderate FEC",
+    "tags": ["iran", "grouk", "balanced", "fec"]
+  }
+}
