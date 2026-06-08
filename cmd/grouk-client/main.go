@@ -24,6 +24,9 @@ type GroukClient struct {
 	psk        []byte
 	udpConn    *net.UDPConn
 
+	enableFEC    bool
+	fecGroupSize int
+
 	mu             sync.Mutex
 	session        *transport.GroukSession
 	connectBackoff time.Duration
@@ -33,6 +36,8 @@ func main() {
 	listenAddr := flag.String("listen", "127.0.0.1:1080", "SOCKS5 listen address")
 	serverAddr := flag.String("server", "", "grouk server address (required)")
 	psk := flag.String("psk", "", "pre-shared key (required)")
+	enableFEC := flag.Bool("fec", false, "enable FEC (Forward Error Correction)")
+	fecGroup := flag.Int("fec-group", 4, "FEC group size (2-16)")
 	flag.Parse()
 
 	if *serverAddr == "" {
@@ -58,9 +63,11 @@ func main() {
 	udpConn.SetWriteBuffer(4 * 1024 * 1024)
 
 	client := &GroukClient{
-		serverAddr: udpServerAddr,
-		psk:        []byte(*psk),
-		udpConn:    udpConn,
+		serverAddr:   udpServerAddr,
+		psk:          []byte(*psk),
+		udpConn:      udpConn,
+		enableFEC:    *enableFEC,
+		fecGroupSize: *fecGroup,
 	}
 
 	ln, err := net.Listen("tcp", *listenAddr)
@@ -77,8 +84,11 @@ func main() {
 	fmt.Println("")
 	log.Printf("[grouk] 🌩️ client ready on socks5://%s", *listenAddr)
 	log.Printf("[grouk] server: %s (Raw UDP)", *serverAddr)
+	
+	if *enableFEC {
+		log.Printf("[grouk] FEC enabled (group size: %d)", *fecGroup)
+	}
 
-	// ✅ FIX: فقط یک globalReadLoop برای همیشه
 	go client.globalReadLoop()
 
 	go func() {
@@ -106,7 +116,6 @@ func main() {
 	client.close()
 }
 
-// ✅ FIX: یک readLoop مرکزی که همیشه اجرا می‌شود
 func (c *GroukClient) globalReadLoop() {
 	buf := make([]byte, 2048)
 	for {
@@ -156,7 +165,7 @@ func (c *GroukClient) getOrCreateSession() (*transport.GroukSession, error) {
 	}
 
 	log.Println("[grouk] connecting to server...")
-	session, err := transport.GroukClientHandshake(c.udpConn, c.serverAddr, c.psk)
+	session, err := transport.GroukClientHandshake(c.udpConn, c.serverAddr, c.psk, c.enableFEC, c.fecGroupSize)
 	if err != nil {
 		if c.connectBackoff == 0 {
 			c.connectBackoff = 1 * time.Second
@@ -168,9 +177,6 @@ func (c *GroukClient) getOrCreateSession() (*transport.GroukSession, error) {
 		}
 		return nil, fmt.Errorf("grouk handshake: %w", err)
 	}
-
-	// ✅ FIX: دیگر sessionReadLoop اینجا اجرا نمی‌شود
-	// چون globalReadLoop در main اجرا شده است
 
 	c.session = session
 	c.connectBackoff = 0
