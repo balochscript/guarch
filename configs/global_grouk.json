@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "server": {
+    "name": "Global Grouk Server",
+    "address": "YOUR_SERVER:8443",
+    "protocol": "grouk",
+    "psk": "REPLACE_WITH_YOUR_PSK"
+  },
+  "grouk": {
+    "enable_fec": false,
+    "fec_group_size": 4
+  },
+  "dns": {
+    "enabled": false
+  },
+  "metadata": {
+    "country": "Global",
+    "notes": "UDP-based Grouk for low-latency",
+    "tags": ["global", "grouk", "udp", "fast"]
+  }
+}
