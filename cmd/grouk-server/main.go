@@ -24,7 +24,7 @@ import (
 var (
 	decoyServer *antidetect.DecoyServer
 	healthCheck *health.Checker
-	activeWg    sync.WaitGroup // ✅ M28
+	activeWg    sync.WaitGroup
 )
 
 var maxSessions = make(chan struct{}, 500)
@@ -50,7 +50,6 @@ func main() {
 		log.Printf("[grouk] ⚠️  health server failed: %v", err)
 	}
 
-	// ✅ M27: shared cert loading
 	go startTCPDecoy(*addr, *certFile, *keyFile)
 	go startHTTPDecoy(*decoyAddr)
 
@@ -70,6 +69,21 @@ func main() {
 	log.Println("[grouk] ready — fast as lightning 🌩️")
 
 	go func() {
+		ticker := time.NewTicker(30 * time.Second)
+		defer ticker.Stop()
+		for range ticker.C {
+			gl.RangeSessions(func(sessionID uint32, session *transport.GroukSession) bool {
+				stats := session.Stats()
+				if stats.FECEnabled {
+					log.Printf("[grouk] session %d FEC stats: sent=%d recv=%d recovered=%d (%.1f%%)",
+						stats.ID, stats.FECSent, stats.FECRecv, stats.FECRecovered, stats.RecoveryRate)
+				}
+				return true
+			})
+		}
+	}()
+
+	go func() {
 		for {
 			session, err := gl.Accept()
 			if err != nil {
@@ -78,10 +92,10 @@ func main() {
 			}
 			select {
 			case maxSessions <- struct{}{}:
-				activeWg.Add(1) // ✅ M28
+				activeWg.Add(1)
 				go func() {
 					defer func() { <-maxSessions }()
-					defer activeWg.Done() // ✅ M28
+					defer activeWg.Done()
 					handleSession(session)
 				}()
 			default:
@@ -98,7 +112,6 @@ func main() {
 	log.Println("[grouk] shutting down...")
 	gl.Close()
 
-	// ✅ M28: graceful wait
 	done := make(chan struct{})
 	go func() { activeWg.Wait(); close(done) }()
 	cmdutil.GracefulWait("grouk", done, 30*time.Second)
@@ -166,11 +179,10 @@ func relay(stream *transport.GroukStream, conn net.Conn) {
 	<-ch
 	stream.Close()
 	conn.Close()
-	<-ch // ✅ M19
+	<-ch
 }
 
 func startTCPDecoy(addr, certFile, keyFile string) {
-	// ✅ M27: shared cert loading
 	cert, err := cmdutil.LoadOrGenerateCert(certFile, keyFile, "grouk")
 	if err != nil {
 		log.Printf("[grouk] TCP decoy cert error: %v", err)
