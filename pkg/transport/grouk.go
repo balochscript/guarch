@@ -66,6 +66,14 @@ const (
 	groukMinCwnd     = 4
 )
 
+type fecHeader struct {
+	GroupID   uint32
+	Index     byte
+	GroupSize byte
+}
+
+const fecHeaderSize = 6
+
 type ipRateLimiter struct {
 	mu      sync.Mutex
 	counts  map[string][]time.Time
@@ -206,11 +214,14 @@ type GroukSession struct {
 	closeOnce  sync.Once
 	sendMu     sync.Mutex
 
-	fecEnabled   bool
-	fecGroupSize int
-	fecEncoder   *fec.FECGroup
-	fecDecoder   *fec.FECDecoder
-	fecMu        sync.Mutex
+	fecEnabled    bool
+	fecGroupSize  int
+	fecGroupID    atomic.Uint32
+	fecIndex      int
+	fecEncoder    *fec.FECGroup
+	fecDecoder    map[uint32]*fec.FECDecoder
+	fecRecvBuffer map[uint32]map[int][]byte
+	fecMu         sync.Mutex
 
 	fecSent      atomic.Uint64
 	fecRecv      atomic.Uint64
@@ -228,15 +239,17 @@ func newGroukSession(id uint32, remote *net.UDPAddr, udpConn *net.UDPConn, sendK
 	}
 
 	s := &GroukSession{
-		ID:           id,
-		RemoteAddr:   remote,
-		sendCipher:   sendCipher,
-		recvCipher:   recvCipher,
-		conn:         udpConn,
-		acceptCh:     make(chan *GroukStream, 32),
-		closeCh:      make(chan struct{}),
-		fecEnabled:   enableFEC,
-		fecGroupSize: fecGroupSize,
+		ID:            id,
+		RemoteAddr:    remote,
+		sendCipher:    sendCipher,
+		recvCipher:    recvCipher,
+		conn:          udpConn,
+		acceptCh:      make(chan *GroukStream, 32),
+		closeCh:       make(chan struct{}),
+		fecEnabled:    enableFEC,
+		fecGroupSize:  fecGroupSize,
+		fecDecoder:    make(map[uint32]*fec.FECDecoder),
+		fecRecvBuffer: make(map[uint32]map[int][]byte),
 	}
 
 	if enableFEC {
@@ -244,7 +257,6 @@ func newGroukSession(id uint32, remote *net.UDPAddr, udpConn *net.UDPConn, sendK
 			fecGroupSize = 4
 		}
 		s.fecEncoder = fec.NewFECGroup(fecGroupSize)
-		s.fecDecoder = fec.NewFECDecoder(fecGroupSize)
 		log.Printf("[grouk] FEC enabled (session %d, group: %d)", id, fecGroupSize)
 	}
 
@@ -268,8 +280,15 @@ func (s *GroukSession) sendPacket(pktType byte, payload []byte) error {
 }
 
 func (s *GroukSession) sendPacketWithFEC(pktType byte, payload []byte) error {
-	s.sendMu.Lock()
-	defer s.sendMu.Unlock()
+	if !s.fecEnabled || pktType != groukTypeData {
+		return s.sendPacket(pktType, payload)
+	}
+
+	s.fecMu.Lock()
+	defer s.fecMu.Unlock()
+
+	groupID := s.fecGroupID.Load()
+	index := s.fecIndex
 
 	pkt := &GroukPacket{SessionID: s.ID, Type: pktType, Payload: payload}
 	data, err := marshalGroukPacket(pkt, s.sendCipher)
@@ -281,22 +300,23 @@ func (s *GroukSession) sendPacketWithFEC(pktType byte, payload []byte) error {
 		return err
 	}
 
-	if s.fecEnabled && pktType == groukTypeData {
-		s.fecMu.Lock()
-		if fecData := s.fecEncoder.Add(data); fecData != nil {
-			fecPkt := &GroukPacket{
-				SessionID: s.ID,
-				Type:      groukTypeFEC,
-				Payload:   fecData,
-			}
+	fecData := s.fecEncoder.Add(data)
+	s.fecIndex++
 
-			fecBytes, err := marshalGroukPacket(fecPkt, s.sendCipher)
-			if err == nil {
-				s.conn.WriteToUDP(fecBytes, s.RemoteAddr)
-				s.fecSent.Add(1)
-			}
-		}
-		s.fecMu.Unlock()
+	if s.fecIndex >= s.fecGroupSize {
+		s.fecIndex = 0
+		s.fecGroupID.Add(1)
+	}
+
+	if fecData != nil {
+		header := make([]byte, fecHeaderSize)
+		binary.BigEndian.PutUint32(header[0:4], groupID)
+		header[4] = byte(index)
+		header[5] = byte(s.fecGroupSize)
+
+		full := append(header, fecData...)
+		s.sendPacket(groukTypeFEC, full)
+		s.fecSent.Add(1)
 	}
 
 	return nil
@@ -324,6 +344,10 @@ func (s *GroukSession) handlePacket(pkt *GroukPacket) {
 
 	switch pkt.Type {
 	case groukTypeData:
+		if s.fecEnabled {
+			s.trackFECPacket(pkt)
+		}
+
 		plaintext, err := s.recvCipher.Open(pkt.Payload)
 		if err != nil {
 			return
@@ -347,41 +371,71 @@ func (s *GroukSession) handlePacket(pkt *GroukPacket) {
 
 	case groukTypeFEC:
 		if s.fecEnabled {
-			s.handleFEC(pkt)
+			s.handleFEC(pkt.Payload)
 		}
 	}
 }
 
-func (s *GroukSession) handleFEC(pkt *GroukPacket) {
-	plaintext, err := s.recvCipher.Open(pkt.Payload)
-	if err != nil {
+func (s *GroukSession) trackFECPacket(pkt *GroukPacket) {
+	s.fecMu.Lock()
+	defer s.fecMu.Unlock()
+
+	groupID := s.fecGroupID.Load()
+	index := s.fecIndex
+
+	if s.fecRecvBuffer[groupID] == nil {
+		s.fecRecvBuffer[groupID] = make(map[int][]byte)
+	}
+
+	s.fecRecvBuffer[groupID][index] = pkt.Payload
+}
+
+func (s *GroukSession) handleFEC(payload []byte) {
+	if len(payload) < fecHeaderSize {
 		return
 	}
+
+	groupID := binary.BigEndian.Uint32(payload[0:4])
+	index := int(payload[4])
+	groupSize := int(payload[5])
+	fecData := payload[fecHeaderSize:]
 
 	s.fecMu.Lock()
 	defer s.fecMu.Unlock()
 
 	s.fecRecv.Add(1)
-	s.fecDecoder.AddFEC(plaintext)
 
-	if s.fecDecoder.CanRecover() {
-		idx, recoveredData := s.fecDecoder.Recover()
-		if recoveredData != nil && idx >= 0 {
+	decoder, ok := s.fecDecoder[groupID]
+	if !ok {
+		decoder = fec.NewFECDecoder(groupSize)
+		s.fecDecoder[groupID] = decoder
+	}
+
+	if buf, exists := s.fecRecvBuffer[groupID]; exists {
+		for idx, data := range buf {
+			decoder.AddPacket(idx, data)
+		}
+	}
+
+	decoder.AddFEC(fecData)
+
+	if decoder.CanRecover() {
+		missingIdx, recovered := decoder.Recover()
+		if recovered != nil && missingIdx >= 0 {
 			s.fecRecovered.Add(1)
+			log.Printf("[grouk] FEC recovered packet (group=%d, idx=%d)", groupID, missingIdx)
 
-			log.Printf("[grouk] FEC recovered packet %d (session %d, total: %d)",
-				idx, s.ID, s.fecRecovered.Load())
-
-			recoveredPkt, err := UnmarshalGroukPacket(recoveredData)
+			recoveredPkt, err := UnmarshalGroukPacket(recovered)
 			if err == nil && recoveredPkt.Type == groukTypeData {
-				plainData, err := s.recvCipher.Open(recoveredPkt.Payload)
+				plaintext, err := s.recvCipher.Open(recoveredPkt.Payload)
 				if err == nil {
-					s.handleData(plainData)
+					s.handleData(plaintext)
 				}
 			}
 		}
 
-		s.fecDecoder.Reset()
+		delete(s.fecDecoder, groupID)
+		delete(s.fecRecvBuffer, groupID)
 	}
 }
 
