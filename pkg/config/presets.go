@@ -20,6 +20,12 @@ func GetPreset(name string) (*ServerConfig, bool) {
 		base = GlobalBalancedPreset()
 	case "minimal":
 		base = MinimalPreset()
+	case "iran_grouk":
+		base = IranGroukPreset()
+	case "iran_grouk_balanced":
+		base = IranGroukBalanced()
+	case "global_grouk":
+		base = GlobalGroukPreset()
 	default:
 		return nil, false
 	}
@@ -41,6 +47,9 @@ func ListPresets() []string {
 		"global_stealth",
 		"global_balanced",
 		"minimal",
+		"iran_grouk",
+		"iran_grouk_balanced",
+		"global_grouk",
 	}
 }
 
@@ -508,6 +517,64 @@ func MinimalPreset() *ServerConfig {
 		Metadata: &Metadata{
 			Notes: "Minimal configuration - maximum speed, no stealth features",
 			Tags:  []string{"minimal", "fast", "no-censorship"},
+		},
+	}
+}
+
+func IranGroukPreset() *ServerConfig {
+	return &ServerConfig{
+		Version: 1,
+		Server: ServerInfo{
+			Name:     "Iran Grouk Server (FEC)",
+			Address:  "YOUR_SERVER:8443",
+			Protocol: "grouk",
+			PSK:      "REPLACE_WITH_YOUR_PSK",
+		},
+		Grouk: &GroukConfig{
+			EnableFEC:    true,
+			FECGroupSize: 4,
+		},
+		DNS: &DNSConfig{
+			Enabled: false,
+		},
+		Metadata: &Metadata{
+			Country: "IR",
+			ISPHint: "MCI/Irancell",
+			Notes:   "UDP-based Grouk with FEC for lossy networks",
+			Tags:    []string{"iran", "grouk", "udp", "fec"},
+		},
+	}
+}
+
+func IranGroukBalanced() *ServerConfig {
+	cfg := IranGroukPreset()
+	cfg.Server.Name = "Iran Grouk Balanced"
+	cfg.Grouk.FECGroupSize = 6
+	cfg.Metadata.Notes = "Balanced Grouk with moderate FEC"
+	cfg.Metadata.Tags = []string{"iran", "grouk", "balanced", "fec"}
+	return cfg
+}
+
+func GlobalGroukPreset() *ServerConfig {
+	return &ServerConfig{
+		Version: 1,
+		Server: ServerInfo{
+			Name:     "Global Grouk Server",
+			Address:  "YOUR_SERVER:8443",
+			Protocol: "grouk",
+			PSK:      "REPLACE_WITH_YOUR_PSK",
+		},
+		Grouk: &GroukConfig{
+			EnableFEC:    false,
+			FECGroupSize: 4,
+		},
+		DNS: &DNSConfig{
+			Enabled: false,
+		},
+		Metadata: &Metadata{
+			Country: "Global",
+			Notes:   "UDP-based Grouk for low-latency",
+			Tags:    []string{"global", "grouk", "udp", "fast"},
 		},
 	}
 }
