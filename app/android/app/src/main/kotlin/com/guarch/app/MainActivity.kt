@@ -46,6 +46,7 @@ class MainActivity : FlutterActivity() {
         CrashLogger.d(TAG, "SDK: ${Build.VERSION.SDK_INT} | Device: ${Build.MANUFACTURER} ${Build.MODEL}")
 
         tryInitGoEngine()
+        setupProtectFunc()
         setupBatteryMonitoring()
 
         methodChannel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, ENGINE_CHANNEL)
@@ -127,6 +128,38 @@ class MainActivity : FlutterActivity() {
             })
 
         CrashLogger.d(TAG, "configureFlutterEngine done")
+    }
+
+    private fun setupProtectFunc() {
+        if (goEngine == null) {
+            CrashLogger.w(TAG, "Cannot setup protect: Go engine not loaded")
+            return
+        }
+
+        try {
+            val protectClass = Class.forName("com.guarch.mobile.mobile.ProtectFunc")
+            
+            val protectImpl = java.lang.reflect.Proxy.newProxyInstance(
+                protectClass.classLoader,
+                arrayOf(protectClass)
+            ) { _, method, args ->
+                if (method.name == "protectFd") {
+                    val fd = args?.get(0) as? Long ?: return@newProxyInstance false
+                    val protected = GuarchService.instance?.protect(fd.toInt()) ?: false
+                    protected
+                } else {
+                    null
+                }
+            }
+
+            val mobileClass = Class.forName("com.guarch.mobile.mobile.Mobile")
+            mobileClass.getMethod("setProtectFunc", protectClass)
+                .invoke(null, protectImpl)
+            
+            CrashLogger.d(TAG, "✅ Protect function registered")
+        } catch (e: Throwable) {
+            CrashLogger.w(TAG, "⚠️ Protect setup failed", e)
+        }
     }
 
     private fun setupBatteryMonitoring() {
