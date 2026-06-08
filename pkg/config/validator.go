@@ -59,6 +59,12 @@ func (v *Validator) Validate(cfg *ServerConfig) error {
 		}
 	}
 
+	if cfg.Grouk != nil {
+		if err := v.validateGrouk(cfg.Grouk); err != nil {
+			return fmt.Errorf("grouk: %w", err)
+		}
+	}
+
 	if cfg.Metadata != nil {
 		if err := v.validateMetadata(cfg.Metadata); err != nil {
 			return fmt.Errorf("metadata: %w", err)
@@ -148,6 +154,13 @@ func (v *Validator) validateTransport(tc *TransportConfig) error {
 		}
 	}
 	
+	return nil
+}
+
+func (v *Validator) validateGrouk(grouk *GroukConfig) error {
+	if grouk.FECGroupSize < 2 || grouk.FECGroupSize > 16 {
+		return fmt.Errorf("fec_group_size must be between 2 and 16 (got %d)", grouk.FECGroupSize)
+	}
 	return nil
 }
 
