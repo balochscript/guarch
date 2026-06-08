@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "server": {
+    "name": "Iran Grouk Server (FEC)",
+    "address": "YOUR_SERVER:8443",
+    "protocol": "grouk",
+    "psk": "REPLACE_WITH_YOUR_PSK"
+  },
+  "grouk": {
+    "enable_fec": true,
+    "fec_group_size": 4
+  },
+  "dns": {
+    "enabled": false
+  },
+  "metadata": {
+    "country": "IR",
+    "isp_hint": "MCI/Irancell",
+    "notes": "UDP-based Grouk with FEC for lossy networks",
+    "tags": ["iran", "grouk", "udp", "fec"]
+  }
+}
