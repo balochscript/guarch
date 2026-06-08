@@ -105,6 +105,11 @@ type engineStats struct {
 	activityLevel  string
 	lastSpeedUp    int64
 	lastSpeedDown  int64
+
+	fecSent         int64
+	fecRecv         int64
+	fecRecovered    int64
+	fecRecoveryRate float64
 }
 
 func InitGoLog(logPath string) {
@@ -765,8 +770,18 @@ func (e *Engine) connectGrouk(cfg *config.ServerConfig, coverMgr *cover.Manager)
 		coverMgr.SendOne()
 	}
 
+	enableFEC := false
+	fecGroupSize := 4
+
+	if cfg.Grouk != nil {
+		enableFEC = cfg.Grouk.EnableFEC
+		fecGroupSize = cfg.Grouk.FECGroupSize
+	}
+
+	log.Printf("[Engine] Grouk FEC: enabled=%v, group=%d", enableFEC, fecGroupSize)
+
 	log.Println("[Engine] Performing Grouk handshake...")
-	session, err := transport.GroukClientHandshake(udpConn, udpAddr, []byte(cfg.Server.PSK))
+	session, err := transport.GroukClientHandshake(udpConn, udpAddr, []byte(cfg.Server.PSK), enableFEC, fecGroupSize)
 	if err != nil {
 		udpConn.Close()
 		log.Printf("[Engine] Grouk handshake failed: %v", err)
@@ -1168,6 +1183,14 @@ func (e *Engine) statsReporter() {
 				e.stats.activityLevel = e.adaptiveCover.GetCurrentLevel().String()
 			}
 
+			if e.groukSession != nil {
+				groukStats := e.groukSession.Stats()
+				e.stats.fecSent = int64(groukStats.FECSent)
+				e.stats.fecRecv = int64(groukStats.FECRecv)
+				e.stats.fecRecovered = int64(groukStats.FECRecovered)
+				e.stats.fecRecoveryRate = groukStats.RecoveryRate
+			}
+
 			data := map[string]interface{}{
 				"upload_speed":      upSpeed,
 				"download_speed":    downSpeed,
@@ -1180,6 +1203,10 @@ func (e *Engine) statsReporter() {
 				"sni_switches":      e.stats.sniSwitches,
 				"activity_level":    e.stats.activityLevel,
 				"dns_fallback":      e.usingDNSFallback.Load(),
+				"fec_sent":          e.stats.fecSent,
+				"fec_recv":          e.stats.fecRecv,
+				"fec_recovered":     e.stats.fecRecovered,
+				"fec_recovery_rate": e.stats.fecRecoveryRate,
 			}
 
 			e.stats.mu.Unlock()
@@ -1330,6 +1357,10 @@ func (e *Engine) GetStats() string {
 		"sni_switches":      e.stats.sniSwitches,
 		"activity_level":    e.stats.activityLevel,
 		"dns_fallback":      e.usingDNSFallback.Load(),
+		"fec_sent":          e.stats.fecSent,
+		"fec_recv":          e.stats.fecRecv,
+		"fec_recovered":     e.stats.fecRecovered,
+		"fec_recovery_rate": e.stats.fecRecoveryRate,
 	}
 
 	jsonData, _ := json.Marshal(data)
