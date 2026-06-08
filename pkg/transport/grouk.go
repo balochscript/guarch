@@ -1264,6 +1264,12 @@ func (gl *GroukListener) Close() error {
 	return gl.conn.Close()
 }
 
+func (gl *GroukListener) RangeSessions(fn func(sessionID uint32, session *GroukSession) bool) {
+	gl.sessions.Range(func(key, val any) bool {
+		return fn(key.(uint32), val.(*GroukSession))
+	})
+}
+
 func (gl *GroukListener) Addr() net.Addr {
 	return gl.conn.LocalAddr()
 }
