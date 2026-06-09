@@ -238,16 +238,16 @@ func newGroukSession(id uint32, remote *net.UDPAddr, udpConn *net.UDPConn, sendK
 	}
 
 	s := &GroukSession{
-		ID:         id,
-		RemoteAddr: remote,
-		sendCipher: sendCipher,
-		recvCipher: recvCipher,
-		conn:       udpConn,
-		acceptCh:   make(chan *GroukStream, 32),
-		closeCh:    make(chan struct{}),
-		fecEnabled: enableFEC,
+		ID:           id,
+		RemoteAddr:   remote,
+		sendCipher:   sendCipher,
+		recvCipher:   recvCipher,
+		conn:         udpConn,
+		acceptCh:     make(chan *GroukStream, 32),
+		closeCh:      make(chan struct{}),
+		fecEnabled:   enableFEC,
 		fecGroupSize: fecGroupSize,
-		fecDecoder: make(map[uint32]*fec.FECDecoder),
+		fecDecoder:   make(map[uint32]*fec.FECDecoder),
 	}
 
 	if enableFEC {
@@ -342,19 +342,15 @@ func (s *GroukSession) handlePacket(pkt *GroukPacket) {
 
 	switch pkt.Type {
 	case groukTypeData:
-		log.Printf("[grouk] 📦 Received DATA packet (session %d, size: %d)", s.ID, len(pkt.Payload))
 		plaintext, err := s.recvCipher.Open(pkt.Payload)
 		if err != nil {
-			log.Printf("[grouk] ❌ Decrypt failed (session %d): %v", s.ID, err)
 			return
 		}
-		log.Printf("[grouk] ✅ Decrypted DATA (session %d, size: %d)", s.ID, len(plaintext))
 		s.handleData(plaintext)
 
 	case groukTypeAck:
 		plaintext, err := s.recvCipher.Open(pkt.Payload)
 		if err != nil {
-			log.Printf("[grouk] ❌ ACK decrypt failed (session %d): %v", s.ID, err)
 			return
 		}
 		s.handleAck(plaintext)
@@ -416,10 +412,7 @@ func (s *GroukSession) handleFEC(payload []byte) {
 }
 
 func (s *GroukSession) handleData(data []byte) {
-	log.Printf("[grouk] 📨 handleData called (session %d, size: %d)", s.ID, len(data))
-	
 	if len(data) < groukStreamHdrSize {
-		log.Printf("[grouk] ⚠️  Data too short: %d < %d", len(data), groukStreamHdrSize)
 		return
 	}
 
@@ -429,15 +422,11 @@ func (s *GroukSession) handleData(data []byte) {
 	cmd := data[10]
 	payload := data[groukStreamHdrSize:]
 
-	log.Printf("[grouk] 🔍 Stream packet: ID=%d, seq=%d, cmd=%d, payload=%d bytes", 
-		streamID, seqNum, cmd, len(payload))
-
 	switch cmd {
 	case groukStreamOpen:
 		stream := newGroukStream(streamID, s)
 		stream.recvNext.Store(2)
 		s.streams.Store(streamID, stream)
-		log.Printf("[grouk] stream %d opened (recvNext=2)", streamID)
 		select {
 		case s.acceptCh <- stream:
 		case <-s.closeCh:
@@ -445,13 +434,10 @@ func (s *GroukSession) handleData(data []byte) {
 		s.sendStreamAck(streamID, seqNum)
 
 	case groukStreamData:
-		log.Printf("[grouk] 📩 Stream %d data (seq=%d, size=%d)", streamID, seqNum, len(payload))
 		if val, ok := s.streams.Load(streamID); ok {
 			stream := val.(*GroukStream)
 			stream.handleRecv(seqNum, payload)
 			s.sendStreamAck(streamID, seqNum)
-		} else {
-			log.Printf("[grouk] ⚠️  Stream %d not found!", streamID)
 		}
 
 	case groukStreamClose:
@@ -459,7 +445,6 @@ func (s *GroukSession) handleData(data []byte) {
 			stream := val.(*GroukStream)
 			stream.markClosed()
 			s.streams.Delete(streamID)
-			log.Printf("[grouk] stream %d closed by remote", streamID)
 		}
 		s.sendStreamAck(streamID, seqNum)
 	}
@@ -525,7 +510,6 @@ func (s *GroukSession) OpenStream() (*GroukStream, error) {
 		return nil, err
 	}
 
-	log.Printf("[grouk] opened stream %d (sendSeq=%d, recvNext=1)", id, seq)
 	return stream, nil
 }
 
@@ -679,8 +663,6 @@ func (s *GroukStream) Read(p []byte) (int, error) {
 }
 
 func (s *GroukStream) Write(p []byte) (int, error) {
-	log.Printf("[grouk] 🖊️  Stream %d Write called (size: %d)", s.id, len(p))
-	
 	if s.closed.Load() {
 		return 0, io.ErrClosedPipe
 	}
@@ -713,16 +695,12 @@ func (s *GroukStream) Write(p []byte) (int, error) {
 		s.sendBuf.Store(seq, entry)
 		s.sendWin.Add(1)
 
-		log.Printf("[grouk] 📤 Stream %d sending DATA (seq=%d, size=%d)", s.id, seq, len(chunk))
-
 		if err := s.session.sendStreamPacket(s.id, groukStreamData, seq, 0, chunk); err != nil {
-			log.Printf("[grouk] ❌ Stream %d send error: %v", s.id, err)
 			return sent, err
 		}
 		sent = end
 	}
 
-	log.Printf("[grouk] ✅ Stream %d Write complete (sent: %d)", s.id, sent)
 	return sent, nil
 }
 
@@ -805,7 +783,6 @@ func (s *GroukStream) retransmitLoop() {
 					}
 
 					if entry.retries > groukMaxRetransmit {
-						log.Printf("[grouk] stream %d: max retransmit for seq %d", s.id, entry.seq)
 						s.markClosed()
 						return false
 					}
@@ -895,8 +872,6 @@ func GroukServerHandshake(udpConn *net.UDPConn, pkt *GroukPacket, remote *net.UD
 	if err != nil {
 		return nil, nil, false, 0, err
 	}
-
-	log.Printf("[grouk] session %d: FEC=%v, size=%d", sessionID, enableFEC, fecGroupSize)
 
 	return session, shared, enableFEC, fecGroupSize, nil
 }
