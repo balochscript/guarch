@@ -342,15 +342,19 @@ func (s *GroukSession) handlePacket(pkt *GroukPacket) {
 
 	switch pkt.Type {
 	case groukTypeData:
+		log.Printf("[grouk] 📦 Received DATA packet (session %d, size: %d)", s.ID, len(pkt.Payload))
 		plaintext, err := s.recvCipher.Open(pkt.Payload)
 		if err != nil {
+			log.Printf("[grouk] ❌ Decrypt failed (session %d): %v", s.ID, err)
 			return
 		}
+		log.Printf("[grouk] ✅ Decrypted DATA (session %d, size: %d)", s.ID, len(plaintext))
 		s.handleData(plaintext)
 
 	case groukTypeAck:
 		plaintext, err := s.recvCipher.Open(pkt.Payload)
 		if err != nil {
+			log.Printf("[grouk] ❌ ACK decrypt failed (session %d): %v", s.ID, err)
 			return
 		}
 		s.handleAck(plaintext)
@@ -412,7 +416,10 @@ func (s *GroukSession) handleFEC(payload []byte) {
 }
 
 func (s *GroukSession) handleData(data []byte) {
+	log.Printf("[grouk] 📨 handleData called (session %d, size: %d)", s.ID, len(data))
+	
 	if len(data) < groukStreamHdrSize {
+		log.Printf("[grouk] ⚠️  Data too short: %d < %d", len(data), groukStreamHdrSize)
 		return
 	}
 
@@ -421,6 +428,9 @@ func (s *GroukSession) handleData(data []byte) {
 	_ = binary.BigEndian.Uint32(data[6:10])
 	cmd := data[10]
 	payload := data[groukStreamHdrSize:]
+
+	log.Printf("[grouk] 🔍 Stream packet: ID=%d, seq=%d, cmd=%d, payload=%d bytes", 
+		streamID, seqNum, cmd, len(payload))
 
 	switch cmd {
 	case groukStreamOpen:
@@ -434,10 +444,13 @@ func (s *GroukSession) handleData(data []byte) {
 		s.sendStreamAck(streamID, seqNum)
 
 	case groukStreamData:
+		log.Printf("[grouk] 📩 Stream %d data (seq=%d, size=%d)", streamID, seqNum, len(payload))
 		if val, ok := s.streams.Load(streamID); ok {
 			stream := val.(*GroukStream)
 			stream.handleRecv(seqNum, payload)
 			s.sendStreamAck(streamID, seqNum)
+		} else {
+			log.Printf("[grouk] ⚠️  Stream %d not found!", streamID)
 		}
 
 	case groukStreamClose:
@@ -664,6 +677,8 @@ func (s *GroukStream) Read(p []byte) (int, error) {
 }
 
 func (s *GroukStream) Write(p []byte) (int, error) {
+	log.Printf("[grouk] 🖊️  Stream %d Write called (size: %d)", s.id, len(p))
+	
 	if s.closed.Load() {
 		return 0, io.ErrClosedPipe
 	}
@@ -696,12 +711,16 @@ func (s *GroukStream) Write(p []byte) (int, error) {
 		s.sendBuf.Store(seq, entry)
 		s.sendWin.Add(1)
 
+		log.Printf("[grouk] 📤 Stream %d sending DATA (seq=%d, size=%d)", s.id, seq, len(chunk))
+
 		if err := s.session.sendStreamPacket(s.id, groukStreamData, seq, 0, chunk); err != nil {
+			log.Printf("[grouk] ❌ Stream %d send error: %v", s.id, err)
 			return sent, err
 		}
 		sent = end
 	}
 
+	log.Printf("[grouk] ✅ Stream %d Write complete (sent: %d)", s.id, sent)
 	return sent, nil
 }
 
