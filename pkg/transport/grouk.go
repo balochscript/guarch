@@ -435,8 +435,9 @@ func (s *GroukSession) handleData(data []byte) {
 	switch cmd {
 	case groukStreamOpen:
 		stream := newGroukStream(streamID, s)
+		stream.recvNext.Store(seqNum + 1)
 		s.streams.Store(streamID, stream)
-		log.Printf("[grouk] stream %d opened", streamID)
+		log.Printf("[grouk] stream %d opened (recvNext=%d)", streamID, seqNum+1)
 		select {
 		case s.acceptCh <- stream:
 		case <-s.closeCh:
@@ -518,12 +519,14 @@ func (s *GroukSession) OpenStream() (*GroukStream, error) {
 	s.streams.Store(id, stream)
 
 	seq := stream.nextSendSeq()
+	stream.recvNext.Store(seq + 1)
+
 	if err := s.sendStreamPacket(id, groukStreamOpen, seq, 0, nil); err != nil {
 		s.streams.Delete(id)
 		return nil, err
 	}
 
-	log.Printf("[grouk] opened stream %d", id)
+	log.Printf("[grouk] opened stream %d (sendSeq=%d, recvNext=%d)", id, seq, seq+1)
 	return stream, nil
 }
 
