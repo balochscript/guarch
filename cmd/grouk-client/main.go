@@ -84,7 +84,7 @@ func main() {
 	fmt.Println("")
 	log.Printf("[grouk] 🌩️ client ready on socks5://%s", *listenAddr)
 	log.Printf("[grouk] server: %s (Raw UDP)", *serverAddr)
-	
+
 	if *enableFEC {
 		log.Printf("[grouk] FEC enabled (group size: %d)", *fecGroup)
 	}
@@ -198,22 +198,17 @@ func (c *GroukClient) handleSOCKS(socksConn net.Conn) {
 
 	target, err := socks5.Handshake(socksConn)
 	if err != nil {
-		log.Printf("[grouk] SOCKS handshake failed: %v", err)
 		return
 	}
 
-	log.Printf("[grouk] → %s", target)
-
 	session, err := c.getOrCreateSession()
 	if err != nil {
-		log.Printf("[grouk] connection failed: %v", err)
 		socks5.SendReply(socksConn, 0x01)
 		return
 	}
 
 	stream, err := session.OpenStream()
 	if err != nil {
-		log.Printf("[grouk] open stream failed: %v, reconnecting...", err)
 		c.mu.Lock()
 		c.session = nil
 		c.mu.Unlock()
@@ -230,11 +225,8 @@ func (c *GroukClient) handleSOCKS(socksConn net.Conn) {
 		}
 	}
 
-	log.Printf("[grouk] 📡 opened stream %d for %s", stream.ID(), target)
-
 	host, port, addrType, err := cmdutil.SplitTarget(target)
 	if err != nil {
-		log.Printf("[grouk] %v", err)
 		stream.Close()
 		socks5.SendReply(socksConn, 0x01)
 		return
@@ -251,38 +243,26 @@ func (c *GroukClient) handleSOCKS(socksConn net.Conn) {
 	lenBuf := make([]byte, 2)
 	binary.BigEndian.PutUint16(lenBuf, uint16(len(reqData)))
 
-	log.Printf("[grouk] 📤 sending request length: %d bytes", len(reqData))
-	n, err := stream.Write(lenBuf)
-	if err != nil {
-		log.Printf("[grouk] ❌ failed to write length: %v", err)
+	if _, err := stream.Write(lenBuf); err != nil {
 		stream.Close()
 		socks5.SendReply(socksConn, 0x01)
 		return
 	}
-	log.Printf("[grouk] ✅ wrote %d bytes (length)", n)
 
-	log.Printf("[grouk] 📤 sending request data: %d bytes", len(reqData))
-	n, err = stream.Write(reqData)
-	if err != nil {
-		log.Printf("[grouk] ❌ failed to write request: %v", err)
+	if _, err := stream.Write(reqData); err != nil {
 		stream.Close()
 		socks5.SendReply(socksConn, 0x01)
 		return
 	}
-	log.Printf("[grouk] ✅ wrote %d bytes (request)", n)
 
-	log.Printf("[grouk] 📥 waiting for status...")
 	statusBuf := make([]byte, 1)
 	if _, err := io.ReadFull(stream, statusBuf); err != nil {
-		log.Printf("[grouk] ❌ failed to read status: %v", err)
 		stream.Close()
 		socks5.SendReply(socksConn, 0x01)
 		return
 	}
-	log.Printf("[grouk] ✅ received status: %d", statusBuf[0])
 
 	if statusBuf[0] != protocol.ConnectSuccess {
-		log.Printf("[grouk] ❌ connect failed: status=%d", statusBuf[0])
 		stream.Close()
 		socks5.SendReply(socksConn, 0x05)
 		return
@@ -290,70 +270,14 @@ func (c *GroukClient) handleSOCKS(socksConn net.Conn) {
 
 	socks5.SendReply(socksConn, 0x00)
 
-	log.Printf("[grouk] 🌩️ %s (stream %d)", target, stream.ID())
+	log.Printf("[grouk] → %s", target)
 	relay(stream, socksConn)
-	log.Printf("[grouk] ✖ %s", target)
 }
 
 func relay(stream *transport.GroukStream, conn net.Conn) {
 	ch := make(chan error, 2)
-	
-	go func() {
-		buf := make([]byte, 32*1024)
-		total := 0
-		for {
-			n, err := conn.Read(buf)
-			if n > 0 {
-				total += n
-				log.Printf("[grouk] 📥 client → stream: %d bytes (total: %d)", n, total)
-				nw, ew := stream.Write(buf[:n])
-				if ew != nil {
-					log.Printf("[grouk] ❌ stream write error: %v", ew)
-					ch <- ew
-					return
-				}
-				if nw != n {
-					log.Printf("[grouk] ⚠️  partial write: %d/%d", nw, n)
-				}
-			}
-			if err != nil {
-				if err != io.EOF {
-					log.Printf("[grouk] client read error: %v", err)
-				}
-				ch <- err
-				return
-			}
-		}
-	}()
-	
-	go func() {
-		buf := make([]byte, 32*1024)
-		total := 0
-		for {
-			n, err := stream.Read(buf)
-			if n > 0 {
-				total += n
-				log.Printf("[grouk] 📤 stream → client: %d bytes (total: %d)", n, total)
-				nw, ew := conn.Write(buf[:n])
-				if ew != nil {
-					log.Printf("[grouk] ❌ client write error: %v", ew)
-					ch <- ew
-					return
-				}
-				if nw != n {
-					log.Printf("[grouk] ⚠️  partial write: %d/%d", nw, n)
-				}
-			}
-			if err != nil {
-				if err != io.EOF {
-					log.Printf("[grouk] stream read error: %v", err)
-				}
-				ch <- err
-				return
-			}
-		}
-	}()
-	
+	go func() { _, err := io.Copy(stream, conn); ch <- err }()
+	go func() { _, err := io.Copy(conn, stream); ch <- err }()
 	<-ch
 	stream.Close()
 	conn.Close()
