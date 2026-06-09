@@ -137,118 +137,50 @@ func handleSession(session *transport.GroukSession) {
 func handleStream(stream *transport.GroukStream, sessionID uint32) {
 	defer stream.Close()
 
-	log.Printf("[grouk] 📥 stream %d: waiting for length...", stream.ID())
-	
 	lenBuf := make([]byte, 2)
 	if _, err := io.ReadFull(stream, lenBuf); err != nil {
-		log.Printf("[grouk] ❌ stream %d: failed to read length: %v", stream.ID(), err)
 		return
 	}
 	reqLen := binary.BigEndian.Uint16(lenBuf)
-	log.Printf("[grouk] 📥 stream %d: received length: %d", stream.ID(), reqLen)
-	
+
 	if reqLen > 1024 {
-		log.Printf("[grouk] ❌ stream %d: request too large: %d", stream.ID(), reqLen)
 		return
 	}
 
-	log.Printf("[grouk] 📥 stream %d: waiting for request data...", stream.ID())
 	reqData := make([]byte, reqLen)
 	if _, err := io.ReadFull(stream, reqData); err != nil {
-		log.Printf("[grouk] ❌ stream %d: failed to read request: %v", stream.ID(), err)
 		return
 	}
-	log.Printf("[grouk] ✅ stream %d: received %d bytes request", stream.ID(), reqLen)
 
 	req, err := protocol.UnmarshalConnectRequest(reqData)
 	if err != nil {
-		log.Printf("[grouk] ❌ stream %d: invalid request: %v", stream.ID(), err)
 		stream.Write([]byte{protocol.ConnectFailed})
 		return
 	}
 
 	target := req.Address()
-	log.Printf("[grouk] 🎯 session %d → %s (stream %d)", sessionID, target, stream.ID())
+	log.Printf("[grouk] session %d → %s", sessionID, target)
 
 	targetConn, err := net.DialTimeout("tcp", target, 10*time.Second)
 	if err != nil {
-		log.Printf("[grouk] ❌ dial %s failed: %v", target, err)
 		stream.Write([]byte{protocol.ConnectFailed})
 		return
 	}
 	defer targetConn.Close()
 
-	log.Printf("[grouk] ✅ connected to %s", target)
 	stream.Write([]byte{protocol.ConnectSuccess})
 
-	relay(stream, targetConn, sessionID, target)
+	relay(stream, targetConn)
 }
 
-func relay(stream *transport.GroukStream, conn net.Conn, sessionID uint32, target string) {
+func relay(stream *transport.GroukStream, conn net.Conn) {
 	ch := make(chan error, 2)
-	
-	go func() {
-		buf := make([]byte, 32*1024)
-		total := 0
-		for {
-			n, err := stream.Read(buf)
-			if n > 0 {
-				total += n
-				log.Printf("[grouk] 📥 stream %d → %s: %d bytes (total: %d)", stream.ID(), target, n, total)
-				nw, ew := conn.Write(buf[:n])
-				if ew != nil {
-					log.Printf("[grouk] ❌ write to %s error: %v", target, ew)
-					ch <- ew
-					return
-				}
-				if nw != n {
-					log.Printf("[grouk] ⚠️  partial write: %d/%d", nw, n)
-				}
-			}
-			if err != nil {
-				if err != io.EOF {
-					log.Printf("[grouk] stream read error: %v", err)
-				}
-				ch <- err
-				return
-			}
-		}
-	}()
-	
-	go func() {
-		buf := make([]byte, 32*1024)
-		total := 0
-		for {
-			n, err := conn.Read(buf)
-			if n > 0 {
-				total += n
-				log.Printf("[grouk] 📤 %s → stream %d: %d bytes (total: %d)", target, stream.ID(), n, total)
-				nw, ew := stream.Write(buf[:n])
-				if ew != nil {
-					log.Printf("[grouk] ❌ stream write error: %v", ew)
-					ch <- ew
-					return
-				}
-				if nw != n {
-					log.Printf("[grouk] ⚠️  partial write: %d/%d", nw, n)
-				}
-			}
-			if err != nil {
-				if err != io.EOF {
-					log.Printf("[grouk] read from %s error: %v", target, err)
-				}
-				ch <- err
-				return
-			}
-		}
-	}()
-	
+	go func() { _, err := io.Copy(stream, conn); ch <- err }()
+	go func() { _, err := io.Copy(conn, stream); ch <- err }()
 	<-ch
 	stream.Close()
 	conn.Close()
 	<-ch
-	
-	log.Printf("[grouk] ✖ session %d → %s closed", sessionID, target)
 }
 
 func startTCPDecoy(addr, certFile, keyFile string) {
