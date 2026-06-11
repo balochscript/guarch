@@ -14,7 +14,6 @@ class StatsCard extends StatelessWidget {
         padding: const EdgeInsets.all(20),
         child: Column(
           children: [
-            // Speed indicators
             Row(
               children: [
                 Expanded(
@@ -45,7 +44,6 @@ class StatsCard extends StatelessWidget {
             Divider(color: accentColor(context).withOpacity(0.1)),
             const SizedBox(height: 16),
 
-            // Total transferred
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceAround,
               children: [
@@ -73,7 +71,6 @@ class StatsCard extends StatelessWidget {
               ],
             ),
 
-            // Advanced stats
             if (stats.activeStreams > 0 || stats.totalConnections > 0) ...[
               const SizedBox(height: 16),
               Divider(color: accentColor(context).withOpacity(0.1)),
@@ -97,6 +94,90 @@ class StatsCard extends StatelessWidget {
                   ),
                 ],
               ),
+            ],
+
+            if (stats.fecEnabled) ...[
+              const SizedBox(height: 16),
+              Divider(color: accentColor(context).withOpacity(0.1)),
+              const SizedBox(height: 12),
+              
+              Row(
+                children: [
+                  const Icon(Icons.shield, size: 16, color: Colors.purple),
+                  const SizedBox(width: 8),
+                  Text(
+                    'Forward Error Correction (Grouk)',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: textSecondary(context),
+                    ),
+                  ),
+                ],
+              ),
+              
+              const SizedBox(height: 12),
+              
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceAround,
+                children: [
+                  _buildStatItem(
+                    context,
+                    'Sent',
+                    '${stats.fecSent}',
+                    Icons.send,
+                    Colors.blue,
+                  ),
+                  _buildStatItem(
+                    context,
+                    'Received',
+                    '${stats.fecRecv}',
+                    Icons.call_received,
+                    Colors.green,
+                  ),
+                  _buildStatItem(
+                    context,
+                    'Recovered',
+                    '${stats.fecRecovered}',
+                    Icons.healing,
+                    Colors.orange,
+                  ),
+                ],
+              ),
+              
+              if (stats.fecRecv > 0) ...[
+                const SizedBox(height: 12),
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: stats.fecRecoveryRate > 0 
+                        ? Colors.green.withOpacity(0.1) 
+                        : Colors.grey.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(
+                        stats.fecRecoveryRate > 0 ? Icons.check_circle : Icons.info,
+                        size: 14,
+                        color: stats.fecRecoveryRate > 0 ? Colors.green : Colors.grey,
+                      ),
+                      const SizedBox(width: 6),
+                      Text(
+                        'Recovery Rate: ${stats.fecRecoveryRate.toStringAsFixed(1)}%',
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          color: stats.fecRecoveryRate > 0 
+                              ? Colors.green 
+                              : textMuted(context),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
             ],
           ],
         ),
