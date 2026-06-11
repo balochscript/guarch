@@ -39,6 +39,7 @@ class ServerConfig {
   int probeWindow;
   
   TransportConfig? transport;
+  GroukConfig? grouk;
   
   int? ping;
   int? realDelay;
@@ -82,6 +83,7 @@ class ServerConfig {
     this.probeMaxRate = 10,
     this.probeWindow = 5,
     this.transport,
+    this.grouk,
     this.ping,
     this.realDelay,
     this.lastTested,
@@ -156,6 +158,10 @@ class ServerConfig {
     }
   }
 
+  bool get groukFecEnabled => grouk?.enableFEC ?? false;
+  int get groukFecDataShards => grouk?.fecDataShards ?? 10;
+  int get groukFecParityShards => grouk?.fecParityShards ?? 3;
+
   bool get isValid =>
       address.isNotEmpty &&
       port > 0 &&
@@ -191,6 +197,10 @@ class ServerConfig {
 
     if (transport != null) {
       json['transport'] = transport!.toJson();
+    }
+
+    if (grouk != null && protocol == 'grouk') {
+      json['grouk'] = grouk!.toJson();
     }
 
     if (sniEnabled && sniDomains.isNotEmpty) {
@@ -244,6 +254,7 @@ class ServerConfig {
     final cover = json['cover'] ?? json['cover_traffic'] ?? {};
     final dns = json['dns'] ?? json['dns_fallback'] ?? {};
     final transportData = json['transport'] as Map<String, dynamic>?;
+    final groukData = json['grouk'] as Map<String, dynamic>?;
 
     String address = server['address'] ?? json['address'] ?? '';
     int port = server['port'] ?? json['port'] ?? 8443;
@@ -267,6 +278,8 @@ class ServerConfig {
       transport: transportData != null 
           ? TransportConfig.fromJson(transportData)
           : null,
+      
+      grouk: groukData != null ? GroukConfig.fromJson(groukData) : null,
       
       coverEnabled: cover['enabled'] == true,
       coverDomains: cover['enabled'] == true 
@@ -377,6 +390,7 @@ class ServerConfig {
     String? certPin,
     String? protocol,
     TransportConfig? transport,
+    GroukConfig? grouk,
     bool? coverEnabled,
     List<CoverDomain>? coverDomains,
     bool? sniEnabled,
@@ -416,6 +430,7 @@ class ServerConfig {
       certPin: certPin ?? this.certPin,
       protocol: protocol ?? this.protocol,
       transport: transport ?? this.transport,
+      grouk: grouk ?? this.grouk,
       coverEnabled: coverEnabled ?? this.coverEnabled,
       coverDomains: coverDomains ?? this.coverDomains,
       sniEnabled: sniEnabled ?? this.sniEnabled,
@@ -538,6 +553,44 @@ class TransportConfig {
       default:
         return 'Direct TCP';
     }
+  }
+}
+
+class GroukConfig {
+  final bool enableFEC;
+  final int fecDataShards;
+  final int fecParityShards;
+
+  GroukConfig({
+    this.enableFEC = false,
+    this.fecDataShards = 10,
+    this.fecParityShards = 3,
+  });
+
+  Map<String, dynamic> toJson() => {
+    'enable_fec': enableFEC,
+    'fec_data_shards': fecDataShards,
+    'fec_parity_shards': fecParityShards,
+  };
+
+  factory GroukConfig.fromJson(Map<String, dynamic> json) {
+    return GroukConfig(
+      enableFEC: json['enable_fec'] ?? false,
+      fecDataShards: json['fec_data_shards'] ?? 10,
+      fecParityShards: json['fec_parity_shards'] ?? 3,
+    );
+  }
+
+  GroukConfig copyWith({
+    bool? enableFEC,
+    int? fecDataShards,
+    int? fecParityShards,
+  }) {
+    return GroukConfig(
+      enableFEC: enableFEC ?? this.enableFEC,
+      fecDataShards: fecDataShards ?? this.fecDataShards,
+      fecParityShards: fecParityShards ?? this.fecParityShards,
+    );
   }
 }
 
