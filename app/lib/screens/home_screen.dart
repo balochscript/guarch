@@ -285,6 +285,18 @@ class _HomeTab extends StatelessWidget {
                           ),
                         ),
                       ],
+                      if (server.protocol == 'grouk' && server.groukFecEnabled) ...[
+                        const SizedBox(width: 8),
+                        const Icon(Icons.shield, size: 14, color: Colors.purple),
+                        const SizedBox(width: 2),
+                        Text(
+                          'FEC',
+                          style: TextStyle(
+                            color: textMuted(context),
+                            fontSize: 11,
+                          ),
+                        ),
+                      ],
                     ],
                   ),
                 ],
@@ -624,6 +636,54 @@ class _HomeTab extends StatelessWidget {
                           ),
                         ),
                       ],
+                    ),
+                  ),
+                ],
+              ),
+            ],
+
+            if (stats.fecEnabled && stats.fecRecv > 0) ...[
+              const SizedBox(height: 12),
+              Divider(color: accentColor(context).withOpacity(0.1)),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  const Icon(Icons.healing, size: 20, color: Colors.purple),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'FEC Active (Grouk)',
+                          style: TextStyle(
+                            fontWeight: FontWeight.w600,
+                            color: textSecondary(context),
+                          ),
+                        ),
+                        Text(
+                          'Recovered ${stats.fecRecovered}/${stats.fecRecv} packets (${stats.fecRecoveryRate.toStringAsFixed(1)}%)',
+                          style: TextStyle(
+                            color: textMuted(context),
+                            fontSize: 12,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: stats.fecRecoveryRate > 0 ? Colors.green.withOpacity(0.2) : Colors.grey.withOpacity(0.2),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text(
+                      stats.fecRecoveryRate > 0 ? 'Working' : 'Idle',
+                      style: TextStyle(
+                        fontSize: 10,
+                        fontWeight: FontWeight.w600,
+                        color: stats.fecRecoveryRate > 0 ? Colors.green : Colors.grey,
+                      ),
                     ),
                   ),
                 ],
