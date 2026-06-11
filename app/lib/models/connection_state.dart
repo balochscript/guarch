@@ -53,6 +53,12 @@ class ConnectionStats {
   final int activeStreams;
   final int totalConnections;
 
+  final bool fecEnabled;
+  final int fecSent;
+  final int fecRecv;
+  final int fecRecovered;
+  final double fecRecoveryRate;
+
   const ConnectionStats({
     this.uploadSpeed = 0,
     this.downloadSpeed = 0,
@@ -66,6 +72,11 @@ class ConnectionStats {
     this.dnsFallbackUsed = false,
     this.activeStreams = 0,
     this.totalConnections = 0,
+    this.fecEnabled = false,
+    this.fecSent = 0,
+    this.fecRecv = 0,
+    this.fecRecovered = 0,
+    this.fecRecoveryRate = 0.0,
   });
 
   String get uploadSpeedText => _formatSpeed(uploadSpeed);
@@ -143,6 +154,11 @@ class ConnectionStats {
     bool? dnsFallbackUsed,
     int? activeStreams,
     int? totalConnections,
+    bool? fecEnabled,
+    int? fecSent,
+    int? fecRecv,
+    int? fecRecovered,
+    double? fecRecoveryRate,
   }) {
     return ConnectionStats(
       uploadSpeed: uploadSpeed ?? this.uploadSpeed,
@@ -157,6 +173,11 @@ class ConnectionStats {
       dnsFallbackUsed: dnsFallbackUsed ?? this.dnsFallbackUsed,
       activeStreams: activeStreams ?? this.activeStreams,
       totalConnections: totalConnections ?? this.totalConnections,
+      fecEnabled: fecEnabled ?? this.fecEnabled,
+      fecSent: fecSent ?? this.fecSent,
+      fecRecv: fecRecv ?? this.fecRecv,
+      fecRecovered: fecRecovered ?? this.fecRecovered,
+      fecRecoveryRate: fecRecoveryRate ?? this.fecRecoveryRate,
     );
   }
 
@@ -174,6 +195,11 @@ class ConnectionStats {
       'dns_fallback_used': dnsFallbackUsed,
       'active_streams': activeStreams,
       'total_connections': totalConnections,
+      'fec_enabled': fecEnabled,
+      'fec_sent': fecSent,
+      'fec_recv': fecRecv,
+      'fec_recovered': fecRecovered,
+      'fec_recovery_rate': fecRecoveryRate,
     };
   }
 
@@ -191,6 +217,11 @@ class ConnectionStats {
       dnsFallbackUsed: json['dns_fallback'] as bool? ?? false,
       activeStreams: json['active_streams'] as int? ?? 0,
       totalConnections: json['total_connections'] as int? ?? 0,
+      fecEnabled: json['fec_enabled'] as bool? ?? false,
+      fecSent: json['fec_sent'] as int? ?? 0,
+      fecRecv: json['fec_recv'] as int? ?? 0,
+      fecRecovered: json['fec_recovered'] as int? ?? 0,
+      fecRecoveryRate: (json['fec_recovery_rate'] as num?)?.toDouble() ?? 0.0,
     );
   }
 }
