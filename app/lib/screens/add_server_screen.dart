@@ -33,6 +33,10 @@ class _AddServerScreenState extends State<AddServerScreen> {
   bool _dataSaverEnabled = false;
   bool _pskVisible = false;
   
+  bool _groukFecEnabled = false;
+  int _groukFecDataShards = 10;
+  int _groukFecParityShards = 3;
+  
   String _transportType = 'direct';
   
   late String _sniMode;
@@ -68,6 +72,10 @@ class _AddServerScreenState extends State<AddServerScreen> {
     _dnsFallbackEnabled = widget.server?.dnsFallbackEnabled ?? false;
     _batteryAwareEnabled = widget.server?.batteryAwareEnabled ?? true;
     _dataSaverEnabled = widget.server?.dataSaverEnabled ?? false;
+    
+    _groukFecEnabled = widget.server?.groukFecEnabled ?? false;
+    _groukFecDataShards = widget.server?.groukFecDataShards ?? 10;
+    _groukFecParityShards = widget.server?.groukFecParityShards ?? 3;
     
     _transportType = widget.server?.transport?.type ?? 'direct';
     _transportHostController.text = widget.server?.transport?.host ?? '';
@@ -272,58 +280,73 @@ class _AddServerScreenState extends State<AddServerScreen> {
             ),
             const SizedBox(height: 16),
             
-            TextFormField(
-              controller: _pinController,
-              decoration: InputDecoration(
-                labelText: 'Certificate PIN (optional)',
-                hintText: 'SHA-256 hash from server output',
-                prefixIcon: const Icon(Icons.verified_user_outlined),
-                helperText: 'Protects against man-in-the-middle attacks',
-                helperStyle: TextStyle(color: textMuted(context), fontSize: 11),
+            if (_protocol != 'grouk') ...[
+              TextFormField(
+                controller: _pinController,
+                decoration: InputDecoration(
+                  labelText: 'Certificate PIN (optional)',
+                  hintText: 'SHA-256 hash from server output',
+                  prefixIcon: const Icon(Icons.verified_user_outlined),
+                  helperText: 'Protects against man-in-the-middle attacks',
+                  helperStyle: TextStyle(color: textMuted(context), fontSize: 11),
+                ),
+                style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
               ),
-              style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
-            ),
+            ],
 
-            const SizedBox(height: 32),
-            _buildSectionHeader('🚀 Transport Settings'),
-            const SizedBox(height: 4),
-            Text(
-              'How data is sent through the tunnel (bypass method)',
-              style: TextStyle(color: textMuted(context), fontSize: 13),
-            ),
-            const SizedBox(height: 16),
+            if (_protocol == 'grouk') ...[
+              const SizedBox(height: 32),
+              _buildGroukInfoBox(),
+              
+              const SizedBox(height: 16),
+              _buildToggleSection(
+                '⚡ FEC (Forward Error Correction)',
+                'Recover lost UDP packets without retransmission (recommended for lossy networks)',
+                _groukFecEnabled,
+                (v) => setState(() => _groukFecEnabled = v),
+              ),
 
-            _buildTransportSection(),
+              if (_groukFecEnabled) ..._buildGroukFECSection(),
+            ],
 
-            const SizedBox(height: 32),
-            _buildToggleSection(
-              '🔄 SNI Rotation',
-              'Change Server Name Indication every 5 minutes',
-              _sniEnabled,
-              (v) => setState(() => _sniEnabled = v),
-            ),
+            if (_protocol != 'grouk') ...[
+              const SizedBox(height: 32),
+              _buildSectionHeader('🚀 Transport Settings'),
+              const SizedBox(height: 4),
+              Text(
+                'How data is sent through the tunnel (bypass method)',
+                style: TextStyle(color: textMuted(context), fontSize: 13),
+              ),
+              const SizedBox(height: 16),
+              _buildTransportSection(),
 
-            if (_sniEnabled) ..._buildSNISection(),
+              const SizedBox(height: 32),
+              _buildToggleSection(
+                '🔄 SNI Rotation',
+                'Change Server Name Indication every 5 minutes',
+                _sniEnabled,
+                (v) => setState(() => _sniEnabled = v),
+              ),
+              if (_sniEnabled) ..._buildSNISection(),
 
-            const SizedBox(height: 32),
-            _buildToggleSection(
-              '🎭 Cover Traffic',
-              'Send real requests to popular sites to hide your traffic',
-              _coverEnabled,
-              (v) => setState(() => _coverEnabled = v),
-            ),
+              const SizedBox(height: 32),
+              _buildToggleSection(
+                '🎭 Cover Traffic',
+                'Send real requests to popular sites to hide your traffic',
+                _coverEnabled,
+                (v) => setState(() => _coverEnabled = v),
+              ),
+              if (_coverEnabled) ..._buildCoverSection(),
 
-            if (_coverEnabled) ..._buildCoverSection(),
-
-            const SizedBox(height: 32),
-            _buildToggleSection(
-              '🔌 DNS Fallback',
-              'Tunnel traffic over DNS when TLS is blocked (survival mode)',
-              _dnsFallbackEnabled,
-              (v) => setState(() => _dnsFallbackEnabled = v),
-            ),
-
-            if (_dnsFallbackEnabled) ..._buildDNSSection(),
+              const SizedBox(height: 32),
+              _buildToggleSection(
+                '🔌 DNS Fallback',
+                'Tunnel traffic over DNS when TLS is blocked (survival mode)',
+                _dnsFallbackEnabled,
+                (v) => setState(() => _dnsFallbackEnabled = v),
+              ),
+              if (_dnsFallbackEnabled) ..._buildDNSSection(),
+            ],
 
             const SizedBox(height: 32),
             FilledButton(
@@ -389,6 +412,162 @@ class _AddServerScreenState extends State<AddServerScreen> {
         Switch(value: value, onChanged: onChanged),
       ],
     );
+  }
+
+  Widget _buildGroukInfoBox() {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [Colors.blue.withOpacity(0.1), Colors.purple.withOpacity(0.1)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.blue.withOpacity(0.3)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Text('🌩️', style: TextStyle(fontSize: 24)),
+              const SizedBox(width: 12),
+              Text(
+                'Grouk Protocol',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                  color: textPrimary(context),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Text(
+            'Grouk uses raw UDP for maximum speed. No TLS overhead means:\n'
+            '• Lower latency (~50% faster)\n'
+            '• Better for gaming/streaming\n'
+            '• Less CPU usage\n\n'
+            '⚠️ Note: UDP may be blocked on some networks (WiFi, corporate)',
+            style: TextStyle(
+              fontSize: 13,
+              color: textMuted(context),
+              height: 1.5,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  List<Widget> _buildGroukFECSection() {
+    return [
+      const SizedBox(height: 16),
+      Card(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'FEC Configuration',
+                style: TextStyle(
+                  fontWeight: FontWeight.w600,
+                  color: textSecondary(context),
+                ),
+              ),
+              const SizedBox(height: 16),
+              
+              Text(
+                'Data Shards: $_groukFecDataShards',
+                style: TextStyle(fontSize: 14, color: textSecondary(context)),
+              ),
+              Slider(
+                value: _groukFecDataShards.toDouble(),
+                min: 4,
+                max: 20,
+                divisions: 16,
+                label: '$_groukFecDataShards',
+                onChanged: (v) => setState(() => _groukFecDataShards = v.toInt()),
+              ),
+              
+              const SizedBox(height: 8),
+              Text(
+                'Parity Shards: $_groukFecParityShards',
+                style: TextStyle(fontSize: 14, color: textSecondary(context)),
+              ),
+              Slider(
+                value: _groukFecParityShards.toDouble(),
+                min: 1,
+                max: 10,
+                divisions: 9,
+                label: '$_groukFecParityShards',
+                onChanged: (v) => setState(() => _groukFecParityShards = v.toInt()),
+              ),
+              
+              const SizedBox(height: 12),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: _getFECRecommendationColor().withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                    color: _getFECRecommendationColor().withOpacity(0.3),
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    Icon(
+                      _getFECRecommendationIcon(),
+                      size: 18,
+                      color: _getFECRecommendationColor(),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        _getFECRecommendationText(),
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: textMuted(context),
+                          height: 1.4,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    ];
+  }
+
+  Color _getFECRecommendationColor() {
+    final ratio = _groukFecParityShards / _groukFecDataShards;
+    if (ratio < 0.2) return Colors.orange;
+    if (ratio > 0.5) return Colors.orange;
+    return Colors.green;
+  }
+
+  IconData _getFECRecommendationIcon() {
+    final ratio = _groukFecParityShards / _groukFecDataShards;
+    if (ratio < 0.2 || ratio > 0.5) return Icons.warning_amber;
+    return Icons.check_circle;
+  }
+
+  String _getFECRecommendationText() {
+    final ratio = _groukFecParityShards / _groukFecDataShards;
+    final overhead = ((_groukFecDataShards + _groukFecParityShards) / _groukFecDataShards * 100 - 100).toStringAsFixed(0);
+    
+    if (ratio < 0.2) {
+      return 'Low redundancy: Can recover up to $_groukFecParityShards lost packets per $_groukFecDataShards. Good for stable networks. Overhead: +$overhead%';
+    } else if (ratio > 0.5) {
+      return 'High redundancy: Can recover up to $_groukFecParityShards lost packets per $_groukFecDataShards. Use for very lossy networks. Overhead: +$overhead%';
+    } else {
+      return 'Balanced: Can recover up to $_groukFecParityShards lost packets per $_groukFecDataShards. Recommended for most networks. Overhead: +$overhead%';
+    }
   }
 
   Widget _buildTransportSection() {
@@ -1083,7 +1262,7 @@ Recommended: Use Guarch for reliable connections.''',
     final pin = _pinController.text.trim();
     
     TransportConfig? transport;
-    if (_transportType != 'direct') {
+    if (_transportType != 'direct' && _protocol != 'grouk') {
       final host = _transportHostController.text.trim();
       final path = _transportPathController.text.trim();
       
@@ -1107,18 +1286,21 @@ Recommended: Use Guarch for reliable connections.''',
           address: _addressController.text.trim(),
           port: int.parse(_portController.text.trim()),
           psk: psk,
-          certPin: pin.isEmpty ? null : pin,
+          certPin: (_protocol != 'grouk' && pin.isNotEmpty) ? pin : null,
           protocol: _protocol,
           transport: transport,
-          coverEnabled: _coverEnabled,
-          coverDomains: List.from(_coverDomains),
-          sniEnabled: _sniEnabled,
-          sniMode: _sniMode,
-          sniDomains: List.from(_sniDomains),
-          dnsFallbackEnabled: _dnsFallbackEnabled,
-          dnsFallbackMode: _dnsFallbackMode,
-          batteryAwareEnabled: _batteryAwareEnabled,
-          dataSaverEnabled: _dataSaverEnabled,
+          coverEnabled: _protocol != 'grouk' ? _coverEnabled : false,
+          coverDomains: _protocol != 'grouk' ? List.from(_coverDomains) : [],
+          sniEnabled: _protocol != 'grouk' ? _sniEnabled : false,
+          sniMode: _protocol != 'grouk' ? _sniMode : 'weighted',
+          sniDomains: _protocol != 'grouk' ? List.from(_sniDomains) : [],
+          dnsFallbackEnabled: _protocol != 'grouk' ? _dnsFallbackEnabled : false,
+          dnsFallbackMode: _protocol != 'grouk' ? _dnsFallbackMode : 'auto',
+          batteryAwareEnabled: _protocol != 'grouk' ? _batteryAwareEnabled : true,
+          dataSaverEnabled: _protocol != 'grouk' ? _dataSaverEnabled : false,
+          groukFecEnabled: _protocol == 'grouk' ? _groukFecEnabled : false,
+          groukFecDataShards: _protocol == 'grouk' ? _groukFecDataShards : 10,
+          groukFecParityShards: _protocol == 'grouk' ? _groukFecParityShards : 3,
         ),
       );
     } else {
@@ -1128,18 +1310,21 @@ Recommended: Use Guarch for reliable connections.''',
         address: _addressController.text.trim(),
         port: int.parse(_portController.text.trim()),
         psk: psk,
-        certPin: pin.isEmpty ? null : pin,
+        certPin: (_protocol != 'grouk' && pin.isNotEmpty) ? pin : null,
         protocol: _protocol,
         transport: transport,
-        coverEnabled: _coverEnabled,
-        coverDomains: List.from(_coverDomains),
-        sniEnabled: _sniEnabled,
-        sniMode: _sniMode,
-        sniDomains: List.from(_sniDomains),
-        dnsFallbackEnabled: _dnsFallbackEnabled,
-        dnsFallbackMode: _dnsFallbackMode,
-        batteryAwareEnabled: _batteryAwareEnabled,
-        dataSaverEnabled: _dataSaverEnabled,
+        coverEnabled: _protocol != 'grouk' ? _coverEnabled : false,
+        coverDomains: _protocol != 'grouk' ? List.from(_coverDomains) : [],
+        sniEnabled: _protocol != 'grouk' ? _sniEnabled : false,
+        sniMode: _protocol != 'grouk' ? _sniMode : 'weighted',
+        sniDomains: _protocol != 'grouk' ? List.from(_sniDomains) : [],
+        dnsFallbackEnabled: _protocol != 'grouk' ? _dnsFallbackEnabled : false,
+        dnsFallbackMode: _protocol != 'grouk' ? _dnsFallbackMode : 'auto',
+        batteryAwareEnabled: _protocol != 'grouk' ? _batteryAwareEnabled : true,
+        dataSaverEnabled: _protocol != 'grouk' ? _dataSaverEnabled : false,
+        groukFecEnabled: _protocol == 'grouk' ? _groukFecEnabled : false,
+        groukFecDataShards: _protocol == 'grouk' ? _groukFecDataShards : 10,
+        groukFecParityShards: _protocol == 'grouk' ? _groukFecParityShards : 3,
       );
       provider.addServer(server);
       provider.setActiveServer(server.id);
