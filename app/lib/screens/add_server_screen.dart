@@ -944,6 +944,15 @@ class _AddServerScreenState extends State<AddServerScreen> {
       );
     }
 
+    GroukConfig? groukConfig;
+    if (_protocol == 'grouk') {
+      groukConfig = GroukConfig(
+        enableFEC: _groukFecEnabled,
+        fecDataShards: _groukFecDataShards,
+        fecParityShards: _groukFecParityShards,
+      );
+    }
+
     if (isEditing) {
       provider.updateServer(
         widget.server!.copyWith(
@@ -954,6 +963,7 @@ class _AddServerScreenState extends State<AddServerScreen> {
           certPin: (_protocol != 'grouk' && pin.isNotEmpty) ? pin : null,
           protocol: _protocol,
           transport: transport,
+          grouk: groukConfig,
           coverEnabled: _protocol != 'grouk' ? _coverEnabled : false,
           coverDomains: _protocol != 'grouk' ? List.from(_coverDomains) : [],
           sniEnabled: _protocol != 'grouk' ? _sniEnabled : false,
@@ -963,9 +973,6 @@ class _AddServerScreenState extends State<AddServerScreen> {
           dnsFallbackMode: _protocol != 'grouk' ? _dnsFallbackMode : 'auto',
           batteryAwareEnabled: _protocol != 'grouk' ? _batteryAwareEnabled : true,
           dataSaverEnabled: _protocol != 'grouk' ? _dataSaverEnabled : false,
-          groukFecEnabled: _protocol == 'grouk' ? _groukFecEnabled : false,
-          groukFecDataShards: _protocol == 'grouk' ? _groukFecDataShards : 10,
-          groukFecParityShards: _protocol == 'grouk' ? _groukFecParityShards : 3,
         ),
       );
     } else {
@@ -978,6 +985,7 @@ class _AddServerScreenState extends State<AddServerScreen> {
         certPin: (_protocol != 'grouk' && pin.isNotEmpty) ? pin : null,
         protocol: _protocol,
         transport: transport,
+        grouk: groukConfig,
         coverEnabled: _protocol != 'grouk' ? _coverEnabled : false,
         coverDomains: _protocol != 'grouk' ? List.from(_coverDomains) : [],
         sniEnabled: _protocol != 'grouk' ? _sniEnabled : false,
@@ -987,9 +995,6 @@ class _AddServerScreenState extends State<AddServerScreen> {
         dnsFallbackMode: _protocol != 'grouk' ? _dnsFallbackMode : 'auto',
         batteryAwareEnabled: _protocol != 'grouk' ? _batteryAwareEnabled : true,
         dataSaverEnabled: _protocol != 'grouk' ? _dataSaverEnabled : false,
-        groukFecEnabled: _protocol == 'grouk' ? _groukFecEnabled : false,
-        groukFecDataShards: _protocol == 'grouk' ? _groukFecDataShards : 10,
-        groukFecParityShards: _protocol == 'grouk' ? _groukFecParityShards : 3,
       );
       provider.addServer(server);
       provider.setActiveServer(server.id);
