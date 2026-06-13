@@ -49,11 +49,11 @@ class _AddServerScreenState extends State<AddServerScreen> {
   String get _protocolDescription {
     switch (_protocol) {
       case 'grouk':
-        return '🌩️ Fast raw UDP tunnel. Best for speed, less stealth. ⚠️ Beta';
+        return 'Fast raw UDP tunnel';
       case 'zhip':
-        return '⚡ QUIC-based tunnel. Good balance. ⚠️ Experimental';
+        return 'QUIC-based tunnel with HTTP/3';
       default:
-        return '🏹 TLS 1.3 encrypted. Maximum stealth & stability. ✅ Recommended';
+        return 'TLS 1.3 encrypted tunnel';
     }
   }
 
@@ -122,230 +122,377 @@ class _AddServerScreenState extends State<AddServerScreen> {
       body: Form(
         key: _formKey,
         child: ListView(
-          padding: const EdgeInsets.all(24),
+          padding: const EdgeInsets.all(16),
           children: [
-            _buildSectionHeader('🎯 Server Information'),
-            const SizedBox(height: 16),
-            
-            TextFormField(
-              controller: _nameController,
-              decoration: const InputDecoration(
-                labelText: 'Server Name',
-                hintText: 'e.g. Germany Server',
-                prefixIcon: Icon(Icons.label_outline),
-              ),
-              validator: (v) => v == null || v.isEmpty ? 'Name required' : null,
-            ),
-            const SizedBox(height: 16),
-            
-            TextFormField(
-              controller: _addressController,
-              decoration: const InputDecoration(
-                labelText: 'Server Address',
-                hintText: 'IP or domain',
-                prefixIcon: Icon(Icons.dns_outlined),
-              ),
-              keyboardType: TextInputType.url,
-              validator: (v) => v == null || v.isEmpty ? 'Address required' : null,
-            ),
-            const SizedBox(height: 16),
-            
-            Row(
-              children: [
-                Expanded(
-                  flex: 2,
-                  child: TextFormField(
-                    controller: _portController,
-                    decoration: const InputDecoration(
-                      labelText: 'Port',
-                      hintText: '8443',
-                      prefixIcon: Icon(Icons.numbers),
+            _sectionTitle(context, 'Server Information'),
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  children: [
+                    TextFormField(
+                      controller: _nameController,
+                      decoration: InputDecoration(
+                        labelText: 'Server Name',
+                        hintText: 'e.g. Germany Server',
+                        prefixIcon: Icon(Icons.label_outline, color: accentColor(context)),
+                      ),
+                      validator: (v) => v == null || v.isEmpty ? 'Name required' : null,
                     ),
-                    keyboardType: TextInputType.number,
-                    validator: (v) {
-                      if (v == null || v.isEmpty) return 'Port required';
-                      final port = int.tryParse(v);
-                      if (port == null || port < 1 || port > 65535) {
-                        return 'Invalid port';
-                      }
-                      return null;
-                    },
-                  ),
+                    const SizedBox(height: 16),
+                    
+                    TextFormField(
+                      controller: _addressController,
+                      decoration: InputDecoration(
+                        labelText: 'Server Address',
+                        hintText: 'IP or domain',
+                        prefixIcon: Icon(Icons.dns_outlined, color: accentColor(context)),
+                      ),
+                      keyboardType: TextInputType.url,
+                      validator: (v) => v == null || v.isEmpty ? 'Address required' : null,
+                    ),
+                    const SizedBox(height: 16),
+                    
+                    Row(
+                      children: [
+                        Expanded(
+                          flex: 2,
+                          child: TextFormField(
+                            controller: _portController,
+                            decoration: InputDecoration(
+                              labelText: 'Port',
+                              hintText: '8443',
+                              prefixIcon: Icon(Icons.settings_input_component, color: accentColor(context)),
+                            ),
+                            keyboardType: TextInputType.number,
+                            validator: (v) {
+                              if (v == null || v.isEmpty) return 'Port required';
+                              final port = int.tryParse(v);
+                              if (port == null || port < 1 || port > 65535) {
+                                return 'Invalid port';
+                              }
+                              return null;
+                            },
+                          ),
+                        ),
+                        const SizedBox(width: 16),
+                        Expanded(
+                          flex: 3,
+                          child: DropdownButtonFormField<String>(
+                            value: _protocol,
+                            decoration: InputDecoration(
+                              labelText: 'Protocol',
+                              prefixIcon: Icon(Icons.vpn_lock, color: accentColor(context)),
+                            ),
+                            items: const [
+                              DropdownMenuItem(value: 'guarch', child: Text('Guarch (TLS)')),
+                              DropdownMenuItem(value: 'grouk', child: Text('Grouk (UDP)')),
+                              DropdownMenuItem(value: 'zhip', child: Text('Zhip (QUIC)')),
+                            ],
+                            onChanged: (v) => setState(() => _protocol = v!),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    Padding(
+                      padding: const EdgeInsets.only(left: 12),
+                      child: Align(
+                        alignment: Alignment.centerLeft,
+                        child: Text(
+                          _protocolDescription,
+                          style: TextStyle(color: textMuted(context), fontSize: 12),
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
-                const SizedBox(width: 16),
-                Expanded(
-                  flex: 3,
-                  child: DropdownButtonFormField<String>(
-                    value: _protocol,
-                    decoration: const InputDecoration(
-                      labelText: 'Protocol',
-                      prefixIcon: Icon(Icons.router),
+              ),
+            ),
+
+            const SizedBox(height: 24),
+            _sectionTitle(context, 'Security'),
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'PSK is required for secure connection',
+                      style: TextStyle(color: textMuted(context), fontSize: 13),
                     ),
-                    items: [
-                      DropdownMenuItem(
-                        value: 'guarch',
-                        child: Row(
-                          children: [
-                            const Text('🏹 Guarch (TLS)'),
-                            const SizedBox(width: 8),
-                            Chip(
-                              label: const Text('Stable', style: TextStyle(fontSize: 10, color: Colors.white)),
-                              backgroundColor: Colors.green,
-                              padding: const EdgeInsets.symmetric(horizontal: 4),
-                              materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                            ),
-                          ],
+                    const SizedBox(height: 16),
+                    
+                    TextFormField(
+                      controller: _pskController,
+                      obscureText: !_pskVisible,
+                      decoration: InputDecoration(
+                        labelText: 'Pre-Shared Key (PSK)',
+                        hintText: 'Must match server PSK',
+                        prefixIcon: Icon(Icons.key, color: accentColor(context)),
+                        suffixIcon: IconButton(
+                          icon: Icon(
+                            _pskVisible ? Icons.visibility_off : Icons.visibility,
+                            color: textMuted(context),
+                          ),
+                          onPressed: () => setState(() => _pskVisible = !_pskVisible),
                         ),
                       ),
-                      DropdownMenuItem(
-                        value: 'grouk',
-                        child: Row(
-                          children: [
-                            const Text('🌩️ Grouk (UDP)'),
-                            const SizedBox(width: 8),
-                            Chip(
-                              label: const Text('Beta', style: TextStyle(fontSize: 10, color: Colors.white)),
-                              backgroundColor: Colors.orange,
-                              padding: const EdgeInsets.symmetric(horizontal: 4),
-                              materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                            ),
-                          ],
+                      validator: (v) {
+                        if (v == null || v.isEmpty) return 'PSK is required';
+                        if (v.length < 8) return 'PSK must be at least 8 characters';
+                        return null;
+                      },
+                    ),
+                    
+                    if (_protocol != 'grouk') ...[
+                      const SizedBox(height: 16),
+                      TextFormField(
+                        controller: _pinController,
+                        decoration: InputDecoration(
+                          labelText: 'Certificate PIN (optional)',
+                          hintText: 'SHA-256 hash from server output',
+                          prefixIcon: Icon(Icons.verified_user_outlined, color: accentColor(context)),
+                          helperText: 'Protects against MITM attacks',
+                          helperStyle: TextStyle(color: textMuted(context), fontSize: 11),
                         ),
+                        style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
                       ),
-                      DropdownMenuItem(
-                        value: 'zhip',
-                        child: Row(
+                    ],
+                  ],
+                ),
+              ),
+            ),
+
+            if (_protocol == 'grouk') ...[
+              const SizedBox(height: 24),
+              _sectionTitle(context, 'Grouk Settings'),
+              Card(
+                child: Column(
+                  children: [
+                    SwitchListTile(
+                      secondary: Icon(Icons.shield_outlined, color: accentColor(context)),
+                      title: Text('FEC (Forward Error Correction)', style: TextStyle(color: textSecondary(context))),
+                      subtitle: Text('Recover lost UDP packets without retransmission', style: TextStyle(color: textMuted(context), fontSize: 12)),
+                      value: _groukFecEnabled,
+                      onChanged: (v) => setState(() => _groukFecEnabled = v),
+                    ),
+                    
+                    if (_groukFecEnabled) ...[
+                      Divider(height: 1, color: accentColor(context).withOpacity(0.1)),
+                      Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            const Text('⚡ Zhip (QUIC)'),
-                            const SizedBox(width: 8),
-                            Chip(
-                              label: const Text('Experimental', style: TextStyle(fontSize: 10, color: Colors.white)),
-                              backgroundColor: Colors.red,
-                              padding: const EdgeInsets.symmetric(horizontal: 4),
-                              materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                            Text('Data Shards: $_groukFecDataShards', style: TextStyle(fontSize: 14, color: textSecondary(context))),
+                            Slider(
+                              value: _groukFecDataShards.toDouble(),
+                              min: 4,
+                              max: 20,
+                              divisions: 16,
+                              label: '$_groukFecDataShards',
+                              onChanged: (v) => setState(() => _groukFecDataShards = v.toInt()),
+                            ),
+                            
+                            const SizedBox(height: 8),
+                            Text('Parity Shards: $_groukFecParityShards', style: TextStyle(fontSize: 14, color: textSecondary(context))),
+                            Slider(
+                              value: _groukFecParityShards.toDouble(),
+                              min: 1,
+                              max: 10,
+                              divisions: 9,
+                              label: '$_groukFecParityShards',
+                              onChanged: (v) => setState(() => _groukFecParityShards = v.toInt()),
+                            ),
+                            
+                            const SizedBox(height: 8),
+                            Container(
+                              padding: const EdgeInsets.all(12),
+                              decoration: BoxDecoration(
+                                color: _getFECRecommendationColor().withOpacity(0.1),
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(color: _getFECRecommendationColor().withOpacity(0.3)),
+                              ),
+                              child: Row(
+                                children: [
+                                  Icon(_getFECRecommendationIcon(), size: 18, color: _getFECRecommendationColor()),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: Text(_getFECRecommendationText(), style: TextStyle(fontSize: 12, color: textMuted(context), height: 1.4)),
+                                  ),
+                                ],
+                              ),
                             ),
                           ],
                         ),
                       ),
                     ],
-                    onChanged: (v) {
-                      if (v == 'grouk' || v == 'zhip') {
-                        _showProtocolWarning(v!);
-                      } else {
-                        setState(() => _protocol = v!);
-                      }
-                    },
-                  ),
+                  ],
                 ),
-              ],
-            ),
-            const SizedBox(height: 4),
-            Padding(
-              padding: const EdgeInsets.only(left: 12),
-              child: Text(
-                _protocolDescription,
-                style: TextStyle(color: textMuted(context), fontSize: 12),
-              ),
-            ),
-
-            const SizedBox(height: 32),
-            _buildSectionHeader('🔐 Security'),
-            const SizedBox(height: 4),
-            Text(
-              'PSK is required for secure connection',
-              style: TextStyle(color: textMuted(context), fontSize: 13),
-            ),
-            const SizedBox(height: 16),
-            
-            TextFormField(
-              controller: _pskController,
-              obscureText: !_pskVisible,
-              decoration: InputDecoration(
-                labelText: 'Pre-Shared Key (PSK)',
-                hintText: 'Must match server PSK',
-                prefixIcon: const Icon(Icons.key),
-                suffixIcon: IconButton(
-                  icon: Icon(
-                    _pskVisible ? Icons.visibility_off : Icons.visibility,
-                    color: textMuted(context),
-                  ),
-                  onPressed: () => setState(() => _pskVisible = !_pskVisible),
-                ),
-              ),
-              validator: (v) {
-                if (v == null || v.isEmpty) return 'PSK is required';
-                if (v.length < 8) return 'PSK must be at least 8 characters';
-                return null;
-              },
-            ),
-            const SizedBox(height: 16),
-            
-            if (_protocol != 'grouk') ...[
-              TextFormField(
-                controller: _pinController,
-                decoration: InputDecoration(
-                  labelText: 'Certificate PIN (optional)',
-                  hintText: 'SHA-256 hash from server output',
-                  prefixIcon: const Icon(Icons.verified_user_outlined),
-                  helperText: 'Protects against man-in-the-middle attacks',
-                  helperStyle: TextStyle(color: textMuted(context), fontSize: 11),
-                ),
-                style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
               ),
             ],
 
-            if (_protocol == 'grouk') ...[
-              const SizedBox(height: 32),
-              _buildGroukInfoBox(),
-              
-              const SizedBox(height: 16),
-              _buildToggleSection(
-                '⚡ FEC (Forward Error Correction)',
-                'Recover lost UDP packets without retransmission (recommended for lossy networks)',
-                _groukFecEnabled,
-                (v) => setState(() => _groukFecEnabled = v),
-              ),
-
-              if (_groukFecEnabled) ..._buildGroukFECSection(),
-            ],
-
             if (_protocol != 'grouk') ...[
-              const SizedBox(height: 32),
-              _buildSectionHeader('🚀 Transport Settings'),
-              const SizedBox(height: 4),
-              Text(
-                'How data is sent through the tunnel (bypass method)',
-                style: TextStyle(color: textMuted(context), fontSize: 13),
+              const SizedBox(height: 24),
+              _sectionTitle(context, 'Transport Settings'),
+              Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      DropdownButtonFormField<String>(
+                        value: _transportType,
+                        decoration: InputDecoration(
+                          labelText: 'Transport Type',
+                          prefixIcon: Icon(Icons.swap_horiz, color: accentColor(context)),
+                          helperText: 'How data is sent through tunnel',
+                        ),
+                        items: const [
+                          DropdownMenuItem(value: 'direct', child: Text('Direct')),
+                          DropdownMenuItem(value: 'websocket', child: Text('WebSocket')),
+                          DropdownMenuItem(value: 'http2', child: Text('HTTP/2')),
+                          DropdownMenuItem(value: 'dns', child: Text('DNS Tunnel')),
+                        ],
+                        onChanged: (v) => setState(() => _transportType = v!),
+                      ),
+                      
+                      const SizedBox(height: 12),
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: _getTransportColor().withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: _getTransportColor().withOpacity(0.3)),
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(_getTransportIcon(), size: 18, color: _getTransportColor()),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Text(_getTransportDescription(), style: TextStyle(fontSize: 12, color: textMuted(context), height: 1.4)),
+                            ),
+                          ],
+                        ),
+                      ),
+                      
+                      if (_transportType == 'websocket' || _transportType == 'http2') ...[
+                        const SizedBox(height: 16),
+                        Divider(color: accentColor(context).withOpacity(0.1)),
+                        const SizedBox(height: 16),
+                        
+                        Text('Advanced Settings', style: TextStyle(fontWeight: FontWeight.w600, color: textSecondary(context))),
+                        const SizedBox(height: 12),
+                        
+                        TextFormField(
+                          controller: _transportHostController,
+                          decoration: InputDecoration(
+                            labelText: 'Domain Fronting (optional)',
+                            hintText: 'e.g., cloudflare.com',
+                            prefixIcon: Icon(Icons.public, color: accentColor(context)),
+                            helperText: 'Pretend to connect to this domain',
+                          ),
+                          keyboardType: TextInputType.url,
+                        ),
+                        
+                        if (_transportType == 'websocket') ...[
+                          const SizedBox(height: 16),
+                          TextFormField(
+                            controller: _transportPathController,
+                            decoration: InputDecoration(
+                              labelText: 'WebSocket Path',
+                              hintText: '/ws',
+                              prefixIcon: Icon(Icons.route, color: accentColor(context)),
+                              helperText: 'URL path for connection',
+                            ),
+                          ),
+                        ],
+                      ],
+                    ],
+                  ),
+                ),
               ),
-              const SizedBox(height: 16),
-              _buildTransportSection(),
 
-              const SizedBox(height: 32),
-              _buildToggleSection(
-                '🔄 SNI Rotation',
-                'Change Server Name Indication every 5 minutes',
-                _sniEnabled,
-                (v) => setState(() => _sniEnabled = v),
+              const SizedBox(height: 24),
+              _sectionTitle(context, 'Connection'),
+              Card(
+                child: Column(
+                  children: [
+                    ListTile(
+                      leading: Icon(Icons.shield_outlined, color: accentColor(context)),
+                      title: Text('SNI Rotation', style: TextStyle(color: textSecondary(context))),
+                      subtitle: Text(_sniEnabled ? '${_sniDomains.length} domains • $_sniMode mode' : 'Disabled', style: TextStyle(color: textMuted(context), fontSize: 12)),
+                      trailing: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Switch(value: _sniEnabled, onChanged: (v) => setState(() => _sniEnabled = v)),
+                          const SizedBox(width: 8),
+                          Icon(Icons.arrow_forward_ios, size: 16, color: textMuted(context)),
+                        ],
+                      ),
+                      onTap: () => setState(() => _sniEnabled = !_sniEnabled),
+                    ),
+                    
+                    if (_sniEnabled) ...[
+                      Divider(height: 1, color: accentColor(context).withOpacity(0.1)),
+                      Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: _buildSNISection(),
+                      ),
+                    ],
+                    
+                    Divider(height: 1, color: accentColor(context).withOpacity(0.1)),
+                    ListTile(
+                      leading: Icon(Icons.theater_comedy, color: accentColor(context)),
+                      title: Text('Cover Traffic', style: TextStyle(color: textSecondary(context))),
+                      subtitle: Text(_coverEnabled ? '${_coverDomains.length} domains' : 'Disabled', style: TextStyle(color: textMuted(context), fontSize: 12)),
+                      trailing: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Switch(value: _coverEnabled, onChanged: (v) => setState(() => _coverEnabled = v)),
+                          const SizedBox(width: 8),
+                          Icon(Icons.arrow_forward_ios, size: 16, color: textMuted(context)),
+                        ],
+                      ),
+                      onTap: () => setState(() => _coverEnabled = !_coverEnabled),
+                    ),
+                    
+                    if (_coverEnabled) ...[
+                      Divider(height: 1, color: accentColor(context).withOpacity(0.1)),
+                      Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: _buildCoverSection(),
+                      ),
+                    ],
+                    
+                    Divider(height: 1, color: accentColor(context).withOpacity(0.1)),
+                    ListTile(
+                      leading: Icon(Icons.dns, color: accentColor(context)),
+                      title: Text('DNS Fallback', style: TextStyle(color: textSecondary(context))),
+                      subtitle: Text(_dnsFallbackEnabled ? '$_dnsFallbackMode mode' : 'Disabled', style: TextStyle(color: textMuted(context), fontSize: 12)),
+                      trailing: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Switch(value: _dnsFallbackEnabled, onChanged: (v) => setState(() => _dnsFallbackEnabled = v)),
+                          const SizedBox(width: 8),
+                          Icon(Icons.arrow_forward_ios, size: 16, color: textMuted(context)),
+                        ],
+                      ),
+                      onTap: () => setState(() => _dnsFallbackEnabled = !_dnsFallbackEnabled),
+                    ),
+                    
+                    if (_dnsFallbackEnabled) ...[
+                      Divider(height: 1, color: accentColor(context).withOpacity(0.1)),
+                      Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: _buildDNSSection(),
+                      ),
+                    ],
+                  ],
+                ),
               ),
-              if (_sniEnabled) ..._buildSNISection(),
-
-              const SizedBox(height: 32),
-              _buildToggleSection(
-                '🎭 Cover Traffic',
-                'Send real requests to popular sites to hide your traffic',
-                _coverEnabled,
-                (v) => setState(() => _coverEnabled = v),
-              ),
-              if (_coverEnabled) ..._buildCoverSection(),
-
-              const SizedBox(height: 32),
-              _buildToggleSection(
-                '🔌 DNS Fallback',
-                'Tunnel traffic over DNS when TLS is blocked (survival mode)',
-                _dnsFallbackEnabled,
-                (v) => setState(() => _dnsFallbackEnabled = v),
-              ),
-              if (_dnsFallbackEnabled) ..._buildDNSSection(),
             ],
 
             const SizedBox(height: 32),
@@ -354,10 +501,7 @@ class _AddServerScreenState extends State<AddServerScreen> {
               style: FilledButton.styleFrom(
                 padding: const EdgeInsets.symmetric(vertical: 16),
               ),
-              child: Text(
-                isEditing ? 'Save Changes' : 'Add Server',
-                style: const TextStyle(fontSize: 16),
-              ),
+              child: Text(isEditing ? 'Save Changes' : 'Add Server', style: const TextStyle(fontSize: 16)),
             ),
             const SizedBox(height: 16),
           ],
@@ -366,182 +510,18 @@ class _AddServerScreenState extends State<AddServerScreen> {
     );
   }
 
-  Widget _buildSectionHeader(String title) {
-    return Row(
-      children: [
-        Text(
-          title,
-          style: TextStyle(
-            fontSize: 18,
-            fontWeight: FontWeight.w600,
-            color: textPrimary(context),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildToggleSection(
-    String title,
-    String description,
-    bool value,
-    ValueChanged<bool> onChanged,
-  ) {
-    return Row(
-      children: [
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                title,
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w600,
-                  color: textPrimary(context),
-                ),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                description,
-                style: TextStyle(color: textMuted(context), fontSize: 13),
-              ),
-            ],
-          ),
-        ),
-        Switch(value: value, onChanged: onChanged),
-      ],
-    );
-  }
-
-  Widget _buildGroukInfoBox() {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [Colors.blue.withOpacity(0.1), Colors.purple.withOpacity(0.1)],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.blue.withOpacity(0.3)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              const Text('🌩️', style: TextStyle(fontSize: 24)),
-              const SizedBox(width: 12),
-              Text(
-                'Grouk Protocol',
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
-                  color: textPrimary(context),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          Text(
-            'Grouk uses raw UDP for maximum speed. No TLS overhead means:\n'
-            '• Lower latency (~50% faster)\n'
-            '• Better for gaming/streaming\n'
-            '• Less CPU usage\n\n'
-            '⚠️ Note: UDP may be blocked on some networks (WiFi, corporate)',
-            style: TextStyle(
-              fontSize: 13,
-              color: textMuted(context),
-              height: 1.5,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  List<Widget> _buildGroukFECSection() {
-    return [
-      const SizedBox(height: 16),
-      Card(
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'FEC Configuration',
-                style: TextStyle(
-                  fontWeight: FontWeight.w600,
-                  color: textSecondary(context),
-                ),
-              ),
-              const SizedBox(height: 16),
-              
-              Text(
-                'Data Shards: $_groukFecDataShards',
-                style: TextStyle(fontSize: 14, color: textSecondary(context)),
-              ),
-              Slider(
-                value: _groukFecDataShards.toDouble(),
-                min: 4,
-                max: 20,
-                divisions: 16,
-                label: '$_groukFecDataShards',
-                onChanged: (v) => setState(() => _groukFecDataShards = v.toInt()),
-              ),
-              
-              const SizedBox(height: 8),
-              Text(
-                'Parity Shards: $_groukFecParityShards',
-                style: TextStyle(fontSize: 14, color: textSecondary(context)),
-              ),
-              Slider(
-                value: _groukFecParityShards.toDouble(),
-                min: 1,
-                max: 10,
-                divisions: 9,
-                label: '$_groukFecParityShards',
-                onChanged: (v) => setState(() => _groukFecParityShards = v.toInt()),
-              ),
-              
-              const SizedBox(height: 12),
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: _getFECRecommendationColor().withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(
-                    color: _getFECRecommendationColor().withOpacity(0.3),
-                  ),
-                ),
-                child: Row(
-                  children: [
-                    Icon(
-                      _getFECRecommendationIcon(),
-                      size: 18,
-                      color: _getFECRecommendationColor(),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Text(
-                        _getFECRecommendationText(),
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: textMuted(context),
-                          height: 1.4,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
+  Widget _sectionTitle(BuildContext context, String title) {
+    return Padding(
+      padding: const EdgeInsets.only(left: 4, bottom: 8),
+      child: Text(
+        title,
+        style: TextStyle(
+          fontSize: 14,
+          fontWeight: FontWeight.w600,
+          color: textPrimary(context),
         ),
       ),
-    ];
+    );
   }
 
   Color _getFECRecommendationColor() {
@@ -562,615 +542,300 @@ class _AddServerScreenState extends State<AddServerScreen> {
     final overhead = ((_groukFecDataShards + _groukFecParityShards) / _groukFecDataShards * 100 - 100).toStringAsFixed(0);
     
     if (ratio < 0.2) {
-      return 'Low redundancy: Can recover up to $_groukFecParityShards lost packets per $_groukFecDataShards. Good for stable networks. Overhead: +$overhead%';
+      return 'Low redundancy: Can recover up to $_groukFecParityShards lost packets per $_groukFecDataShards. Overhead: +$overhead%';
     } else if (ratio > 0.5) {
-      return 'High redundancy: Can recover up to $_groukFecParityShards lost packets per $_groukFecDataShards. Use for very lossy networks. Overhead: +$overhead%';
+      return 'High redundancy: Can recover up to $_groukFecParityShards lost packets per $_groukFecDataShards. Overhead: +$overhead%';
     } else {
-      return 'Balanced: Can recover up to $_groukFecParityShards lost packets per $_groukFecDataShards. Recommended for most networks. Overhead: +$overhead%';
+      return 'Balanced: Can recover up to $_groukFecParityShards lost packets per $_groukFecDataShards. Overhead: +$overhead%';
     }
-  }
-
-  Widget _buildTransportSection() {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            DropdownButtonFormField<String>(
-              value: _transportType,
-              decoration: const InputDecoration(
-                labelText: 'Transport Type',
-                prefixIcon: Icon(Icons.swap_horiz),
-                helperText: 'Method for sending data',
-              ),
-              items: const [
-                DropdownMenuItem(
-                  value: 'direct',
-                  child: Text('🔌 Direct (Simple & Fast)'),
-                ),
-                DropdownMenuItem(
-                  value: 'websocket',
-                  child: Text('🌐 WebSocket (Bypass)'),
-                ),
-                DropdownMenuItem(
-                  value: 'http2',
-                  child: Text('⚡ HTTP/2 (Experimental)'),
-                ),
-                DropdownMenuItem(
-                  value: 'dns',
-                  child: Text('🔌 DNS Tunnel (Emergency)'),
-                ),
-              ],
-              onChanged: (v) => setState(() => _transportType = v!),
-            ),
-            
-            const SizedBox(height: 12),
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: _getTransportColor().withOpacity(0.1),
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(
-                  color: _getTransportColor().withOpacity(0.3),
-                ),
-              ),
-              child: Row(
-                children: [
-                  Icon(
-                    _getTransportIcon(),
-                    size: 18,
-                    color: _getTransportColor(),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Text(
-                      _getTransportDescription(),
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: textMuted(context),
-                        height: 1.4,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            
-            if (_transportType == 'websocket' || _transportType == 'http2') ...[
-              const SizedBox(height: 16),
-              Divider(color: accentColor(context).withOpacity(0.1)),
-              const SizedBox(height: 16),
-              
-              Text(
-                'Advanced Settings',
-                style: TextStyle(
-                  fontWeight: FontWeight.w600,
-                  color: textSecondary(context),
-                ),
-              ),
-              const SizedBox(height: 12),
-              
-              TextFormField(
-                controller: _transportHostController,
-                decoration: const InputDecoration(
-                  labelText: 'Domain Fronting (optional)',
-                  hintText: 'e.g., digikala.com',
-                  prefixIcon: Icon(Icons.public),
-                  helperText: 'Pretend to connect to this popular domain',
-                ),
-                keyboardType: TextInputType.url,
-              ),
-              
-              if (_transportType == 'websocket') ...[
-                const SizedBox(height: 16),
-                TextFormField(
-                  controller: _transportPathController,
-                  decoration: const InputDecoration(
-                    labelText: 'WebSocket Path',
-                    hintText: '/ws',
-                    prefixIcon: Icon(Icons.route),
-                    helperText: 'URL path for WebSocket connection',
-                  ),
-                ),
-              ],
-              
-              const SizedBox(height: 12),
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: Colors.blue.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Row(
-                  children: [
-                    const Icon(Icons.info_outline, size: 16, color: Colors.blue),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        'Domain Fronting helps bypass SNI-based filtering (Iran/China)',
-                        style: TextStyle(fontSize: 11, color: textMuted(context)),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ],
-        ),
-      ),
-    );
   }
 
   Color _getTransportColor() {
     switch (_transportType) {
-      case 'websocket':
-        return Colors.green;
-      case 'http2':
-        return Colors.orange;
-      case 'dns':
-        return Colors.red;
-      default:
-        return Colors.blue;
+      case 'websocket': return Colors.green;
+      case 'http2': return Colors.orange;
+      case 'dns': return Colors.red;
+      default: return Colors.blue;
     }
   }
 
   IconData _getTransportIcon() {
     switch (_transportType) {
-      case 'websocket':
-        return Icons.wifi;
-      case 'http2':
-        return Icons.flash_on;
-      case 'dns':
-        return Icons.dns;
-      default:
-        return Icons.cable;
+      case 'websocket': return Icons.wifi;
+      case 'http2': return Icons.flash_on;
+      case 'dns': return Icons.dns;
+      default: return Icons.cable;
     }
   }
 
   String _getTransportDescription() {
     switch (_transportType) {
-      case 'direct':
-        return 'Direct TCP connection. Fastest but easily detected by DPI firewalls.';
-      case 'websocket':
-        return 'WebSocket over HTTPS. Looks like normal web browsing. Best for censored networks.';
-      case 'http2':
-        return 'HTTP/2 multiplexing. Advanced bypass technique. May be unstable.';
-      case 'dns':
-        return 'Tunnel via DNS queries (port 53). Very slow (~50 Kbps) but works everywhere.';
-      default:
-        return '';
+      case 'direct': return 'Direct TCP connection. Fastest method.';
+      case 'websocket': return 'WebSocket over HTTPS. Good for censored networks.';
+      case 'http2': return 'HTTP/2 multiplexing. Advanced bypass technique.';
+      case 'dns': return 'Tunnel via DNS queries. Very slow but works everywhere.';
+      default: return '';
     }
   }
 
-  void _showProtocolWarning(String protocol) {
-    final warnings = {
-      'grouk': {
-        'title': '⚠️ Grouk Protocol (Beta)',
-        'content': '''This protocol is still in beta testing.
-
-⚠️ Known Issues:
-• UDP may be blocked on some networks (WiFi, corporate)
-• NAT traversal problems on mobile
-• Higher battery consumption
-• Cover traffic less effective
-
-✅ Use Grouk only if:
-• You need maximum speed
-• Your network allows UDP traffic
-• You're testing/debugging
-
-Recommended: Use Guarch for production.''',
-      },
-      'zhip': {
-        'title': '⚠️ Zhip Protocol (Experimental)',
-        'content': '''This protocol uses QUIC and is experimental.
-
-⚠️ Known Issues:
-• Not stable on all networks yet
-• Some firewalls block QUIC (UDP port 443)
-• Limited testing in production
-• May have bugs
-
-✅ Use Zhip only if:
-• You're an advanced user
-• Testing new features
-• Contributing to development
-
-Recommended: Use Guarch for reliable connections.''',
-      },
-    };
-
-    final warning = warnings[protocol]!;
-
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) => AlertDialog(
-        title: Text(warning['title']!),
-        content: SingleChildScrollView(
-          child: Text(
-            warning['content']!,
-            style: const TextStyle(height: 1.5),
+  Widget _buildSNISection() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        DropdownButtonFormField<String>(
+          value: _sniMode,
+          decoration: InputDecoration(
+            labelText: 'Selection Mode',
+            prefixIcon: Icon(Icons.shuffle, color: accentColor(context)),
           ),
+          items: const [
+            DropdownMenuItem(value: 'random', child: Text('Random')),
+            DropdownMenuItem(value: 'weighted', child: Text('Weighted')),
+            DropdownMenuItem(value: 'sequential', child: Text('Sequential')),
+            DropdownMenuItem(value: 'single', child: Text('Single')),
+          ],
+          onChanged: (v) => setState(() => _sniMode = v!),
         ),
-        actions: [
-          TextButton(
-            onPressed: () {
-              setState(() => _protocol = 'guarch');
-              Navigator.pop(context);
-            },
-            child: const Text('Use Guarch (Safe)'),
-          ),
-          FilledButton(
-            onPressed: () {
-              setState(() => _protocol = protocol);
-              Navigator.pop(context);
-            },
-            style: FilledButton.styleFrom(
-              backgroundColor: Colors.orange,
+        
+        const SizedBox(height: 16),
+        Row(
+          children: [
+            Expanded(
+              child: TextField(
+                controller: _sniDomainController,
+                decoration: InputDecoration(
+                  hintText: 'e.g. www.google.com',
+                  prefixIcon: Icon(Icons.public, size: 20, color: accentColor(context)),
+                  isDense: true,
+                ),
+                keyboardType: TextInputType.url,
+                onSubmitted: (_) => _addSNIDomain(),
+              ),
             ),
-            child: const Text('Continue Anyway'),
-          ),
+            const SizedBox(width: 8),
+            IconButton.filled(onPressed: _addSNIDomain, icon: const Icon(Icons.add)),
+          ],
+        ),
+        
+        const SizedBox(height: 12),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            _quickAddSNIChip('www.google.com'),
+            _quickAddSNIChip('www.microsoft.com'),
+            _quickAddSNIChip('github.com'),
+            _quickAddSNIChip('www.cloudflare.com'),
+          ],
+        ),
+        
+        if (_sniDomains.isNotEmpty) ...[
+          const SizedBox(height: 16),
+          Divider(color: accentColor(context).withOpacity(0.1)),
+          const SizedBox(height: 8),
+          
+          Text('Active SNI Domains:', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13, color: textSecondary(context))),
+          const SizedBox(height: 8),
+
+          ..._sniDomains.asMap().entries.map((entry) {
+            final index = entry.key;
+            final domain = entry.value;
+            
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 4),
+              child: Row(
+                children: [
+                  Icon(domain.fallback ? Icons.shield : domain.checkHealth ? Icons.check_circle : Icons.circle_outlined, size: 16, color: domain.fallback ? Colors.blue : domain.checkHealth ? Colors.green : Colors.grey),
+                  const SizedBox(width: 8),
+                  Expanded(child: Text(domain.domain, style: TextStyle(fontSize: 14, color: textSecondary(context)))),
+                  
+                  if (domain.fallback)
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(color: Colors.blue.withOpacity(0.2), borderRadius: BorderRadius.circular(4)),
+                      child: const Text('Fallback', style: TextStyle(fontSize: 10, color: Colors.blue)),
+                    ),
+                  
+                  if (domain.checkHealth && !domain.fallback)
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(color: Colors.green.withOpacity(0.2), borderRadius: BorderRadius.circular(4)),
+                      child: const Text('Health', style: TextStyle(fontSize: 10, color: Colors.green)),
+                    ),
+                  
+                  const SizedBox(width: 8),
+                  InkWell(
+                    onTap: () => setState(() {
+                      _sniDomains.removeAt(index);
+                      _recalculateSNIWeights();
+                    }),
+                    child: const Padding(padding: EdgeInsets.all(4), child: Icon(Icons.close, size: 16, color: Colors.red)),
+                  ),
+                ],
+              ),
+            );
+          }).toList(),
         ],
-      ),
+        
+        if (_sniDomains.isEmpty)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            child: Text('No SNI domains added yet.', style: TextStyle(color: Colors.orange, fontSize: 12)),
+          ),
+      ],
     );
   }
 
-  List<Widget> _buildSNISection() {
-    return [
-      const SizedBox(height: 16),
-      Card(
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'SNI Configuration',
-                style: TextStyle(
-                  fontWeight: FontWeight.w600,
-                  color: textSecondary(context),
-                ),
-              ),
-              const SizedBox(height: 16),
-              
-              DropdownButtonFormField<String>(
-                value: _sniMode,
-                decoration: const InputDecoration(
-                  labelText: 'Selection Mode',
-                  prefixIcon: Icon(Icons.shuffle),
-                ),
-                items: const [
-                  DropdownMenuItem(value: 'random', child: Text('🎲 Random')),
-                  DropdownMenuItem(value: 'weighted', child: Text('⚖️ Weighted (Recommended)')),
-                  DropdownMenuItem(value: 'sequential', child: Text('🔄 Sequential')),
-                  DropdownMenuItem(value: 'single', child: Text('📍 Single (No Rotation)')),
-                ],
-                onChanged: (v) => setState(() => _sniMode = v!),
-              ),
-              
-              const SizedBox(height: 16),
-              Row(
-                children: [
-                  Expanded(
-                    child: TextField(
-                      controller: _sniDomainController,
-                      decoration: const InputDecoration(
-                        hintText: 'e.g. www.google.com',
-                        prefixIcon: Icon(Icons.public, size: 20),
-                        isDense: true,
-                      ),
-                      keyboardType: TextInputType.url,
-                      onSubmitted: (_) => _addSNIDomain(),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  IconButton.filled(
-                    onPressed: _addSNIDomain,
-                    icon: const Icon(Icons.add),
-                  ),
-                ],
-              ),
-              
-              const SizedBox(height: 12),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: [
-                  _quickAddSNIChip('www.google.com'),
-                  _quickAddSNIChip('www.microsoft.com'),
-                  _quickAddSNIChip('github.com'),
-                  _quickAddSNIChip('www.cloudflare.com'),
-                  _quickAddSNIChip('stackoverflow.com'),
-                  _quickAddSNIChip('learn.microsoft.com'),
-                ],
-              ),
-              
-              if (_sniDomains.isNotEmpty) ...[
-                const SizedBox(height: 16),
-                Divider(color: accentColor(context).withOpacity(0.1)),
-                const SizedBox(height: 8),
-                
-                Text(
-                  'Active SNI Domains:',
-                  style: TextStyle(
-                    fontWeight: FontWeight.w600,
-                    fontSize: 13,
-                    color: textSecondary(context),
-                  ),
-                ),
-                const SizedBox(height: 8),
-
-                ..._sniDomains.asMap().entries.map((entry) {
-                  final index = entry.key;
-                  final domain = entry.value;
-                  
-                  return Padding(
-                    padding: const EdgeInsets.only(bottom: 4),
-                    child: Row(
-                      children: [
-                        Icon(
-                          domain.fallback ? Icons.shield : 
-                          domain.checkHealth ? Icons.check_circle : Icons.circle_outlined,
-                          size: 16,
-                          color: domain.fallback ? Colors.blue :
-                                 domain.checkHealth ? Colors.green : Colors.grey,
-                        ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            domain.domain,
-                            style: TextStyle(fontSize: 14, color: textSecondary(context)),
-                          ),
-                        ),
-                        
-                        if (domain.fallback)
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                            decoration: BoxDecoration(
-                              color: Colors.blue.withOpacity(0.2),
-                              borderRadius: BorderRadius.circular(4),
-                            ),
-                            child: const Text('Fallback', style: TextStyle(fontSize: 10, color: Colors.blue)),
-                          ),
-                        
-                        if (domain.checkHealth && !domain.fallback)
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                            decoration: BoxDecoration(
-                              color: Colors.green.withOpacity(0.2),
-                              borderRadius: BorderRadius.circular(4),
-                            ),
-                            child: const Text('Health', style: TextStyle(fontSize: 10, color: Colors.green)),
-                          ),
-                        
-                        const SizedBox(width: 8),
-                        InkWell(
-                          onTap: () => setState(() {
-                            _sniDomains.removeAt(index);
-                            _recalculateSNIWeights();
-                          }),
-                          child: const Padding(
-                            padding: EdgeInsets.all(4),
-                            child: Icon(Icons.close, size: 16, color: Colors.red),
-                          ),
-                        ),
-                      ],
-                    ),
-                  );
-                }).toList(),
-              ],
-              
-              if (_sniDomains.isEmpty)
-                const Padding(
-                  padding: EdgeInsets.symmetric(vertical: 8),
-                  child: Text(
-                    'No SNI domains added yet.',
-                    style: TextStyle(color: Colors.orange, fontSize: 12),
-                  ),
-                ),
-            ],
-          ),
-        ),
-      ),
-    ];
-  }
-
-  List<Widget> _buildCoverSection() {
-    return [
-      const SizedBox(height: 16),
-      Card(
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Cover Domains',
-                style: TextStyle(fontWeight: FontWeight.w600, color: textSecondary(context)),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                'Add websites you normally visit',
-                style: TextStyle(color: textMuted(context), fontSize: 12),
-              ),
-              const SizedBox(height: 16),
-              
-              Row(
-                children: [
-                  Expanded(
-                    child: TextField(
-                      controller: _domainController,
-                      decoration: const InputDecoration(
-                        hintText: 'e.g. google.com',
-                        prefixIcon: Icon(Icons.public, size: 20),
-                        isDense: true,
-                      ),
-                      keyboardType: TextInputType.url,
-                      onSubmitted: (_) => _addDomain(),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  IconButton.filled(
-                    onPressed: _addDomain,
-                    icon: const Icon(Icons.add),
-                  ),
-                ],
-              ),
-              
-              const SizedBox(height: 12),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: [
-                  _quickAddChip('google.com'),
-                  _quickAddChip('microsoft.com'),
-                  _quickAddChip('github.com'),
-                  _quickAddChip('stackoverflow.com'),
-                  _quickAddChip('cloudflare.com'),
-                  _quickAddChip('youtube.com'),
-                ],
-              ),
-              
-              if (_coverDomains.isNotEmpty) ...[
-                const SizedBox(height: 16),
-                Divider(color: accentColor(context).withOpacity(0.1)),
-                const SizedBox(height: 8),
-                
-                Text(
-                  'Active Cover Domains:',
-                  style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13, color: textSecondary(context)),
-                ),
-                const SizedBox(height: 8),
-                
-                ..._coverDomains.asMap().entries.map((entry) {
-                  final index = entry.key;
-                  final domain = entry.value;
-                  return Padding(
-                    padding: const EdgeInsets.only(bottom: 4),
-                    child: Row(
-                      children: [
-                        const Icon(Icons.check_circle, size: 16, color: Colors.green),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Text(domain.domain, style: TextStyle(fontSize: 14, color: textSecondary(context))),
-                        ),
-                        Text('${domain.weight}%', style: TextStyle(color: textMuted(context), fontSize: 12)),
-                        const SizedBox(width: 4),
-                        InkWell(
-                          onTap: () => setState(() {
-                            _coverDomains.removeAt(index);
-                            _recalculateWeights();
-                          }),
-                          child: const Padding(
-                            padding: EdgeInsets.all(4),
-                            child: Icon(Icons.close, size: 16, color: Colors.red),
-                          ),
-                        ),
-                      ],
-                    ),
-                  );
-                }).toList(),
-              ],
-              
-              if (_coverDomains.isEmpty)
-                const Padding(
-                  padding: EdgeInsets.symmetric(vertical: 8),
-                  child: Text('No domains added yet.', style: TextStyle(color: Colors.orange, fontSize: 12)),
-                ),
-            ],
-          ),
-        ),
-      ),
-      
-      const SizedBox(height: 16),
-      Card(
-        child: Column(
+  Widget _buildCoverSection() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('Add websites you normally visit', style: TextStyle(color: textMuted(context), fontSize: 12)),
+        const SizedBox(height: 16),
+        
+        Row(
           children: [
-            SwitchListTile(
-              secondary: const Text('🔋', style: TextStyle(fontSize: 20)),
-              title: Text('Battery-Aware Mode', style: TextStyle(color: textSecondary(context))),
-              subtitle: Text('Reduce cover traffic when battery is low', style: TextStyle(color: textMuted(context), fontSize: 12)),
-              value: _batteryAwareEnabled,
-              onChanged: (v) => setState(() => _batteryAwareEnabled = v),
-            ),
-            Divider(height: 1, color: accentColor(context).withOpacity(0.1)),
-            SwitchListTile(
-              secondary: const Text('💾', style: TextStyle(fontSize: 20)),
-              title: Text('Data Saver Mode', style: TextStyle(color: textSecondary(context))),
-              subtitle: Text('Halve cover rate to save bandwidth', style: TextStyle(color: textMuted(context), fontSize: 12)),
-              value: _dataSaverEnabled,
-              onChanged: (v) => setState(() => _dataSaverEnabled = v),
-            ),
-          ],
-        ),
-      ),
-    ];
-  }
-
-  List<Widget> _buildDNSSection() {
-    return [
-      const SizedBox(height: 16),
-      Card(
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text('DNS Fallback Configuration', style: TextStyle(fontWeight: FontWeight.w600, color: textSecondary(context))),
-              const SizedBox(height: 16),
-              
-              DropdownButtonFormField<String>(
-                value: _dnsFallbackMode,
-                decoration: const InputDecoration(
-                  labelText: 'Fallback Mode',
-                  prefixIcon: Icon(Icons.settings_input_antenna),
-                ),
-                items: const [
-                  DropdownMenuItem(value: 'auto', child: Text('🔄 Auto (Switch on TLS fail)')),
-                  DropdownMenuItem(value: 'manual', child: Text('📍 Manual (Always use DNS)')),
-                ],
-                onChanged: (v) => setState(() => _dnsFallbackMode = v!),
-              ),
-              
-              const SizedBox(height: 16),
-              TextFormField(
-                controller: _dnsDomainController,
-                decoration: const InputDecoration(
-                  labelText: 'DNS Tunnel Domain (optional)',
-                  hintText: 'tunnel.yourdomain.com',
-                  prefixIcon: Icon(Icons.dns),
-                  helperText: 'Your authoritative DNS domain for tunneling',
+            Expanded(
+              child: TextField(
+                controller: _domainController,
+                decoration: InputDecoration(
+                  hintText: 'e.g. google.com',
+                  prefixIcon: Icon(Icons.public, size: 20, color: accentColor(context)),
+                  isDense: true,
                 ),
                 keyboardType: TextInputType.url,
+                onSubmitted: (_) => _addDomain(),
               ),
-              
-              const SizedBox(height: 12),
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: Colors.orange.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Row(
-                  children: [
-                    const Icon(Icons.warning_amber, color: Colors.orange, size: 20),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Text(
-                        'DNS fallback has reduced speed (~50 Kbps). Use only when TLS is blocked.',
-                        style: TextStyle(color: textMuted(context), fontSize: 12),
-                      ),
-                    ),
-                  ],
-                ),
+            ),
+            const SizedBox(width: 8),
+            IconButton.filled(onPressed: _addDomain, icon: const Icon(Icons.add)),
+          ],
+        ),
+        
+        const SizedBox(height: 12),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            _quickAddChip('google.com'),
+            _quickAddChip('microsoft.com'),
+            _quickAddChip('github.com'),
+            _quickAddChip('cloudflare.com'),
+          ],
+        ),
+        
+        if (_coverDomains.isNotEmpty) ...[
+          const SizedBox(height: 16),
+          Divider(color: accentColor(context).withOpacity(0.1)),
+          const SizedBox(height: 8),
+          
+          Text('Active Cover Domains:', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13, color: textSecondary(context))),
+          const SizedBox(height: 8),
+          
+          ..._coverDomains.asMap().entries.map((entry) {
+            final index = entry.key;
+            final domain = entry.value;
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 4),
+              child: Row(
+                children: [
+                  const Icon(Icons.check_circle, size: 16, color: Colors.green),
+                  const SizedBox(width: 8),
+                  Expanded(child: Text(domain.domain, style: TextStyle(fontSize: 14, color: textSecondary(context)))),
+                  Text('${domain.weight}%', style: TextStyle(color: textMuted(context), fontSize: 12)),
+                  const SizedBox(width: 4),
+                  InkWell(
+                    onTap: () => setState(() {
+                      _coverDomains.removeAt(index);
+                      _recalculateWeights();
+                    }),
+                    child: const Padding(padding: EdgeInsets.all(4), child: Icon(Icons.close, size: 16, color: Colors.red)),
+                  ),
+                ],
+              ),
+            );
+          }).toList(),
+        ],
+        
+        if (_coverDomains.isEmpty)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            child: Text('No domains added yet.', style: TextStyle(color: Colors.orange, fontSize: 12)),
+          ),
+        
+        const SizedBox(height: 16),
+        Divider(color: accentColor(context).withOpacity(0.1)),
+        const SizedBox(height: 16),
+        
+        SwitchListTile(
+          secondary: Icon(Icons.battery_saver, color: accentColor(context)),
+          title: Text('Battery-Aware Mode', style: TextStyle(color: textSecondary(context))),
+          subtitle: Text('Reduce cover traffic when battery is low', style: TextStyle(color: textMuted(context), fontSize: 12)),
+          value: _batteryAwareEnabled,
+          onChanged: (v) => setState(() => _batteryAwareEnabled = v),
+          contentPadding: EdgeInsets.zero,
+        ),
+        
+        SwitchListTile(
+          secondary: Icon(Icons.data_saver_on, color: accentColor(context)),
+          title: Text('Data Saver Mode', style: TextStyle(color: textSecondary(context))),
+          subtitle: Text('Halve cover rate to save bandwidth', style: TextStyle(color: textMuted(context), fontSize: 12)),
+          value: _dataSaverEnabled,
+          onChanged: (v) => setState(() => _dataSaverEnabled = v),
+          contentPadding: EdgeInsets.zero,
+        ),
+      ],
+    );
+  }
+
+  Widget _buildDNSSection() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        DropdownButtonFormField<String>(
+          value: _dnsFallbackMode,
+          decoration: InputDecoration(
+            labelText: 'Fallback Mode',
+            prefixIcon: Icon(Icons.settings_input_antenna, color: accentColor(context)),
+          ),
+          items: const [
+            DropdownMenuItem(value: 'auto', child: Text('Auto')),
+            DropdownMenuItem(value: 'manual', child: Text('Manual')),
+          ],
+          onChanged: (v) => setState(() => _dnsFallbackMode = v!),
+        ),
+        
+        const SizedBox(height: 16),
+        TextFormField(
+          controller: _dnsDomainController,
+          decoration: InputDecoration(
+            labelText: 'DNS Tunnel Domain (optional)',
+            hintText: 'tunnel.yourdomain.com',
+            prefixIcon: Icon(Icons.dns, color: accentColor(context)),
+            helperText: 'Your authoritative DNS domain',
+          ),
+          keyboardType: TextInputType.url,
+        ),
+        
+        const SizedBox(height: 12),
+        Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: Colors.orange.withOpacity(0.1),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Row(
+            children: [
+              const Icon(Icons.info_outline, color: Colors.orange, size: 20),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text('DNS fallback is slow. Use only when TLS is blocked.', style: TextStyle(color: textMuted(context), fontSize: 12)),
               ),
             ],
           ),
         ),
-      ),
-    ];
+      ],
+    );
   }
 
   Widget _quickAddChip(String domain) {
