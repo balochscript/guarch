@@ -775,10 +775,29 @@ func (e *Engine) connectGrouk(cfg *config.ServerConfig, coverMgr *cover.Manager)
 
 	if cfg.Grouk != nil {
 		enableFEC = cfg.Grouk.EnableFEC
-		fecGroupSize = cfg.Grouk.FECGroupSize
+		
+		if cfg.Grouk.FECDataShards > 0 {
+			fecGroupSize = cfg.Grouk.FECDataShards
+		}
+		
+		if fecGroupSize < 2 || fecGroupSize > 16 {
+			log.Printf("[Engine] FEC group size %d out of range (2-16), using default: 4", fecGroupSize)
+			fecGroupSize = 4
+		}
+		
+		log.Println("[Engine] ==========================================")
+		log.Println("[Engine] Grouk FEC Configuration:")
+		log.Printf("[Engine]   Enabled:           %v", enableFEC)
+		log.Printf("[Engine]   Data Shards:       %d", cfg.Grouk.FECDataShards)
+		log.Printf("[Engine]   Parity Shards:     %d (reserved for future)", cfg.Grouk.FECParityShards)
+		log.Printf("[Engine]   Group Size (used): %d", fecGroupSize)
+		log.Println("[Engine]   Implementation:    Simple XOR (1 recovery packet per group)")
+		log.Println("[Engine] ==========================================")
+		
+		e.logInfo(fmt.Sprintf("Grouk FEC: %v (group=%d, impl=XOR)", enableFEC, fecGroupSize))
+	} else {
+		log.Println("[Engine] Grouk FEC: disabled (no config provided)")
 	}
-
-	log.Printf("[Engine] Grouk FEC: enabled=%v, group=%d", enableFEC, fecGroupSize)
 
 	log.Println("[Engine] Performing Grouk handshake...")
 	session, err := transport.GroukClientHandshake(udpConn, udpAddr, []byte(cfg.Server.PSK), enableFEC, fecGroupSize)
@@ -787,7 +806,7 @@ func (e *Engine) connectGrouk(cfg *config.ServerConfig, coverMgr *cover.Manager)
 		log.Printf("[Engine] Grouk handshake failed: %v", err)
 		return fmt.Errorf("Grouk handshake failed: %w", err)
 	}
-	log.Println("[Engine] Grouk handshake complete")
+	log.Printf("[Engine] Grouk handshake complete (session ID: %d)", session.ID)
 
 	e.mu.Lock()
 	e.groukSession = session
