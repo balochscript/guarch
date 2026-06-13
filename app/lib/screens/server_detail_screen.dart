@@ -80,6 +80,185 @@ class _ServerDetailScreenState extends State<ServerDetailScreen> {
           _infoTile(context, 'Address', server.address, Icons.dns),
           _infoTile(context, 'Port', server.port.toString(), Icons.numbers),
 
+          if (server.protocol == 'grouk') ...[
+            const SizedBox(height: 24),
+            _sectionTitle(context, 'Grouk Settings', Icons.flash_on),
+            
+            Card(
+              child: Column(
+                children: [
+                  ListTile(
+                    leading: Icon(
+                      Icons.shield,
+                      size: 20,
+                      color: server.groukFecEnabled ? Colors.purple : Colors.grey,
+                    ),
+                    title: Text(
+                      'FEC (Forward Error Correction)',
+                      style: TextStyle(fontSize: 14, color: textSecondary(context)),
+                    ),
+                    subtitle: Text(
+                      server.groukFecEnabled 
+                          ? 'Enabled - Recovers lost UDP packets'
+                          : 'Disabled',
+                      style: TextStyle(fontSize: 12, color: textMuted(context)),
+                    ),
+                    trailing: Icon(
+                      server.groukFecEnabled ? Icons.check_circle : Icons.cancel,
+                      color: server.groukFecEnabled ? Colors.green : Colors.grey,
+                      size: 20,
+                    ),
+                  ),
+                  
+                  if (server.groukFecEnabled) ...[
+                    Divider(height: 1, color: accentColor(context).withOpacity(0.1)),
+                    Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: Colors.purple.withOpacity(0.1),
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(color: Colors.purple.withOpacity(0.3)),
+                            ),
+                            child: Row(
+                              children: [
+                                const Icon(Icons.info_outline, size: 16, color: Colors.purple),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Text(
+                                    'Implementation: Simple XOR (can recover 1 packet per group)',
+                                    style: TextStyle(fontSize: 11, color: textMuted(context), height: 1.3),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          
+                          const SizedBox(height: 16),
+                          
+                          Row(
+                            children: [
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Row(
+                                      children: [
+                                        const Icon(Icons.grain, size: 16, color: Colors.blue),
+                                        const SizedBox(width: 8),
+                                        Text(
+                                          'Data Shards',
+                                          style: TextStyle(
+                                            fontSize: 13,
+                                            fontWeight: FontWeight.w600,
+                                            color: textSecondary(context),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      '${server.groukFecDataShards} packets',
+                                      style: TextStyle(
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.bold,
+                                        color: Colors.blue,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      'Group size (in use)',
+                                      style: TextStyle(fontSize: 10, color: textMuted(context)),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              
+                              Container(
+                                width: 1,
+                                height: 50,
+                                color: accentColor(context).withOpacity(0.2),
+                              ),
+                              
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Row(
+                                      children: [
+                                        const SizedBox(width: 16),
+                                        const Icon(Icons.backup, size: 16, color: Colors.grey),
+                                        const SizedBox(width: 8),
+                                        Text(
+                                          'Parity Shards',
+                                          style: TextStyle(
+                                            fontSize: 13,
+                                            fontWeight: FontWeight.w600,
+                                            color: textSecondary(context),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Padding(
+                                      padding: const EdgeInsets.only(left: 16),
+                                      child: Text(
+                                        '${server.groukFecParityShards}',
+                                        style: const TextStyle(
+                                          fontSize: 16,
+                                          fontWeight: FontWeight.bold,
+                                          color: Colors.grey,
+                                        ),
+                                      ),
+                                    ),
+                                    const SizedBox(height: 2),
+                                    Padding(
+                                      padding: const EdgeInsets.only(left: 16),
+                                      child: Text(
+                                        'Reserved for future',
+                                        style: TextStyle(fontSize: 10, color: textMuted(context), fontStyle: FontStyle.italic),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                          
+                          const SizedBox(height: 16),
+                          
+                          Container(
+                            padding: const EdgeInsets.all(10),
+                            decoration: BoxDecoration(
+                              color: Colors.green.withOpacity(0.1),
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            child: Row(
+                              children: [
+                                const Icon(Icons.check_circle, size: 14, color: Colors.green),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(
+                                    'Can recover 1 lost packet per ${server.groukFecDataShards} packets',
+                                    style: TextStyle(fontSize: 11, color: textMuted(context)),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ],
+
           if (server.transport != null) ...[
             const SizedBox(height: 24),
             _sectionTitle(context, 'Transport', Icons.rocket_launch),
@@ -354,31 +533,32 @@ class _ServerDetailScreenState extends State<ServerDetailScreen> {
             ),
           ),
 
-          Card(
-            child: ListTile(
-              leading: Icon(
-                Icons.verified_user,
-                size: 20,
-                color: accentColor(context),
-              ),
-              title: Text(
-                'Certificate PIN',
-                style: TextStyle(fontSize: 13, color: textMuted(context)),
-              ),
-              subtitle: Text(
-                server.certPin != null && server.certPin!.isNotEmpty
-                    ? '${server.certPin!.substring(0, 16)}...'
-                    : 'Not set (less secure)',
-                style: TextStyle(
-                  fontFamily: 'monospace',
-                  fontSize: 12,
-                  color: server.certPin != null && server.certPin!.isNotEmpty
-                      ? textSecondary(context)
-                      : Colors.orange,
+          if (server.protocol != 'grouk')
+            Card(
+              child: ListTile(
+                leading: Icon(
+                  Icons.verified_user,
+                  size: 20,
+                  color: accentColor(context),
+                ),
+                title: Text(
+                  'Certificate PIN',
+                  style: TextStyle(fontSize: 13, color: textMuted(context)),
+                ),
+                subtitle: Text(
+                  server.certPin != null && server.certPin!.isNotEmpty
+                      ? '${server.certPin!.substring(0, 16)}...'
+                      : 'Not set (less secure)',
+                  style: TextStyle(
+                    fontFamily: 'monospace',
+                    fontSize: 12,
+                    color: server.certPin != null && server.certPin!.isNotEmpty
+                        ? textSecondary(context)
+                        : Colors.orange,
+                  ),
                 ),
               ),
             ),
-          ),
 
           const SizedBox(height: 24),
           _sectionTitle(context, 'Advanced Features', Icons.tune),
@@ -386,45 +566,47 @@ class _ServerDetailScreenState extends State<ServerDetailScreen> {
           Card(
             child: Column(
               children: [
-                _featureTile(
-                  context,
-                  Icons.shield_outlined,
-                  'SNI Rotation',
-                  server.sniEnabled
-                      ? 'Enabled (${server.sniMode}, ${server.sniDomains.length} domains)'
-                      : 'Disabled',
-                  server.sniEnabled,
-                ),
-                Divider(
-                  height: 1,
-                  color: accentColor(context).withOpacity(0.1),
-                ),
-                _featureTile(
-                  context,
-                  Icons.theater_comedy,
-                  'Cover Traffic',
-                  server.coverEnabled
-                      ? 'Enabled (${server.coverDomains.length} domains)'
-                      : 'Disabled',
-                  server.coverEnabled,
-                ),
-                Divider(
-                  height: 1,
-                  color: accentColor(context).withOpacity(0.1),
-                ),
-                _featureTile(
-                  context,
-                  Icons.dns,
-                  'DNS Fallback',
-                  server.dnsFallbackEnabled
-                      ? 'Enabled (${server.dnsFallbackMode})'
-                      : 'Disabled',
-                  server.dnsFallbackEnabled,
-                ),
-                Divider(
-                  height: 1,
-                  color: accentColor(context).withOpacity(0.1),
-                ),
+                if (server.protocol != 'grouk') ...[
+                  _featureTile(
+                    context,
+                    Icons.shield_outlined,
+                    'SNI Rotation',
+                    server.sniEnabled
+                        ? 'Enabled (${server.sniMode}, ${server.sniDomains.length} domains)'
+                        : 'Disabled',
+                    server.sniEnabled,
+                  ),
+                  Divider(
+                    height: 1,
+                    color: accentColor(context).withOpacity(0.1),
+                  ),
+                  _featureTile(
+                    context,
+                    Icons.theater_comedy,
+                    'Cover Traffic',
+                    server.coverEnabled
+                        ? 'Enabled (${server.coverDomains.length} domains)'
+                        : 'Disabled',
+                    server.coverEnabled,
+                  ),
+                  Divider(
+                    height: 1,
+                    color: accentColor(context).withOpacity(0.1),
+                  ),
+                  _featureTile(
+                    context,
+                    Icons.dns,
+                    'DNS Fallback',
+                    server.dnsFallbackEnabled
+                        ? 'Enabled (${server.dnsFallbackMode})'
+                        : 'Disabled',
+                    server.dnsFallbackEnabled,
+                  ),
+                  Divider(
+                    height: 1,
+                    color: accentColor(context).withOpacity(0.1),
+                  ),
+                ],
                 _featureTile(
                   context,
                   Icons.battery_charging_full,
