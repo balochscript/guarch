@@ -57,8 +57,9 @@ type ExperimentalTransportConfig struct {
 }
 
 type GroukConfig struct {
-	EnableFEC    bool `json:"enable_fec"`
-	FECGroupSize int  `json:"fec_group_size"`
+	EnableFEC       bool `json:"enable_fec"`
+	FECDataShards   int  `json:"fec_data_shards"`
+	FECParityShards int  `json:"fec_parity_shards"`
 }
 
 type SNIConfig struct {
