@@ -281,33 +281,137 @@ class _AddServerScreenState extends State<AddServerScreen> {
                     
                     if (_groukFecEnabled) ...[
                       Divider(height: 1, color: accentColor(context).withOpacity(0.1)),
+                      
                       Padding(
                         padding: const EdgeInsets.all(16),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text('Data Shards: $_groukFecDataShards', style: TextStyle(fontSize: 14, color: textSecondary(context))),
+                            Container(
+                              padding: const EdgeInsets.all(12),
+                              decoration: BoxDecoration(
+                                color: Colors.blue.withOpacity(0.1),
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(color: Colors.blue.withOpacity(0.3)),
+                              ),
+                              child: Row(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const Icon(Icons.info_outline, size: 18, color: Colors.blue),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          'Current Implementation: Simple XOR',
+                                          style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: textSecondary(context)),
+                                        ),
+                                        const SizedBox(height: 4),
+                                        Text(
+                                          '• Can recover 1 lost packet per group\n'
+                                          '• Data Shards = Group Size (how many packets before FEC)\n'
+                                          '• Parity Shards: Reserved for future Reed-Solomon upgrade',
+                                          style: TextStyle(fontSize: 11, color: textMuted(context), height: 1.4),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            
+                            const SizedBox(height: 20),
+                            
+                            Row(
+                              children: [
+                                Icon(Icons.grain, size: 16, color: accentColor(context)),
+                                const SizedBox(width: 8),
+                                Text(
+                                  'Data Shards (Group Size)',
+                                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: textSecondary(context)),
+                                ),
+                                const Spacer(),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                                  decoration: BoxDecoration(
+                                    color: accentColor(context).withOpacity(0.1),
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  child: Text(
+                                    '$_groukFecDataShards',
+                                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: accentColor(context)),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            
                             Slider(
                               value: _groukFecDataShards.toDouble(),
                               min: 4,
-                              max: 20,
-                              divisions: 16,
-                              label: '$_groukFecDataShards',
+                              max: 16,
+                              divisions: 12,
+                              label: '$_groukFecDataShards packets',
                               onChanged: (v) => setState(() => _groukFecDataShards = v.toInt()),
                             ),
                             
-                            const SizedBox(height: 8),
-                            Text('Parity Shards: $_groukFecParityShards', style: TextStyle(fontSize: 14, color: textSecondary(context))),
+                            Padding(
+                              padding: const EdgeInsets.only(left: 4),
+                              child: Text(
+                                'Recommended: 4-8 for most networks',
+                                style: TextStyle(fontSize: 11, color: textMuted(context)),
+                              ),
+                            ),
+                            
+                            const SizedBox(height: 16),
+                            Divider(height: 1, color: accentColor(context).withOpacity(0.1)),
+                            const SizedBox(height: 16),
+                            
+                            Row(
+                              children: [
+                                Icon(Icons.backup, size: 16, color: Colors.grey),
+                                const SizedBox(width: 8),
+                                Text(
+                                  'Parity Shards (Future Use)',
+                                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: textSecondary(context)),
+                                ),
+                                const Spacer(),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                                  decoration: BoxDecoration(
+                                    color: Colors.grey.withOpacity(0.1),
+                                    borderRadius: BorderRadius.circular(12),
+                                    border: Border.all(color: Colors.grey.withOpacity(0.3)),
+                                  ),
+                                  child: Text(
+                                    '$_groukFecParityShards',
+                                    style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.grey),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            
                             Slider(
                               value: _groukFecParityShards.toDouble(),
                               min: 1,
-                              max: 10,
-                              divisions: 9,
-                              label: '$_groukFecParityShards',
+                              max: 5,
+                              divisions: 4,
+                              label: '$_groukFecParityShards (not used yet)',
                               onChanged: (v) => setState(() => _groukFecParityShards = v.toInt()),
+                              activeColor: Colors.grey,
+                              inactiveColor: Colors.grey.withOpacity(0.3),
                             ),
                             
-                            const SizedBox(height: 8),
+                            Padding(
+                              padding: const EdgeInsets.only(left: 4),
+                              child: Text(
+                                'Reserved for Reed-Solomon FEC upgrade',
+                                style: TextStyle(fontSize: 11, color: textMuted(context), fontStyle: FontStyle.italic),
+                              ),
+                            ),
+                            
+                            const SizedBox(height: 16),
+                            
                             Container(
                               padding: const EdgeInsets.all(12),
                               decoration: BoxDecoration(
@@ -525,28 +629,25 @@ class _AddServerScreenState extends State<AddServerScreen> {
   }
 
   Color _getFECRecommendationColor() {
-    final ratio = _groukFecParityShards / _groukFecDataShards;
-    if (ratio < 0.2) return Colors.orange;
-    if (ratio > 0.5) return Colors.orange;
+    if (_groukFecDataShards <= 4) return Colors.orange;
+    if (_groukFecDataShards >= 12) return Colors.orange;
     return Colors.green;
   }
 
   IconData _getFECRecommendationIcon() {
-    final ratio = _groukFecParityShards / _groukFecDataShards;
-    if (ratio < 0.2 || ratio > 0.5) return Icons.warning_amber;
+    if (_groukFecDataShards <= 4 || _groukFecDataShards >= 12) return Icons.warning_amber;
     return Icons.check_circle;
   }
 
   String _getFECRecommendationText() {
-    final ratio = _groukFecParityShards / _groukFecDataShards;
-    final overhead = ((_groukFecDataShards + _groukFecParityShards) / _groukFecDataShards * 100 - 100).toStringAsFixed(0);
+    final overhead = (1.0 / _groukFecDataShards * 100).toStringAsFixed(1);
     
-    if (ratio < 0.2) {
-      return 'Low redundancy: Can recover up to $_groukFecParityShards lost packets per $_groukFecDataShards. Overhead: +$overhead%';
-    } else if (ratio > 0.5) {
-      return 'High redundancy: Can recover up to $_groukFecParityShards lost packets per $_groukFecDataShards. Overhead: +$overhead%';
+    if (_groukFecDataShards <= 4) {
+      return 'Higher overhead ($overhead% per group) but faster recovery. Good for poor networks.';
+    } else if (_groukFecDataShards >= 12) {
+      return 'Lower overhead ($overhead% per group) but slower recovery. Good for stable networks.';
     } else {
-      return 'Balanced: Can recover up to $_groukFecParityShards lost packets per $_groukFecDataShards. Overhead: +$overhead%';
+      return 'Balanced: $overhead% overhead per group. Can recover 1 lost packet per $_groukFecDataShards packets.';
     }
   }
 
