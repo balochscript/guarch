@@ -259,6 +259,62 @@ class _ServerDetailScreenState extends State<ServerDetailScreen> {
             ),
           ],
 
+          if (server.protocol == 'zhip') ...[
+            const SizedBox(height: 24),
+            _sectionTitle(context, 'Zhip Settings', Icons.bolt),
+            
+            Card(
+              child: Column(
+                children: [
+                  ListTile(
+                    leading: Icon(Icons.timer, size: 20, color: accentColor(context)),
+                    title: Text(
+                      'Max Idle Timeout',
+                      style: TextStyle(fontSize: 13, color: textMuted(context)),
+                    ),
+                    trailing: Text(
+                      '${server.zhipMaxIdleTimeout}s',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w600,
+                        color: textSecondary(context),
+                      ),
+                    ),
+                  ),
+                  Divider(height: 1, color: accentColor(context).withOpacity(0.1)),
+                  ListTile(
+                    leading: Icon(Icons.favorite, size: 20, color: accentColor(context)),
+                    title: Text(
+                      'Keep-Alive Period',
+                      style: TextStyle(fontSize: 13, color: textMuted(context)),
+                    ),
+                    trailing: Text(
+                      '${server.zhipKeepAlivePeriod}s',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w600,
+                        color: textSecondary(context),
+                      ),
+                    ),
+                  ),
+                  Divider(height: 1, color: accentColor(context).withOpacity(0.1)),
+                  ListTile(
+                    leading: Icon(Icons.stream, size: 20, color: accentColor(context)),
+                    title: Text(
+                      'Max Streams',
+                      style: TextStyle(fontSize: 13, color: textMuted(context)),
+                    ),
+                    trailing: Text(
+                      '${server.zhipMaxStreams}',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w600,
+                        color: textSecondary(context),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+
           if (server.transport != null) ...[
             const SizedBox(height: 24),
             _sectionTitle(context, 'Transport', Icons.rocket_launch),
@@ -566,7 +622,7 @@ class _ServerDetailScreenState extends State<ServerDetailScreen> {
           Card(
             child: Column(
               children: [
-                if (server.protocol != 'grouk') ...[
+                if (server.protocol == 'guarch') ...[
                   _featureTile(
                     context,
                     Icons.shield_outlined,
@@ -580,6 +636,8 @@ class _ServerDetailScreenState extends State<ServerDetailScreen> {
                     height: 1,
                     color: accentColor(context).withOpacity(0.1),
                   ),
+                ],
+                if (server.protocol != 'grouk') ...[
                   _featureTile(
                     context,
                     Icons.theater_comedy,
@@ -593,6 +651,8 @@ class _ServerDetailScreenState extends State<ServerDetailScreen> {
                     height: 1,
                     color: accentColor(context).withOpacity(0.1),
                   ),
+                ],
+                if (server.protocol == 'guarch') ...[
                   _featureTile(
                     context,
                     Icons.dns,
@@ -658,19 +718,41 @@ class _ServerDetailScreenState extends State<ServerDetailScreen> {
           if (server.sniEnabled) ...[
             const SizedBox(height: 24),
             _sectionTitle(context, 'SNI Domains', Icons.shield_outlined),
-            ...server.sniDomains.where((d) => d.checkHealth).map(
+            ...server.sniDomains.map(
                   (d) => Card(
                     child: ListTile(
                       leading: Icon(
-                        Icons.language,
+                        d.fallback ? Icons.backup : Icons.language,
                         size: 20,
-                        color: accentColor(context),
+                        color: d.fallback ? Colors.orange : accentColor(context),
                       ),
-                      title: Text(
-                        d.domain,
-                        style: TextStyle(color: textSecondary(context)),
+                      title: Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              d.domain,
+                              style: TextStyle(color: textSecondary(context)),
+                            ),
+                          ),
+                          if (d.fallback)
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: Colors.orange.withOpacity(0.2),
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                              child: Text(
+                                'Fallback',
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  color: Colors.orange.shade800,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                        ],
                       ),
-                      trailing: server.sniMode == 'weighted'
+                      trailing: server.sniMode == 'weighted' && !d.fallback
                           ? Text(
                               '${d.weight}%',
                               style: TextStyle(color: textMuted(context)),
