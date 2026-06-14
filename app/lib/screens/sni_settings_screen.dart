@@ -8,6 +8,48 @@ import 'package:guarch/models/server_config.dart';
 class SNISettingsScreen extends StatelessWidget {
   const SNISettingsScreen({super.key});
 
+  void _onToggleSni(bool value, AppProvider provider, BuildContext context) {
+    if (value && provider.globalSniDomains.isEmpty) {
+      _showNoDomainsDialog(context, provider);
+    } else {
+      provider.toggleGlobalSni();
+    }
+  }
+
+  void _showNoDomainsDialog(BuildContext context, AppProvider provider) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Row(
+          children: [
+            Icon(Icons.warning_amber, color: Colors.orange, size: 28),
+            const SizedBox(width: 12),
+            const Expanded(child: Text('No SNI Domains')),
+          ],
+        ),
+        content: const Text(
+          'SNI Protection requires at least one domain to work.\n\n'
+          'Add a domain first before enabling this feature.',
+          style: TextStyle(height: 1.4),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel'),
+          ),
+          FilledButton.icon(
+            onPressed: () {
+              Navigator.pop(ctx);
+              _showAddDomainDialog(context, provider);
+            },
+            icon: const Icon(Icons.add, size: 18),
+            label: const Text('Add Domain'),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Consumer<AppProvider>(
@@ -36,12 +78,131 @@ class SNISettingsScreen extends StatelessWidget {
                   ),
                 ),
                 subtitle: Text(
-                  'Bypass SNI-based censorship and filtering',
-                  style: TextStyle(color: textMuted(context), fontSize: 13),
+                  provider.globalSniDomains.isEmpty && !provider.globalSniEnabled
+                      ? 'Add at least one SNI domain to enable this feature'
+                      : 'Bypass SNI-based censorship and filtering',
+                  style: TextStyle(
+                    color: provider.globalSniDomains.isEmpty && !provider.globalSniEnabled
+                        ? Colors.orange
+                        : textMuted(context),
+                    fontSize: 13,
+                  ),
                 ),
                 value: provider.globalSniEnabled,
-                onChanged: (_) => provider.toggleGlobalSni(),
+                onChanged: (value) => _onToggleSni(value, provider, context),
               ),
+
+              if (!provider.globalSniEnabled && provider.globalSniDomains.isEmpty) ...[
+                const SizedBox(height: 16),
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: Colors.orange.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.orange.withOpacity(0.3)),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.info_outline, color: Colors.orange, size: 24),
+                      const SizedBox(width: 16),
+                      Expanded(
+                        child: Text(
+                          'SNI Protection is disabled because no domains are configured. Add at least one domain below to enable.',
+                          style: TextStyle(
+                            color: textSecondary(context),
+                            fontSize: 13,
+                            height: 1.4,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+
+              const SizedBox(height: 24),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  _sectionTitle(context, 'SNI Domains (${provider.globalSniDomains.length})'),
+                  TextButton.icon(
+                    onPressed: () => _showAddDomainDialog(context, provider),
+                    icon: const Icon(Icons.add, size: 18),
+                    label: const Text('Add'),
+                  ),
+                ],
+              ),
+
+              if (provider.globalSniDomains.isEmpty)
+                Card(
+                  child: Padding(
+                    padding: const EdgeInsets.all(24),
+                    child: Center(
+                      child: Column(
+                        children: [
+                          Icon(Icons.warning_amber, size: 48, color: Colors.orange),
+                          const SizedBox(height: 12),
+                          Text(
+                            'No domains configured',
+                            style: TextStyle(
+                              color: textSecondary(context),
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            provider.globalSniEnabled
+                                ? 'SNI protection is enabled but has no targets!'
+                                : 'Add at least one domain to enable SNI protection',
+                            style: TextStyle(
+                              color: provider.globalSniEnabled ? Colors.red : textMuted(context),
+                              fontSize: 12,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                )
+              else
+                ...provider.globalSniDomains.asMap().entries.map((entry) {
+                  final index = entry.key;
+                  final domain = entry.value;
+                  return Card(
+                    margin: const EdgeInsets.only(bottom: 8),
+                    child: ListTile(
+                      leading: Icon(
+                        domain.fallback ? Icons.backup : Icons.language,
+                        color: accentColor(context),
+                      ),
+                      title: Text(
+                        domain.domain,
+                        style: TextStyle(
+                          color: textSecondary(context),
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      subtitle: Text(
+                        'Weight: ${domain.weight}${domain.checkHealth ? " • Health check" : ""}${domain.fallback ? " • Fallback" : ""}',
+                        style: TextStyle(color: textMuted(context), fontSize: 12),
+                      ),
+                      trailing: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          IconButton(
+                            icon: const Icon(Icons.edit, size: 20),
+                            onPressed: () => _showEditDomainDialog(context, provider, index, domain),
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.delete, size: 20),
+                            color: Colors.red,
+                            onPressed: () => _confirmDelete(context, provider, index, domain.domain),
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                }).toList(),
 
               if (provider.globalSniEnabled) ...[
                 const SizedBox(height: 24),
@@ -128,85 +289,6 @@ class SNISettingsScreen extends StatelessWidget {
                     ),
                   ),
                 ),
-
-                const SizedBox(height: 24),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    _sectionTitle(context, 'SNI Domains (${provider.globalSniDomains.length})'),
-                    TextButton.icon(
-                      onPressed: () => _showAddDomainDialog(context, provider),
-                      icon: const Icon(Icons.add, size: 18),
-                      label: const Text('Add'),
-                    ),
-                  ],
-                ),
-
-                if (provider.globalSniDomains.isEmpty)
-                  Card(
-                    child: Padding(
-                      padding: const EdgeInsets.all(24),
-                      child: Center(
-                        child: Column(
-                          children: [
-                            Icon(Icons.warning_amber, size: 48, color: Colors.orange),
-                            const SizedBox(height: 12),
-                            Text(
-                              'No domains configured',
-                              style: TextStyle(
-                                color: textSecondary(context),
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                              'Add at least one domain',
-                              style: TextStyle(color: textMuted(context), fontSize: 12),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  )
-                else
-                  ...provider.globalSniDomains.asMap().entries.map((entry) {
-                    final index = entry.key;
-                    final domain = entry.value;
-                    return Card(
-                      margin: const EdgeInsets.only(bottom: 8),
-                      child: ListTile(
-                        leading: Icon(
-                          domain.fallback ? Icons.backup : Icons.language,
-                          color: accentColor(context),
-                        ),
-                        title: Text(
-                          domain.domain,
-                          style: TextStyle(
-                            color: textSecondary(context),
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                        subtitle: Text(
-                          'Weight: ${domain.weight}${domain.checkHealth ? " • Health check" : ""}${domain.fallback ? " • Fallback" : ""}',
-                          style: TextStyle(color: textMuted(context), fontSize: 12),
-                        ),
-                        trailing: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            IconButton(
-                              icon: const Icon(Icons.edit, size: 20),
-                              onPressed: () => _showEditDomainDialog(context, provider, index, domain),
-                            ),
-                            IconButton(
-                              icon: const Icon(Icons.delete, size: 20),
-                              color: Colors.red,
-                              onPressed: () => _confirmDelete(context, provider, index, domain.domain),
-                            ),
-                          ],
-                        ),
-                      ),
-                    );
-                  }).toList(),
 
                 const SizedBox(height: 24),
                 Container(
@@ -445,11 +527,18 @@ class SNISettingsScreen extends StatelessWidget {
   }
 
   void _confirmDelete(BuildContext context, AppProvider provider, int index, String domain) {
+    final isLastDomain = provider.globalSniDomains.length == 1;
+    
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Delete Domain'),
-        content: Text('Remove "$domain" from SNI domains?'),
+        content: Text(
+          isLastDomain
+              ? 'Remove "$domain" from SNI domains?\n\n'
+                'This is the last domain. SNI protection will be automatically disabled.'
+              : 'Remove "$domain" from SNI domains?',
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
@@ -458,6 +547,17 @@ class SNISettingsScreen extends StatelessWidget {
           FilledButton(
             onPressed: () {
               provider.removeGlobalSniDomain(index);
+              
+              if (isLastDomain && provider.globalSniEnabled) {
+                provider.toggleGlobalSni();
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: const Text('SNI protection disabled - no domains left'),
+                    backgroundColor: Colors.orange,
+                  ),
+                );
+              }
+              
               Navigator.pop(ctx);
             },
             style: FilledButton.styleFrom(backgroundColor: Colors.red),
