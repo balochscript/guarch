@@ -16,10 +16,6 @@ import (
 	"guarch/pkg/protocol"
 )
 
-// ═══════════════════════════════════════
-// Zhip QUIC Transport
-// ═══════════════════════════════════════
-
 type ZhipQUICConfig struct {
 	MaxIdleTimeout  time.Duration
 	KeepAlivePeriod time.Duration
@@ -45,7 +41,6 @@ func (c *ZhipQUICConfig) toQUICConfig() *quic.Config {
 	}
 }
 
-// ZhipListen — QUIC server listener
 func ZhipListen(addr string, tlsCert tls.Certificate, cfg *ZhipQUICConfig) (*quic.Listener, error) {
 	if cfg == nil {
 		cfg = defaultQUICConfig()
@@ -65,7 +60,6 @@ func ZhipListen(addr string, tlsCert tls.Certificate, cfg *ZhipQUICConfig) (*qui
 	return listener, nil
 }
 
-// ZhipServerAuth — server-side PSK authentication
 func ZhipServerAuth(conn *quic.Conn, psk []byte) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -97,7 +91,6 @@ func ZhipServerAuth(conn *quic.Conn, psk []byte) error {
 	return nil
 }
 
-// ZhipDial — QUIC client dial
 func ZhipDial(ctx context.Context, addr string, certPin string, cfg *ZhipQUICConfig) (*quic.Conn, error) {
 	if cfg == nil {
 		cfg = defaultQUICConfig()
@@ -131,7 +124,6 @@ func ZhipDial(ctx context.Context, addr string, certPin string, cfg *ZhipQUICCon
 	return conn, nil
 }
 
-// ZhipClientAuth — client-side PSK authentication
 func ZhipClientAuth(conn *quic.Conn, psk []byte) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -165,7 +157,36 @@ func ZhipClientAuth(conn *quic.Conn, psk []byte) error {
 	return nil
 }
 
-// ZhipTCPDecoyConfig — TLS config for TCP decoy server
+func ZhipClientAuthWithContext(ctx context.Context, conn *quic.Conn, psk []byte) error {
+	stream, err := conn.OpenStreamSync(ctx)
+	if err != nil {
+		return fmt.Errorf("zhip: open auth stream: %w", err)
+	}
+	defer stream.Close()
+
+	clientAuth := zhipAuthMAC(psk, "zhip-client")
+	if _, err := stream.Write(clientAuth); err != nil {
+		return fmt.Errorf("zhip: send client auth: %w", err)
+	}
+
+	serverBuf := make([]byte, 64)
+	n, err := stream.Read(serverBuf)
+	if err != nil && err != io.EOF {
+		return fmt.Errorf("zhip: read server auth: %w", err)
+	}
+
+	if n == 1 && serverBuf[0] == 0x00 {
+		return protocol.ErrAuthFailed
+	}
+
+	expected := zhipAuthMAC(psk, "zhip-server")
+	if !hmac.Equal(serverBuf[:n], expected) {
+		return protocol.ErrAuthFailed
+	}
+
+	return nil
+}
+
 func ZhipTCPDecoyConfig(cert tls.Certificate) *tls.Config {
 	return &tls.Config{
 		Certificates: []tls.Certificate{cert},
