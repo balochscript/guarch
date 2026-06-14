@@ -240,7 +240,7 @@ class ServerConfig {
         'enabled': true,
         'domain': dnsFallbackDomain,
         'servers': dnsFallbackServers,
-        'auto_switch': true,
+        'auto_switch': dnsFallbackMode == 'auto',
         'switch_threshold': dnsFallbackSwitchThreshold,
         'timeout': '${dnsFallbackTimeout}s',
       };
