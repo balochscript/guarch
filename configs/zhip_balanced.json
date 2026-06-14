@@ -1,0 +1,61 @@
+{
+  "version": 1,
+  "server": {
+    "name": "Zhip Balanced",
+    "address": "YOUR_SERVER:8443",
+    "protocol": "zhip",
+    "psk": "REPLACE_WITH_YOUR_PSK",
+    "cert_pin": ""
+  },
+  "zhip": {
+    "max_idle_timeout": 120,
+    "keepalive_period": 30,
+    "max_streams": 256
+  },
+  "cover": {
+    "enabled": true,
+    "mode": "balanced",
+    "domains": [
+      {
+        "domain": "www.google.com",
+        "paths": ["/", "/search?q=tech"],
+        "weight": 35,
+        "interval_min": "5s",
+        "interval_max": "15s"
+      },
+      {
+        "domain": "www.cloudflare.com",
+        "paths": ["/", "/learning"],
+        "weight": 30,
+        "interval_min": "6s",
+        "interval_max": "18s"
+      },
+      {
+        "domain": "github.com",
+        "paths": ["/", "/explore"],
+        "weight": 20,
+        "interval_min": "7s",
+        "interval_max": "20s"
+      },
+      {
+        "domain": "stackoverflow.com",
+        "paths": ["/", "/questions"],
+        "weight": 15,
+        "interval_min": "6s",
+        "interval_max": "18s"
+      }
+    ],
+    "adaptive": {
+      "enabled": true,
+      "battery_aware": true,
+      "data_saver_mode": false,
+      "idle_threshold": "100KB/min",
+      "light_threshold": "1MB/min",
+      "medium_threshold": "10MB/min"
+    }
+  },
+  "metadata": {
+    "notes": "Balanced Zhip with cover traffic",
+    "tags": ["zhip", "quic", "balanced", "recommended"]
+  }
+}
