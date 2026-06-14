@@ -37,6 +37,10 @@ class _AddServerScreenState extends State<AddServerScreen> {
   int _groukFecDataShards = 10;
   int _groukFecParityShards = 3;
   
+  int _zhipMaxIdleTimeout = 60;
+  int _zhipKeepAlivePeriod = 25;
+  int _zhipMaxStreams = 256;
+  
   String _transportType = 'direct';
   
   late String _sniMode;
@@ -49,9 +53,9 @@ class _AddServerScreenState extends State<AddServerScreen> {
   String get _protocolDescription {
     switch (_protocol) {
       case 'grouk':
-        return 'Fast raw UDP tunnel';
+        return 'Fast UDP tunnel with FEC';
       case 'zhip':
-        return 'QUIC-based tunnel with HTTP/3';
+        return 'QUIC-based (HTTP/3) - Fast & Modern';
       default:
         return 'TLS 1.3 encrypted tunnel';
     }
@@ -76,6 +80,10 @@ class _AddServerScreenState extends State<AddServerScreen> {
     _groukFecEnabled = widget.server?.groukFecEnabled ?? false;
     _groukFecDataShards = widget.server?.groukFecDataShards ?? 10;
     _groukFecParityShards = widget.server?.groukFecParityShards ?? 3;
+    
+    _zhipMaxIdleTimeout = widget.server?.zhipMaxIdleTimeout ?? 60;
+    _zhipKeepAlivePeriod = widget.server?.zhipKeepAlivePeriod ?? 25;
+    _zhipMaxStreams = widget.server?.zhipMaxStreams ?? 256;
     
     _transportType = widget.server?.transport?.type ?? 'direct';
     _transportHostController.text = widget.server?.transport?.host ?? '';
@@ -438,7 +446,185 @@ class _AddServerScreenState extends State<AddServerScreen> {
               ),
             ],
 
-            if (_protocol != 'grouk') ...[
+            if (_protocol == 'zhip') ...[
+              const SizedBox(height: 24),
+              _sectionTitle(context, 'Zhip Settings (QUIC)'),
+              Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: Colors.purple.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: Colors.purple.withOpacity(0.3)),
+                        ),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Icon(Icons.info_outline, size: 18, color: Colors.purple),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'QUIC Protocol (HTTP/3)',
+                                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: textSecondary(context)),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    '• Built-in encryption (TLS 1.3)\n'
+                                    '• 0-RTT connection resumption\n'
+                                    '• No SNI/DNS features (persistent connection)',
+                                    style: TextStyle(fontSize: 11, color: textMuted(context), height: 1.4),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      
+                      const SizedBox(height: 20),
+                      
+                      Row(
+                        children: [
+                          Icon(Icons.timer, size: 16, color: accentColor(context)),
+                          const SizedBox(width: 8),
+                          Text(
+                            'Max Idle Timeout',
+                            style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: textSecondary(context)),
+                          ),
+                          const Spacer(),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: accentColor(context).withOpacity(0.1),
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: Text(
+                              '${_zhipMaxIdleTimeout}s',
+                              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: accentColor(context)),
+                            ),
+                          ),
+                        ],
+                      ),
+                      
+                      Slider(
+                        value: _zhipMaxIdleTimeout.toDouble(),
+                        min: 30,
+                        max: 300,
+                        divisions: 27,
+                        label: '${_zhipMaxIdleTimeout}s',
+                        onChanged: (v) => setState(() => _zhipMaxIdleTimeout = v.toInt()),
+                      ),
+                      
+                      Padding(
+                        padding: const EdgeInsets.only(left: 4),
+                        child: Text(
+                          'Connection timeout when idle (default: 60s)',
+                          style: TextStyle(fontSize: 11, color: textMuted(context)),
+                        ),
+                      ),
+                      
+                      const SizedBox(height: 16),
+                      Divider(height: 1, color: accentColor(context).withOpacity(0.1)),
+                      const SizedBox(height: 16),
+                      
+                      Row(
+                        children: [
+                          Icon(Icons.favorite, size: 16, color: accentColor(context)),
+                          const SizedBox(width: 8),
+                          Text(
+                            'Keep-Alive Period',
+                            style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: textSecondary(context)),
+                          ),
+                          const Spacer(),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: accentColor(context).withOpacity(0.1),
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: Text(
+                              '${_zhipKeepAlivePeriod}s',
+                              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: accentColor(context)),
+                            ),
+                          ),
+                        ],
+                      ),
+                      
+                      Slider(
+                        value: _zhipKeepAlivePeriod.toDouble(),
+                        min: 10,
+                        max: 60,
+                        divisions: 10,
+                        label: '${_zhipKeepAlivePeriod}s',
+                        onChanged: (v) => setState(() => _zhipKeepAlivePeriod = v.toInt()),
+                      ),
+                      
+                      Padding(
+                        padding: const EdgeInsets.only(left: 4),
+                        child: Text(
+                          'Ping interval to keep connection alive (default: 25s)',
+                          style: TextStyle(fontSize: 11, color: textMuted(context)),
+                        ),
+                      ),
+                      
+                      const SizedBox(height: 16),
+                      Divider(height: 1, color: accentColor(context).withOpacity(0.1)),
+                      const SizedBox(height: 16),
+                      
+                      Row(
+                        children: [
+                          Icon(Icons.alt_route, size: 16, color: accentColor(context)),
+                          const SizedBox(width: 8),
+                          Text(
+                            'Max Concurrent Streams',
+                            style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: textSecondary(context)),
+                          ),
+                          const Spacer(),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: accentColor(context).withOpacity(0.1),
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: Text(
+                              '$_zhipMaxStreams',
+                              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: accentColor(context)),
+                            ),
+                          ),
+                        ],
+                      ),
+                      
+                      Slider(
+                        value: _zhipMaxStreams.toDouble(),
+                        min: 64,
+                        max: 512,
+                        divisions: 7,
+                        label: '$_zhipMaxStreams',
+                        onChanged: (v) => setState(() => _zhipMaxStreams = v.toInt()),
+                      ),
+                      
+                      Padding(
+                        padding: const EdgeInsets.only(left: 4),
+                        child: Text(
+                          'Maximum parallel connections (default: 256)',
+                          style: TextStyle(fontSize: 11, color: textMuted(context)),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+
+            if (_protocol == 'guarch') ...[
               const SizedBox(height: 24),
               _sectionTitle(context, 'Transport Settings'),
               Card(
@@ -520,14 +706,15 @@ class _AddServerScreenState extends State<AddServerScreen> {
               ),
 
               const SizedBox(height: 24),
-              _sectionTitle(context, 'Connection'),
+              _sectionTitle(context, 'Connection Features'),
               Card(
                 child: Column(
                   children: [
                     ListTile(
                       leading: Icon(Icons.shield_outlined, color: accentColor(context)),
                       title: Text('SNI Rotation', style: TextStyle(color: textSecondary(context))),
-                      subtitle: Text(_sniEnabled ? '${_sniDomains.length} domains • $_sniMode mode' : 'Disabled', style: TextStyle(color: textMuted(context), fontSize: 12)),
+                      subtitle: Text(_sniEnabled ? '${_sniDomains.length} domains • $_sniMode mode' : 'Disabled', 
+                        style: TextStyle(color: textMuted(context), fontSize: 12)),
                       trailing: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
@@ -549,33 +736,10 @@ class _AddServerScreenState extends State<AddServerScreen> {
                     
                     Divider(height: 1, color: accentColor(context).withOpacity(0.1)),
                     ListTile(
-                      leading: Icon(Icons.theater_comedy, color: accentColor(context)),
-                      title: Text('Cover Traffic', style: TextStyle(color: textSecondary(context))),
-                      subtitle: Text(_coverEnabled ? '${_coverDomains.length} domains' : 'Disabled', style: TextStyle(color: textMuted(context), fontSize: 12)),
-                      trailing: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Switch(value: _coverEnabled, onChanged: (v) => setState(() => _coverEnabled = v)),
-                          const SizedBox(width: 8),
-                          Icon(Icons.arrow_forward_ios, size: 16, color: textMuted(context)),
-                        ],
-                      ),
-                      onTap: () => setState(() => _coverEnabled = !_coverEnabled),
-                    ),
-                    
-                    if (_coverEnabled) ...[
-                      Divider(height: 1, color: accentColor(context).withOpacity(0.1)),
-                      Padding(
-                        padding: const EdgeInsets.all(16),
-                        child: _buildCoverSection(),
-                      ),
-                    ],
-                    
-                    Divider(height: 1, color: accentColor(context).withOpacity(0.1)),
-                    ListTile(
                       leading: Icon(Icons.dns, color: accentColor(context)),
                       title: Text('DNS Fallback', style: TextStyle(color: textSecondary(context))),
-                      subtitle: Text(_dnsFallbackEnabled ? '$_dnsFallbackMode mode' : 'Disabled', style: TextStyle(color: textMuted(context), fontSize: 12)),
+                      subtitle: Text(_dnsFallbackEnabled ? '$_dnsFallbackMode mode' : 'Disabled', 
+                        style: TextStyle(color: textMuted(context), fontSize: 12)),
                       trailing: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
@@ -592,6 +756,40 @@ class _AddServerScreenState extends State<AddServerScreen> {
                       Padding(
                         padding: const EdgeInsets.all(16),
                         child: _buildDNSSection(),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ],
+
+            if (_protocol != 'grouk') ...[
+              const SizedBox(height: 24),
+              _sectionTitle(context, 'Cover Traffic'),
+              Card(
+                child: Column(
+                  children: [
+                    ListTile(
+                      leading: Icon(Icons.theater_comedy, color: accentColor(context)),
+                      title: Text('Cover Traffic', style: TextStyle(color: textSecondary(context))),
+                      subtitle: Text(_coverEnabled ? '${_coverDomains.length} domains' : 'Disabled', 
+                        style: TextStyle(color: textMuted(context), fontSize: 12)),
+                      trailing: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Switch(value: _coverEnabled, onChanged: (v) => setState(() => _coverEnabled = v)),
+                          const SizedBox(width: 8),
+                          Icon(Icons.arrow_forward_ios, size: 16, color: textMuted(context)),
+                        ],
+                      ),
+                      onTap: () => setState(() => _coverEnabled = !_coverEnabled),
+                    ),
+                    
+                    if (_coverEnabled) ...[
+                      Divider(height: 1, color: accentColor(context).withOpacity(0.1)),
+                      Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: _buildCoverSection(),
                       ),
                     ],
                   ],
@@ -746,7 +944,8 @@ class _AddServerScreenState extends State<AddServerScreen> {
               padding: const EdgeInsets.only(bottom: 4),
               child: Row(
                 children: [
-                  Icon(domain.fallback ? Icons.shield : domain.checkHealth ? Icons.check_circle : Icons.circle_outlined, size: 16, color: domain.fallback ? Colors.blue : domain.checkHealth ? Colors.green : Colors.grey),
+                  Icon(domain.fallback ? Icons.shield : domain.checkHealth ? Icons.check_circle : Icons.circle_outlined, 
+                    size: 16, color: domain.fallback ? Colors.blue : domain.checkHealth ? Colors.green : Colors.grey),
                   const SizedBox(width: 8),
                   Expanded(child: Text(domain.domain, style: TextStyle(fontSize: 14, color: textSecondary(context)))),
                   
@@ -930,7 +1129,8 @@ class _AddServerScreenState extends State<AddServerScreen> {
               const Icon(Icons.info_outline, color: Colors.orange, size: 20),
               const SizedBox(width: 12),
               Expanded(
-                child: Text('DNS fallback is slow. Use only when TLS is blocked.', style: TextStyle(color: textMuted(context), fontSize: 12)),
+                child: Text('DNS fallback is slow. Use only when TLS is blocked.', 
+                  style: TextStyle(color: textMuted(context), fontSize: 12)),
               ),
             ],
           ),
@@ -1028,7 +1228,7 @@ class _AddServerScreenState extends State<AddServerScreen> {
     final pin = _pinController.text.trim();
     
     TransportConfig? transport;
-    if (_transportType != 'direct' && _protocol != 'grouk') {
+    if (_transportType != 'direct' && _protocol == 'guarch') {
       final host = _transportHostController.text.trim();
       final path = _transportPathController.text.trim();
       
@@ -1054,6 +1254,17 @@ class _AddServerScreenState extends State<AddServerScreen> {
       );
     }
 
+    ZhipConfig? zhipConfig;
+    if (_protocol == 'zhip') {
+      zhipConfig = ZhipConfig(
+        maxIdleTimeout: _zhipMaxIdleTimeout,
+        keepAlivePeriod: _zhipKeepAlivePeriod,
+        maxStreams: _zhipMaxStreams,
+      );
+    }
+
+    final shouldHaveCover = _protocol != 'grouk';
+
     if (isEditing) {
       provider.updateServer(
         widget.server!.copyWith(
@@ -1065,15 +1276,20 @@ class _AddServerScreenState extends State<AddServerScreen> {
           protocol: _protocol,
           transport: transport,
           grouk: groukConfig,
-          coverEnabled: _protocol != 'grouk' ? _coverEnabled : false,
-          coverDomains: _protocol != 'grouk' ? List.from(_coverDomains) : [],
-          sniEnabled: _protocol != 'grouk' ? _sniEnabled : false,
-          sniMode: _protocol != 'grouk' ? _sniMode : 'weighted',
-          sniDomains: _protocol != 'grouk' ? List.from(_sniDomains) : [],
-          dnsFallbackEnabled: _protocol != 'grouk' ? _dnsFallbackEnabled : false,
-          dnsFallbackMode: _protocol != 'grouk' ? _dnsFallbackMode : 'auto',
-          batteryAwareEnabled: _protocol != 'grouk' ? _batteryAwareEnabled : true,
-          dataSaverEnabled: _protocol != 'grouk' ? _dataSaverEnabled : false,
+          zhip: zhipConfig,
+          
+          coverEnabled: shouldHaveCover ? _coverEnabled : false,
+          coverDomains: shouldHaveCover ? List.from(_coverDomains) : [],
+          
+          sniEnabled: _protocol == 'guarch' ? _sniEnabled : false,
+          sniMode: _protocol == 'guarch' ? _sniMode : 'weighted',
+          sniDomains: _protocol == 'guarch' ? List.from(_sniDomains) : [],
+          
+          dnsFallbackEnabled: _protocol == 'guarch' ? _dnsFallbackEnabled : false,
+          dnsFallbackMode: _protocol == 'guarch' ? _dnsFallbackMode : 'auto',
+          
+          batteryAwareEnabled: shouldHaveCover ? _batteryAwareEnabled : true,
+          dataSaverEnabled: shouldHaveCover ? _dataSaverEnabled : false,
         ),
       );
     } else {
@@ -1087,15 +1303,20 @@ class _AddServerScreenState extends State<AddServerScreen> {
         protocol: _protocol,
         transport: transport,
         grouk: groukConfig,
-        coverEnabled: _protocol != 'grouk' ? _coverEnabled : false,
-        coverDomains: _protocol != 'grouk' ? List.from(_coverDomains) : [],
-        sniEnabled: _protocol != 'grouk' ? _sniEnabled : false,
-        sniMode: _protocol != 'grouk' ? _sniMode : 'weighted',
-        sniDomains: _protocol != 'grouk' ? List.from(_sniDomains) : [],
-        dnsFallbackEnabled: _protocol != 'grouk' ? _dnsFallbackEnabled : false,
-        dnsFallbackMode: _protocol != 'grouk' ? _dnsFallbackMode : 'auto',
-        batteryAwareEnabled: _protocol != 'grouk' ? _batteryAwareEnabled : true,
-        dataSaverEnabled: _protocol != 'grouk' ? _dataSaverEnabled : false,
+        zhip: zhipConfig,
+        
+        coverEnabled: shouldHaveCover ? _coverEnabled : false,
+        coverDomains: shouldHaveCover ? List.from(_coverDomains) : [],
+        
+        sniEnabled: _protocol == 'guarch' ? _sniEnabled : false,
+        sniMode: _protocol == 'guarch' ? _sniMode : 'weighted',
+        sniDomains: _protocol == 'guarch' ? List.from(_sniDomains) : [],
+        
+        dnsFallbackEnabled: _protocol == 'guarch' ? _dnsFallbackEnabled : false,
+        dnsFallbackMode: _protocol == 'guarch' ? _dnsFallbackMode : 'auto',
+        
+        batteryAwareEnabled: shouldHaveCover ? _batteryAwareEnabled : true,
+        dataSaverEnabled: shouldHaveCover ? _dataSaverEnabled : false,
       );
       provider.addServer(server);
       provider.setActiveServer(server.id);
