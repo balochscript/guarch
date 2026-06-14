@@ -26,6 +26,10 @@ func GetPreset(name string) (*ServerConfig, bool) {
 		base = IranGroukBalanced()
 	case "global_grouk":
 		base = GlobalGroukPreset()
+	case "zhip_minimal":
+		base = ZhipMinimalPreset()
+	case "zhip_balanced":
+		base = ZhipBalancedPreset()
 	default:
 		return nil, false
 	}
@@ -50,6 +54,8 @@ func ListPresets() []string {
 		"iran_grouk",
 		"iran_grouk_balanced",
 		"global_grouk",
+		"zhip_minimal",
+		"zhip_balanced",
 	}
 }
 
@@ -575,6 +581,95 @@ func GlobalGroukPreset() *ServerConfig {
 			Country: "Global",
 			Notes:   "UDP-based Grouk for low-latency",
 			Tags:    []string{"global", "grouk", "udp", "fast"},
+		},
+	}
+}
+
+func ZhipMinimalPreset() *ServerConfig {
+	return &ServerConfig{
+		Version: 1,
+		Server: ServerInfo{
+			Name:     "Zhip Minimal",
+			Address:  "YOUR_SERVER:8443",
+			Protocol: "zhip",
+			PSK:      "REPLACE_WITH_YOUR_PSK",
+			CertPin:  "",
+		},
+		Zhip: &ZhipConfig{
+			MaxIdleTimeout:  60,
+			KeepAlivePeriod: 25,
+			MaxStreams:      256,
+		},
+		Cover: &CoverConfig{
+			Enabled: false,
+		},
+		Metadata: &Metadata{
+			Notes: "Minimal Zhip - maximum speed with QUIC",
+			Tags:  []string{"zhip", "quic", "minimal", "fast"},
+		},
+	}
+}
+
+func ZhipBalancedPreset() *ServerConfig {
+	return &ServerConfig{
+		Version: 1,
+		Server: ServerInfo{
+			Name:     "Zhip Balanced",
+			Address:  "YOUR_SERVER:8443",
+			Protocol: "zhip",
+			PSK:      "REPLACE_WITH_YOUR_PSK",
+			CertPin:  "",
+		},
+		Zhip: &ZhipConfig{
+			MaxIdleTimeout:  120,
+			KeepAlivePeriod: 30,
+			MaxStreams:      256,
+		},
+		Cover: &CoverConfig{
+			Enabled: true,
+			Mode:    "balanced",
+			Domains: []CoverDomain{
+				{
+					Domain:      "www.google.com",
+					Paths:       []string{"/", "/search?q=tech"},
+					Weight:      35,
+					IntervalMin: Duration{5 * time.Second},
+					IntervalMax: Duration{15 * time.Second},
+				},
+				{
+					Domain:      "www.cloudflare.com",
+					Paths:       []string{"/", "/learning"},
+					Weight:      30,
+					IntervalMin: Duration{6 * time.Second},
+					IntervalMax: Duration{18 * time.Second},
+				},
+				{
+					Domain:      "github.com",
+					Paths:       []string{"/", "/explore"},
+					Weight:      20,
+					IntervalMin: Duration{7 * time.Second},
+					IntervalMax: Duration{20 * time.Second},
+				},
+				{
+					Domain:      "stackoverflow.com",
+					Paths:       []string{"/", "/questions"},
+					Weight:      15,
+					IntervalMin: Duration{6 * time.Second},
+					IntervalMax: Duration{18 * time.Second},
+				},
+			},
+			Adaptive: AdaptiveConfig{
+				Enabled:         true,
+				BatteryAware:    true,
+				DataSaverMode:   false,
+				IdleThreshold:   "100KB/min",
+				LightThreshold:  "1MB/min",
+				MediumThreshold: "10MB/min",
+			},
+		},
+		Metadata: &Metadata{
+			Notes: "Balanced Zhip with cover traffic",
+			Tags:  []string{"zhip", "quic", "balanced", "recommended"},
 		},
 	}
 }
