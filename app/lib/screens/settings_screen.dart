@@ -54,6 +54,88 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
   }
 
+  void _onToggleSni(bool value, AppProvider provider) {
+    if (value && provider.globalSniDomains.isEmpty) {
+      showDialog(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: Row(
+            children: [
+              Icon(Icons.warning_amber, color: Colors.orange, size: 28),
+              const SizedBox(width: 12),
+              const Expanded(child: Text('No SNI Domains')),
+            ],
+          ),
+          content: const Text(
+            'SNI Rotation requires at least one domain.\n\n'
+            'Add domains in SNI Protection settings first.',
+            style: TextStyle(height: 1.4),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Cancel'),
+            ),
+            FilledButton.icon(
+              onPressed: () {
+                Navigator.pop(ctx);
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const SNISettingsScreen()),
+                );
+              },
+              icon: const Icon(Icons.settings, size: 18),
+              label: const Text('Configure'),
+            ),
+          ],
+        ),
+      );
+    } else {
+      provider.toggleGlobalSni();
+    }
+  }
+
+  void _onToggleCover(bool value, AppProvider provider) {
+    if (value && provider.globalCoverDomains.isEmpty) {
+      showDialog(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: Row(
+            children: [
+              Icon(Icons.warning_amber, color: Colors.orange, size: 28),
+              const SizedBox(width: 12),
+              const Expanded(child: Text('No Cover Domains')),
+            ],
+          ),
+          content: const Text(
+            'Cover Traffic requires at least one domain.\n\n'
+            'Add domains in Cover Traffic settings first.',
+            style: TextStyle(height: 1.4),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Cancel'),
+            ),
+            FilledButton.icon(
+              onPressed: () {
+                Navigator.pop(ctx);
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const CoverSettingsScreen()),
+                );
+              },
+              icon: const Icon(Icons.settings, size: 18),
+              label: const Text('Configure'),
+            ),
+          ],
+        ),
+      );
+    } else {
+      provider.toggleGlobalCover();
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Consumer<AppProvider>(
@@ -187,15 +269,22 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       subtitle: Text(
                         provider.globalSniEnabled
                             ? '${provider.globalSniDomains.length} domains • ${provider.globalSniMode} mode'
-                            : 'Disabled',
-                        style: TextStyle(color: textMuted(context), fontSize: 12),
+                            : provider.globalSniDomains.isEmpty
+                                ? 'No domains - tap to configure'
+                                : 'Disabled',
+                        style: TextStyle(
+                          color: !provider.globalSniEnabled && provider.globalSniDomains.isEmpty
+                              ? Colors.orange
+                              : textMuted(context),
+                          fontSize: 12,
+                        ),
                       ),
                       trailing: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           Switch(
                             value: provider.globalSniEnabled,
-                            onChanged: (_) => provider.toggleGlobalSni(),
+                            onChanged: (value) => _onToggleSni(value, provider),
                           ),
                           const SizedBox(width: 8),
                           Icon(
@@ -223,15 +312,22 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       subtitle: Text(
                         provider.globalCoverEnabled
                             ? '${provider.globalCoverDomains.length} domains • ${provider.globalCoverMode} mode'
-                            : 'Disabled',
-                        style: TextStyle(color: textMuted(context), fontSize: 12),
+                            : provider.globalCoverDomains.isEmpty
+                                ? 'No domains - tap to configure'
+                                : 'Disabled',
+                        style: TextStyle(
+                          color: !provider.globalCoverEnabled && provider.globalCoverDomains.isEmpty
+                              ? Colors.orange
+                              : textMuted(context),
+                          fontSize: 12,
+                        ),
                       ),
                       trailing: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           Switch(
                             value: provider.globalCoverEnabled,
-                            onChanged: (_) => provider.toggleGlobalCover(),
+                            onChanged: (value) => _onToggleCover(value, provider),
                           ),
                           const SizedBox(width: 8),
                           Icon(
