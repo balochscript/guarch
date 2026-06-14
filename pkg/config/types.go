@@ -16,6 +16,7 @@ type ServerConfig struct {
 	UTLS      *UTLSConfig       `json:"utls,omitempty"`
 	Fragment  *FragmentConfig   `json:"fragmentation,omitempty"`
 	Grouk     *GroukConfig      `json:"grouk,omitempty"`
+	Zhip      *ZhipConfig       `json:"zhip,omitempty"`
 	
 	PaddingEnabled          bool   `json:"padding_enabled,omitempty"`
 	MaxPadding              int    `json:"max_padding,omitempty"`
@@ -60,6 +61,13 @@ type GroukConfig struct {
 	EnableFEC       bool `json:"enable_fec"`
 	FECDataShards   int  `json:"fec_data_shards"`
 	FECParityShards int  `json:"fec_parity_shards"`
+	FECGroupSize    int  `json:"fec_group_size"`
+}
+
+type ZhipConfig struct {
+	MaxIdleTimeout  int `json:"max_idle_timeout,omitempty"`
+	KeepAlivePeriod int `json:"keepalive_period,omitempty"`
+	MaxStreams      int `json:"max_streams,omitempty"`
 }
 
 type SNIConfig struct {
