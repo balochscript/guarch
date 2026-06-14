@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "server": {
+    "name": "Zhip Minimal",
+    "address": "YOUR_SERVER:8443",
+    "protocol": "zhip",
+    "psk": "REPLACE_WITH_YOUR_PSK",
+    "cert_pin": ""
+  },
+  "zhip": {
+    "max_idle_timeout": 60,
+    "keepalive_period": 25,
+    "max_streams": 256
+  },
+  "cover": {
+    "enabled": false
+  },
+  "metadata": {
+    "notes": "Minimal Zhip - maximum speed with QUIC",
+    "tags": ["zhip", "quic", "minimal", "fast"]
+  }
+}
