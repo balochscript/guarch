@@ -72,7 +72,7 @@ type Engine struct {
 	muxConn      *mux.Mux
 	groukSession *transport.GroukSession
 	groukUDP     *net.UDPConn
-	zhipConn     *quic.Connection
+	zhipConn     *quic.Conn
 	
 	sniManager    *sni.Manager
 	coverManager  *cover.Manager
@@ -966,7 +966,7 @@ func (e *Engine) connectZhip(cfg *config.ServerConfig, coverMgr *cover.Manager) 
 	})
 }
 
-func (e *Engine) zhipMonitor(conn *quic.Connection) {
+func (e *Engine) zhipMonitor(conn *quic.Conn) {
 	defer e.recoverPanic("zhipMonitor")
 
 	log.Println("[Engine] Zhip monitor started")
