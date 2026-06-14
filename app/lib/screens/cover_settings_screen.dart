@@ -8,6 +8,48 @@ import 'package:guarch/models/server_config.dart';
 class CoverSettingsScreen extends StatelessWidget {
   const CoverSettingsScreen({super.key});
 
+  void _onToggleCover(bool value, AppProvider provider, BuildContext context) {
+    if (value && provider.globalCoverDomains.isEmpty) {
+      _showNoDomainsDialog(context, provider);
+    } else {
+      provider.toggleGlobalCover();
+    }
+  }
+
+  void _showNoDomainsDialog(BuildContext context, AppProvider provider) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Row(
+          children: [
+            Icon(Icons.warning_amber, color: Colors.orange, size: 28),
+            const SizedBox(width: 12),
+            const Expanded(child: Text('No Cover Domains')),
+          ],
+        ),
+        content: const Text(
+          'Cover Traffic requires at least one domain to work.\n\n'
+          'Add a domain first before enabling this feature.',
+          style: TextStyle(height: 1.4),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel'),
+          ),
+          FilledButton.icon(
+            onPressed: () {
+              Navigator.pop(ctx);
+              _showAddDomainDialog(context, provider);
+            },
+            icon: const Icon(Icons.add, size: 18),
+            label: const Text('Add Domain'),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Consumer<AppProvider>(
@@ -36,12 +78,128 @@ class CoverSettingsScreen extends StatelessWidget {
                   ),
                 ),
                 subtitle: Text(
-                  'Hide real traffic patterns with decoy requests',
-                  style: TextStyle(color: textMuted(context), fontSize: 13),
+                  provider.globalCoverDomains.isEmpty && !provider.globalCoverEnabled
+                      ? 'Add at least one cover domain to enable this feature'
+                      : 'Hide real traffic patterns with decoy requests',
+                  style: TextStyle(
+                    color: provider.globalCoverDomains.isEmpty && !provider.globalCoverEnabled
+                        ? Colors.orange
+                        : textMuted(context),
+                    fontSize: 13,
+                  ),
                 ),
                 value: provider.globalCoverEnabled,
-                onChanged: (_) => provider.toggleGlobalCover(),
+                onChanged: (value) => _onToggleCover(value, provider, context),
               ),
+
+              if (!provider.globalCoverEnabled && provider.globalCoverDomains.isEmpty) ...[
+                const SizedBox(height: 16),
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: Colors.orange.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.orange.withOpacity(0.3)),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.info_outline, color: Colors.orange, size: 24),
+                      const SizedBox(width: 16),
+                      Expanded(
+                        child: Text(
+                          'Cover Traffic is disabled because no domains are configured. Add at least one domain below to enable.',
+                          style: TextStyle(
+                            color: textSecondary(context),
+                            fontSize: 13,
+                            height: 1.4,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+
+              const SizedBox(height: 24),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  _sectionTitle(context, 'Cover Domains (${provider.globalCoverDomains.length})'),
+                  TextButton.icon(
+                    onPressed: () => _showAddDomainDialog(context, provider),
+                    icon: const Icon(Icons.add, size: 18),
+                    label: const Text('Add'),
+                  ),
+                ],
+              ),
+
+              if (provider.globalCoverDomains.isEmpty)
+                Card(
+                  child: Padding(
+                    padding: const EdgeInsets.all(24),
+                    child: Center(
+                      child: Column(
+                        children: [
+                          Icon(Icons.warning_amber, size: 48, color: Colors.orange),
+                          const SizedBox(height: 12),
+                          Text(
+                            'No domains configured',
+                            style: TextStyle(
+                              color: textSecondary(context),
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            provider.globalCoverEnabled
+                                ? 'Cover traffic is enabled but has no targets!'
+                                : 'Add at least one domain to enable cover traffic',
+                            style: TextStyle(
+                              color: provider.globalCoverEnabled ? Colors.red : textMuted(context),
+                              fontSize: 12,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                )
+              else
+                ...provider.globalCoverDomains.asMap().entries.map((entry) {
+                  final index = entry.key;
+                  final domain = entry.value;
+                  return Card(
+                    margin: const EdgeInsets.only(bottom: 8),
+                    child: ListTile(
+                      leading: Icon(Icons.web, color: accentColor(context)),
+                      title: Text(
+                        domain.domain,
+                        style: TextStyle(
+                          color: textSecondary(context),
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      subtitle: Text(
+                        'Weight: ${domain.weight} - Paths: ${domain.paths.length}',
+                        style: TextStyle(color: textMuted(context), fontSize: 12),
+                      ),
+                      trailing: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          IconButton(
+                            icon: const Icon(Icons.edit, size: 20),
+                            onPressed: () => _showEditDomainDialog(context, provider, index, domain),
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.delete, size: 20),
+                            color: Colors.red,
+                            onPressed: () => _confirmDelete(context, provider, index, domain.domain),
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                }).toList(),
 
               if (provider.globalCoverEnabled) ...[
                 const SizedBox(height: 24),
@@ -420,82 +578,6 @@ class CoverSettingsScreen extends StatelessWidget {
                 ),
 
                 const SizedBox(height: 24),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    _sectionTitle(context, 'Cover Domains (${provider.globalCoverDomains.length})'),
-                    TextButton.icon(
-                      onPressed: () => _showAddDomainDialog(context, provider),
-                      icon: const Icon(Icons.add, size: 18),
-                      label: const Text('Add'),
-                    ),
-                  ],
-                ),
-
-                if (provider.globalCoverDomains.isEmpty)
-                  Card(
-                    child: Padding(
-                      padding: const EdgeInsets.all(24),
-                      child: Center(
-                        child: Column(
-                          children: [
-                            Icon(Icons.warning_amber, size: 48, color: Colors.orange),
-                            const SizedBox(height: 12),
-                            Text(
-                              'No domains configured',
-                              style: TextStyle(
-                                color: textSecondary(context),
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                              'Add at least one domain',
-                              style: TextStyle(color: textMuted(context), fontSize: 12),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  )
-                else
-                  ...provider.globalCoverDomains.asMap().entries.map((entry) {
-                    final index = entry.key;
-                    final domain = entry.value;
-                    return Card(
-                      margin: const EdgeInsets.only(bottom: 8),
-                      child: ListTile(
-                        leading: Icon(Icons.web, color: accentColor(context)),
-                        title: Text(
-                          domain.domain,
-                          style: TextStyle(
-                            color: textSecondary(context),
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                        subtitle: Text(
-                          'Weight: ${domain.weight} - Paths: ${domain.paths.length}',
-                          style: TextStyle(color: textMuted(context), fontSize: 12),
-                        ),
-                        trailing: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            IconButton(
-                              icon: const Icon(Icons.edit, size: 20),
-                              onPressed: () => _showEditDomainDialog(context, provider, index, domain),
-                            ),
-                            IconButton(
-                              icon: const Icon(Icons.delete, size: 20),
-                              color: Colors.red,
-                              onPressed: () => _confirmDelete(context, provider, index, domain.domain),
-                            ),
-                          ],
-                        ),
-                      ),
-                    );
-                  }).toList(),
-
-                const SizedBox(height: 24),
                 Container(
                   padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(
@@ -766,11 +848,18 @@ class CoverSettingsScreen extends StatelessWidget {
   }
 
   void _confirmDelete(BuildContext context, AppProvider provider, int index, String domain) {
+    final isLastDomain = provider.globalCoverDomains.length == 1;
+    
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Delete Domain'),
-        content: Text('Remove "$domain" from cover domains?'),
+        content: Text(
+          isLastDomain
+              ? 'Remove "$domain" from cover domains?\n\n'
+                'This is the last domain. Cover traffic will be automatically disabled.'
+              : 'Remove "$domain" from cover domains?',
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
@@ -779,6 +868,17 @@ class CoverSettingsScreen extends StatelessWidget {
           FilledButton(
             onPressed: () {
               provider.removeGlobalCoverDomain(index);
+              
+              if (isLastDomain && provider.globalCoverEnabled) {
+                provider.toggleGlobalCover();
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: const Text('Cover traffic disabled - no domains left'),
+                    backgroundColor: Colors.orange,
+                  ),
+                );
+              }
+              
               Navigator.pop(ctx);
             },
             style: FilledButton.styleFrom(backgroundColor: Colors.red),
