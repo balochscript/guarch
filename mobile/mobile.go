@@ -24,6 +24,8 @@ import (
 	"guarch/pkg/protocol"
 	"guarch/pkg/socks5"
 	"guarch/pkg/transport"
+
+	"github.com/quic-go/quic-go"
 )
 
 const (
@@ -70,6 +72,7 @@ type Engine struct {
 	muxConn      *mux.Mux
 	groukSession *transport.GroukSession
 	groukUDP     *net.UDPConn
+	zhipConn     *quic.Connection
 	
 	sniManager    *sni.Manager
 	coverManager  *cover.Manager
@@ -869,32 +872,124 @@ func (e *Engine) connectZhip(cfg *config.ServerConfig, coverMgr *cover.Manager) 
 		coverMgr.SendOne()
 	}
 
-	conn, err := transport.ZhipDial(e.ctx, serverAddr, cfg.Server.CertPin, nil)
+	e.mu.RLock()
+	userSettings := e.userSettings
+	e.mu.RUnlock()
+
+	zhipCfg := &transport.ZhipQUICConfig{
+		MaxIdleTimeout:  60 * time.Second,
+		KeepAlivePeriod: 25 * time.Second,
+		MaxStreams:      256,
+	}
+
+	if cfg.Zhip != nil {
+		if cfg.Zhip.MaxIdleTimeout > 0 {
+			zhipCfg.MaxIdleTimeout = time.Duration(cfg.Zhip.MaxIdleTimeout) * time.Second
+			log.Printf("[Engine] Using config MaxIdleTimeout: %ds", cfg.Zhip.MaxIdleTimeout)
+		}
+		if cfg.Zhip.KeepAlivePeriod > 0 {
+			zhipCfg.KeepAlivePeriod = time.Duration(cfg.Zhip.KeepAlivePeriod) * time.Second
+			log.Printf("[Engine] Using config KeepAlivePeriod: %ds", cfg.Zhip.KeepAlivePeriod)
+		}
+		if cfg.Zhip.MaxStreams > 0 {
+			zhipCfg.MaxStreams = int64(cfg.Zhip.MaxStreams)
+			log.Printf("[Engine] Using config MaxStreams: %d", cfg.Zhip.MaxStreams)
+		}
+	}
+
+	if userSettings.DialTimeout > 0 {
+		dialTimeout := time.Duration(userSettings.DialTimeout) * time.Second
+		if dialTimeout < zhipCfg.MaxIdleTimeout {
+			zhipCfg.MaxIdleTimeout = dialTimeout
+			log.Printf("[Engine] Using user dial_timeout for QUIC MaxIdleTimeout: %ds", userSettings.DialTimeout)
+		}
+	}
+
+	dialCtx, dialCancel := context.WithTimeout(e.ctx, 30*time.Second)
+	defer dialCancel()
+
+	conn, err := transport.ZhipDial(dialCtx, serverAddr, cfg.Server.CertPin, zhipCfg)
 	if err != nil {
 		log.Printf("[Engine] QUIC dial failed: %v", err)
 		return fmt.Errorf("QUIC dial failed: %w", err)
 	}
 	log.Println("[Engine] QUIC connection established")
 
-	log.Println("[Engine] Performing Zhip authentication...")
-	if err := transport.ZhipClientAuth(conn, []byte(cfg.Server.PSK)); err != nil {
+	authTimeout := 15 * time.Second
+	if userSettings.HandshakeTimeout > 0 {
+		authTimeout = time.Duration(userSettings.HandshakeTimeout) * time.Second
+	}
+
+	authCtx, authCancel := context.WithTimeout(e.ctx, authTimeout)
+	defer authCancel()
+
+	log.Printf("[Engine] Performing Zhip authentication (timeout: %v)...", authTimeout)
+	if err := transport.ZhipClientAuthWithContext(authCtx, conn, []byte(cfg.Server.PSK)); err != nil {
 		conn.CloseWithError(0, "auth failed")
 		log.Printf("[Engine] Zhip auth failed: %v", err)
 		return fmt.Errorf("Zhip auth failed: %w", err)
 	}
-	log.Println("[Engine] Zhip auth complete")
+	log.Println("[Engine] Zhip auth complete ✅")
 
 	if coverMgr != nil {
 		coverMgr.SendOne()
 	}
 
 	e.mu.Lock()
+	e.zhipConn = conn
 	e.stats.connectTime = time.Now()
 	e.mu.Unlock()
 
+	log.Println("[Engine] Starting Zhip connection monitor...")
+	go e.zhipMonitor(conn)
+
 	return e.startSOCKS5(func() (io.ReadWriteCloser, error) {
-		return conn.OpenStreamSync(e.ctx)
+		select {
+		case <-conn.Context().Done():
+			return nil, fmt.Errorf("QUIC connection closed")
+		case <-e.ctx.Done():
+			return nil, e.ctx.Err()
+		default:
+		}
+
+		streamCtx, cancel := context.WithTimeout(e.ctx, 10*time.Second)
+		defer cancel()
+
+		stream, err := conn.OpenStreamSync(streamCtx)
+		if err != nil {
+			log.Printf("[Engine] Failed to open Zhip stream: %v", err)
+			return nil, err
+		}
+
+		log.Printf("[Engine] Zhip stream opened (ID: %d)", stream.StreamID())
+		return stream, nil
 	})
+}
+
+func (e *Engine) zhipMonitor(conn *quic.Connection) {
+	defer e.recoverPanic("zhipMonitor")
+
+	log.Println("[Engine] Zhip monitor started")
+
+	<-conn.Context().Done()
+
+	log.Println("[Engine] Zhip connection closed")
+
+	e.mu.Lock()
+	if e.zhipConn == conn {
+		e.zhipConn = nil
+	}
+	e.mu.Unlock()
+
+	e.mu.RLock()
+	status := e.status
+	e.mu.RUnlock()
+
+	if status == "connected" {
+		log.Println("[Engine] Unexpected Zhip disconnection")
+		e.logWarn("Zhip connection lost unexpectedly")
+		e.setStatus("disconnected")
+	}
 }
 
 func (e *Engine) enableDNSFallback() error {
@@ -1210,6 +1305,16 @@ func (e *Engine) statsReporter() {
 				e.stats.fecRecoveryRate = groukStats.RecoveryRate
 			}
 
+			zhipHealthy := false
+			if e.zhipConn != nil {
+				select {
+				case <-e.zhipConn.Context().Done():
+					zhipHealthy = false
+				default:
+					zhipHealthy = true
+				}
+			}
+
 			data := map[string]interface{}{
 				"upload_speed":      upSpeed,
 				"download_speed":    downSpeed,
@@ -1226,6 +1331,7 @@ func (e *Engine) statsReporter() {
 				"fec_recv":          e.stats.fecRecv,
 				"fec_recovered":     e.stats.fecRecovered,
 				"fec_recovery_rate": e.stats.fecRecoveryRate,
+				"zhip_healthy":      zhipHealthy,
 			}
 
 			e.stats.mu.Unlock()
@@ -1327,6 +1433,12 @@ func (e *Engine) Disconnect() bool {
 		log.Println("[Engine] Grouk UDP closed")
 	}
 
+	if e.zhipConn != nil {
+		e.zhipConn.CloseWithError(0, "client disconnect")
+		e.zhipConn = nil
+		log.Println("[Engine] Zhip connection closed")
+	}
+
 	if e.sniManager != nil {
 		e.sniManager.Stop()
 		e.sniManager = nil
@@ -1364,6 +1476,16 @@ func (e *Engine) GetStats() string {
 	e.stats.mu.RLock()
 	defer e.stats.mu.RUnlock()
 
+	zhipHealthy := false
+	if e.zhipConn != nil {
+		select {
+		case <-e.zhipConn.Context().Done():
+			zhipHealthy = false
+		default:
+			zhipHealthy = true
+		}
+	}
+
 	data := map[string]interface{}{
 		"total_upload":      e.stats.totalUpload,
 		"total_download":    e.stats.totalDownload,
@@ -1380,6 +1502,7 @@ func (e *Engine) GetStats() string {
 		"fec_recv":          e.stats.fecRecv,
 		"fec_recovered":     e.stats.fecRecovered,
 		"fec_recovery_rate": e.stats.fecRecoveryRate,
+		"zhip_healthy":      zhipHealthy,
 	}
 
 	jsonData, _ := json.Marshal(data)
