@@ -65,6 +65,12 @@ func (v *Validator) Validate(cfg *ServerConfig) error {
 		}
 	}
 
+	if cfg.Zhip != nil {
+		if err := v.validateZhip(cfg.Zhip); err != nil {
+			return fmt.Errorf("zhip: %w", err)
+		}
+	}
+
 	if cfg.Metadata != nil {
 		if err := v.validateMetadata(cfg.Metadata); err != nil {
 			return fmt.Errorf("metadata: %w", err)
@@ -161,6 +167,44 @@ func (v *Validator) validateGrouk(grouk *GroukConfig) error {
 	if grouk.FECGroupSize < 2 || grouk.FECGroupSize > 16 {
 		return fmt.Errorf("fec_group_size must be between 2 and 16 (got %d)", grouk.FECGroupSize)
 	}
+	return nil
+}
+
+func (v *Validator) validateZhip(zhip *ZhipConfig) error {
+	if zhip.MaxIdleTimeout < 0 {
+		return fmt.Errorf("max_idle_timeout cannot be negative")
+	}
+	
+	if zhip.MaxIdleTimeout > 0 && zhip.MaxIdleTimeout < 10 {
+		return fmt.Errorf("max_idle_timeout too small (minimum 10 seconds)")
+	}
+	
+	if zhip.KeepAlivePeriod < 0 {
+		return fmt.Errorf("keepalive_period cannot be negative")
+	}
+	
+	if zhip.KeepAlivePeriod > 0 && zhip.KeepAlivePeriod < 5 {
+		return fmt.Errorf("keepalive_period too small (minimum 5 seconds)")
+	}
+	
+	if zhip.MaxIdleTimeout > 0 && zhip.KeepAlivePeriod > 0 {
+		if zhip.KeepAlivePeriod >= zhip.MaxIdleTimeout {
+			return fmt.Errorf("keepalive_period must be less than max_idle_timeout")
+		}
+	}
+	
+	if zhip.MaxStreams < 0 {
+		return fmt.Errorf("max_streams cannot be negative")
+	}
+	
+	if zhip.MaxStreams > 0 && zhip.MaxStreams < 10 {
+		return fmt.Errorf("max_streams too small (minimum 10)")
+	}
+	
+	if zhip.MaxStreams > 1000 {
+		return fmt.Errorf("max_streams too large (maximum 1000)")
+	}
+	
 	return nil
 }
 
