@@ -40,6 +40,7 @@ class ServerConfig {
   
   TransportConfig? transport;
   GroukConfig? grouk;
+  ZhipConfig? zhip;
   
   int? ping;
   int? realDelay;
@@ -84,6 +85,7 @@ class ServerConfig {
     this.probeWindow = 5,
     this.transport,
     this.grouk,
+    this.zhip,
     this.ping,
     this.realDelay,
     this.lastTested,
@@ -162,6 +164,10 @@ class ServerConfig {
   int get groukFecDataShards => grouk?.fecDataShards ?? 10;
   int get groukFecParityShards => grouk?.fecParityShards ?? 3;
 
+  int get zhipMaxIdleTimeout => zhip?.maxIdleTimeout ?? 60;
+  int get zhipKeepAlivePeriod => zhip?.keepAlivePeriod ?? 25;
+  int get zhipMaxStreams => zhip?.maxStreams ?? 256;
+
   bool get isValid =>
       address.isNotEmpty &&
       port > 0 &&
@@ -203,7 +209,11 @@ class ServerConfig {
       json['grouk'] = grouk!.toJson();
     }
 
-    if (sniEnabled && sniDomains.isNotEmpty) {
+    if (zhip != null && protocol == 'zhip') {
+      json['zhip'] = zhip!.toJson();
+    }
+
+    if (sniEnabled && sniDomains.isNotEmpty && protocol != 'grouk' && protocol != 'zhip') {
       json['sni'] = {
         'enabled': true,
         'mode': sniMode,
@@ -225,7 +235,7 @@ class ServerConfig {
       };
     }
 
-    if (dnsFallbackEnabled) {
+    if (dnsFallbackEnabled && protocol != 'grouk' && protocol != 'zhip') {
       json['dns'] = {
         'enabled': true,
         'domain': dnsFallbackDomain,
@@ -255,6 +265,7 @@ class ServerConfig {
     final dns = json['dns'] ?? json['dns_fallback'] ?? {};
     final transportData = json['transport'] as Map<String, dynamic>?;
     final groukData = json['grouk'] as Map<String, dynamic>?;
+    final zhipData = json['zhip'] as Map<String, dynamic>?;
 
     String address = server['address'] ?? json['address'] ?? '';
     int port = server['port'] ?? json['port'] ?? 8443;
@@ -280,6 +291,7 @@ class ServerConfig {
           : null,
       
       grouk: groukData != null ? GroukConfig.fromJson(groukData) : null,
+      zhip: zhipData != null ? ZhipConfig.fromJson(zhipData) : null,
       
       coverEnabled: cover['enabled'] == true,
       coverDomains: cover['enabled'] == true 
@@ -391,6 +403,7 @@ class ServerConfig {
     String? protocol,
     TransportConfig? transport,
     GroukConfig? grouk,
+    ZhipConfig? zhip,
     bool? coverEnabled,
     List<CoverDomain>? coverDomains,
     bool? sniEnabled,
@@ -431,6 +444,7 @@ class ServerConfig {
       protocol: protocol ?? this.protocol,
       transport: transport ?? this.transport,
       grouk: grouk ?? this.grouk,
+      zhip: zhip ?? this.zhip,
       coverEnabled: coverEnabled ?? this.coverEnabled,
       coverDomains: coverDomains ?? this.coverDomains,
       sniEnabled: sniEnabled ?? this.sniEnabled,
@@ -590,6 +604,44 @@ class GroukConfig {
       enableFEC: enableFEC ?? this.enableFEC,
       fecDataShards: fecDataShards ?? this.fecDataShards,
       fecParityShards: fecParityShards ?? this.fecParityShards,
+    );
+  }
+}
+
+class ZhipConfig {
+  final int maxIdleTimeout;
+  final int keepAlivePeriod;
+  final int maxStreams;
+
+  ZhipConfig({
+    this.maxIdleTimeout = 60,
+    this.keepAlivePeriod = 25,
+    this.maxStreams = 256,
+  });
+
+  Map<String, dynamic> toJson() => {
+    'max_idle_timeout': maxIdleTimeout,
+    'keepalive_period': keepAlivePeriod,
+    'max_streams': maxStreams,
+  };
+
+  factory ZhipConfig.fromJson(Map<String, dynamic> json) {
+    return ZhipConfig(
+      maxIdleTimeout: json['max_idle_timeout'] ?? 60,
+      keepAlivePeriod: json['keepalive_period'] ?? 25,
+      maxStreams: json['max_streams'] ?? 256,
+    );
+  }
+
+  ZhipConfig copyWith({
+    int? maxIdleTimeout,
+    int? keepAlivePeriod,
+    int? maxStreams,
+  }) {
+    return ZhipConfig(
+      maxIdleTimeout: maxIdleTimeout ?? this.maxIdleTimeout,
+      keepAlivePeriod: keepAlivePeriod ?? this.keepAlivePeriod,
+      maxStreams: maxStreams ?? this.maxStreams,
     );
   }
 }
