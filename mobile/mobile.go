@@ -58,6 +58,7 @@ type UserSettings struct {
 
 func SetProtectFunc(protectFd func(fd int) error) {
 	transport.ProtectSocket = protectFd
+	log.Println("[mobile] ✅ Protect function registered in transport layer")
 }
 
 type Engine struct {
@@ -703,6 +704,7 @@ func (e *Engine) connectGuarch(cfg *config.ServerConfig, coverMgr *cover.Manager
 	e.mu.Lock()
 	e.stats.connectTime = time.Now()
 	e.connector = connector
+	e.muxConn = m
 	e.mu.Unlock()
 
 	log.Println("[Engine] Starting SOCKS5 server...")
