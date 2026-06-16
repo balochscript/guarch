@@ -23,11 +23,20 @@ class MainActivity : FlutterActivity() {
         const val LOG_CHANNEL = "com.guarch.app/logs"
         const val VPN_REQUEST_CODE = 1001
         const val TAG = "Guarch"
+
+        @Volatile
+        private var vpnServiceRef: GuarchService? = null
+
+        fun setVpnServiceReference(service: GuarchService?) {
+            vpnServiceRef = service
+            CrashLogger.d("MainActivity", "VPN service reference: ${service != null}")
+        }
     }
 
     private var vpnPermissionResult: MethodChannel.Result? = null
     private var pendingConfig: String? = null
     private var pendingSocksPort: Int = 7070
+    private var pendingIPv6Enabled: Boolean = false
     private var currentVpnMode: Boolean = true
     private var methodChannel: MethodChannel? = null
     private var eventSink: EventChannel.EventSink? = null
@@ -132,21 +141,34 @@ class MainActivity : FlutterActivity() {
 
     private fun setupProtectFunc() {
         if (goEngine == null) {
-            CrashLogger.w(TAG, "Cannot setup protect: Go engine not loaded")
+            CrashLogger.w(TAG, "⚠️ Cannot setup protect: Go engine not loaded")
             return
         }
 
         try {
             val protectClass = Class.forName("com.guarch.mobile.mobile.ProtectFunc")
-            
+
             val protectImpl = java.lang.reflect.Proxy.newProxyInstance(
                 protectClass.classLoader,
                 arrayOf(protectClass)
             ) { _, method, args ->
                 if (method.name == "protectFd") {
                     val fd = args?.get(0) as? Long ?: return@newProxyInstance false
-                    val protected = GuarchService.instance?.protect(fd.toInt()) ?: false
-                    protected
+                    val service = vpnServiceRef
+
+                    if (service == null) {
+                        CrashLogger.w(TAG, "⚠️ Protect called but VPN service not available (fd=$fd)")
+                        false
+                    } else {
+                        try {
+                            val success = service.protect(fd.toInt())
+                            CrashLogger.d(TAG, "Protect fd=$fd -> $success")
+                            success
+                        } catch (e: Exception) {
+                            CrashLogger.e(TAG, "❌ Protect error for fd=$fd", e)
+                            false
+                        }
+                    }
                 } else {
                     null
                 }
@@ -155,8 +177,12 @@ class MainActivity : FlutterActivity() {
             val mobileClass = Class.forName("com.guarch.mobile.mobile.Mobile")
             mobileClass.getMethod("setProtectFunc", protectClass)
                 .invoke(null, protectImpl)
-            
+
             CrashLogger.d(TAG, "✅ Protect function registered")
+        } catch (e: ClassNotFoundException) {
+            CrashLogger.e(TAG, "❌ Mobile class not found - rebuild AAR", e)
+        } catch (e: NoSuchMethodException) {
+            CrashLogger.e(TAG, "❌ setProtectFunc method not found - rebuild AAR", e)
         } catch (e: Throwable) {
             CrashLogger.w(TAG, "⚠️ Protect setup failed", e)
         }
@@ -167,7 +193,7 @@ class MainActivity : FlutterActivity() {
             override fun onReceive(context: Context?, intent: Intent?) {
                 val level = intent?.getIntExtra(BatteryManager.EXTRA_LEVEL, -1) ?: -1
                 val scale = intent?.getIntExtra(BatteryManager.EXTRA_SCALE, -1) ?: -1
-                
+
                 if (level >= 0 && scale > 0) {
                     val batteryPct = (level * 100 / scale)
                     if (batteryPct != currentBatteryLevel) {
@@ -194,7 +220,7 @@ class MainActivity : FlutterActivity() {
 
     private fun handleSetUserSettings(arguments: Any?, result: MethodChannel.Result) {
         CrashLogger.d(TAG, "=== handleSetUserSettings ===")
-        
+
         val json = arguments as? String
         if (json == null) {
             CrashLogger.w(TAG, "  Settings JSON is null")
@@ -210,13 +236,13 @@ class MainActivity : FlutterActivity() {
 
         try {
             CrashLogger.d(TAG, "  Settings: $json")
-            
+
             val method = goEngine!!.javaClass.getMethod("setUserSettings", String::class.java)
             val success = method.invoke(goEngine, json) as? Boolean ?: false
-            
+
             CrashLogger.d(TAG, "  setUserSettings result: $success")
             result.success(success)
-            
+
         } catch (e: Throwable) {
             val real = unwrapException(e)
             CrashLogger.e(TAG, "  setUserSettings failed", real)
@@ -240,7 +266,7 @@ class MainActivity : FlutterActivity() {
 
     private fun handleConnectLegacy(arguments: Any?, result: MethodChannel.Result) {
         CrashLogger.d(TAG, "=== handleConnectLegacy (deprecated) ===")
-        
+
         val config = arguments as? String
         if (config == null) {
             result.error("NULL_CONFIG", "Config is null", null)
@@ -269,6 +295,7 @@ class MainActivity : FlutterActivity() {
 
         val configJson = params["config"] as? String
         val vpnMode = params["vpnMode"] as? Boolean ?: true
+        val enableIPv6 = params["enableIPv6"] as? Boolean ?: false
 
         if (configJson == null) {
             result.error("NULL_CONFIG", "Config JSON is null", null)
@@ -295,9 +322,11 @@ class MainActivity : FlutterActivity() {
         CrashLogger.d(TAG, "  Mode: $mode")
         CrashLogger.d(TAG, "  Config: ${configJson.take(200)}...")
         CrashLogger.d(TAG, "  SOCKS5 Port: $socksPort")
-        
+        CrashLogger.d(TAG, "  IPv6: $enableIPv6")
+
         pendingConfig = configJson
         pendingSocksPort = socksPort
+        pendingIPv6Enabled = enableIPv6
 
         if (vpnMode) {
             if (vpnAndTunStarted && GuarchService.isRunning) {
@@ -320,7 +349,7 @@ class MainActivity : FlutterActivity() {
 
     private fun startProxyOnly(result: MethodChannel.Result) {
         CrashLogger.d(TAG, "=== startProxyOnly ===")
-        
+
         Thread {
             try {
                 val config = pendingConfig
@@ -346,7 +375,7 @@ class MainActivity : FlutterActivity() {
                             Int::class.java
                         )
                         val started = startProxyMethod.invoke(goEngine, pendingSocksPort) as? Boolean ?: false
-                        
+
                         if (!started) {
                             CrashLogger.e(TAG, "  startProxyOnly() returned false")
                             runOnUiThread {
@@ -355,15 +384,15 @@ class MainActivity : FlutterActivity() {
                             }
                             return@Thread
                         }
-                        
+
                         CrashLogger.d(TAG, "  Proxy started successfully ✅")
                         proxyOnlyStarted = true
-                        
+
                         runOnUiThread {
                             sendEvent("status", "connected")
                             result.success(true)
                         }
-                        
+
                     } catch (e: Throwable) {
                         val real = unwrapException(e)
                         CrashLogger.e(TAG, "  Proxy start failed", real)
@@ -391,7 +420,7 @@ class MainActivity : FlutterActivity() {
         Thread {
             try {
                 val config = pendingConfig ?: return@Thread
-                
+
                 CrashLogger.d(TAG, "  Loading new config...")
                 try {
                     goEngine!!.javaClass.getMethod("loadConfigJSON", String::class.java)
@@ -405,9 +434,9 @@ class MainActivity : FlutterActivity() {
                     CrashLogger.d(TAG, "  Calling connect() (VPN mode)...")
                     val connectMethod = goEngine!!.javaClass.getMethod("connect")
                     val success = connectMethod.invoke(goEngine) as? Boolean ?: false
-                    
+
                     CrashLogger.d(TAG, "  Go reconnect: $success")
-                    
+
                     runOnUiThread {
                         if (success) {
                             sendEvent("status", "connected")
@@ -421,7 +450,7 @@ class MainActivity : FlutterActivity() {
                         Int::class.java
                     )
                     val success = startProxyMethod.invoke(goEngine, pendingSocksPort) as? Boolean ?: false
-                    
+
                     runOnUiThread {
                         if (success) {
                             sendEvent("status", "connected")
@@ -442,7 +471,7 @@ class MainActivity : FlutterActivity() {
 
     private fun startVpnAndConnect(result: MethodChannel.Result) {
         CrashLogger.d(TAG, "--- startVpnAndConnect ---")
-        
+
         try {
             val intent = VpnService.prepare(this)
             if (intent != null) {
@@ -462,9 +491,9 @@ class MainActivity : FlutterActivity() {
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
-        
+
         CrashLogger.d(TAG, "onActivityResult: req=$requestCode res=$resultCode")
-        
+
         if (requestCode == VPN_REQUEST_CODE) {
             if (resultCode == Activity.RESULT_OK) {
                 vpnPermissionResult?.let { startVpnService(it) }
@@ -479,14 +508,15 @@ class MainActivity : FlutterActivity() {
 
     private fun startVpnService(result: MethodChannel.Result) {
         CrashLogger.d(TAG, "=== startVpnService ===")
-        
+
         try {
             val serviceIntent = Intent(this, GuarchService::class.java).apply {
                 action = GuarchService.ACTION_START
                 putExtra("socks_port", pendingSocksPort)
+                putExtra("enable_ipv6", pendingIPv6Enabled)
             }
 
-            CrashLogger.d(TAG, "  Starting service with SOCKS port: $pendingSocksPort")
+            CrashLogger.d(TAG, "  Starting service with SOCKS port: $pendingSocksPort, IPv6: $pendingIPv6Enabled")
 
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 startForegroundService(serviceIntent)
@@ -541,7 +571,7 @@ class MainActivity : FlutterActivity() {
                         try {
                             val connectMethod = goEngine!!.javaClass.getMethod("connect")
                             val started = connectMethod.invoke(goEngine) as? Boolean ?: false
-                            
+
                             if (!started) {
                                 CrashLogger.e(TAG, "  Connect() returned false")
                                 runOnUiThread {
@@ -549,7 +579,7 @@ class MainActivity : FlutterActivity() {
                                 }
                                 return@Thread
                             }
-                            
+
                             CrashLogger.d(TAG, "  Waiting for connection status...")
 
                             val getStatusMethod = goEngine!!.javaClass.getMethod("getStatus")
@@ -560,7 +590,7 @@ class MainActivity : FlutterActivity() {
                             while (statusAttempts < maxStatusAttempts) {
                                 try {
                                     val status = getStatusMethod.invoke(goEngine) as? String ?: "disconnected"
-                                    
+
                                     when (status) {
                                         "connected" -> {
                                             connected = true
@@ -579,7 +609,7 @@ class MainActivity : FlutterActivity() {
                                         "connecting" -> {
                                         }
                                     }
-                                    
+
                                     Thread.sleep(100)
                                     statusAttempts++
                                 } catch (e: Throwable) {
@@ -593,25 +623,25 @@ class MainActivity : FlutterActivity() {
                                 runOnUiThread {
                                     sendEvent("error", "Connection timeout")
                                 }
-                                
+
                                 try {
                                     goEngine!!.javaClass.getMethod("disconnect").invoke(goEngine)
                                 } catch (_: Throwable) {}
-                                
+
                                 return@Thread
                             }
 
                             if (!vpnAndTunStarted) {
                                 try {
                                     CrashLogger.d(TAG, "  Starting TUN (fd=$fd, port=$pendingSocksPort)...")
-                                    
+
                                     val startTunMethod = goEngine!!.javaClass.getMethod(
                                         "startTun",
                                         Int::class.java,
                                         Int::class.java
                                     )
                                     startTunMethod.invoke(goEngine, fd, pendingSocksPort)
-                                    
+
                                     vpnAndTunStarted = true
                                     CrashLogger.d(TAG, "  TUN started ✅")
                                 } catch (e: Throwable) {
@@ -619,11 +649,11 @@ class MainActivity : FlutterActivity() {
                                     runOnUiThread {
                                         sendEvent("error", "TUN start failed: ${e.message}")
                                     }
-                                    
+
                                     try {
                                         goEngine!!.javaClass.getMethod("disconnect").invoke(goEngine)
                                     } catch (_: Throwable) {}
-                                    
+
                                     return@Thread
                                 }
                             }
@@ -656,10 +686,10 @@ class MainActivity : FlutterActivity() {
 
     private fun handleDisconnect(arguments: Any?, result: MethodChannel.Result) {
         CrashLogger.d(TAG, "=== handleDisconnect ===")
-        
+
         val vpnMode = arguments as? Boolean ?: currentVpnMode
         CrashLogger.d(TAG, "  VPN Mode: $vpnMode")
-        
+
         Thread {
             try {
                 if (goEngine != null) {
@@ -932,7 +962,7 @@ class MainActivity : FlutterActivity() {
 
     private fun handleTestRealDelay(arguments: Any?, result: MethodChannel.Result) {
         CrashLogger.d(TAG, "=== testRealDelay ===")
-        
+
         val configJson = arguments as? String
         if (configJson == null) {
             CrashLogger.w(TAG, "  Config is null")
@@ -949,7 +979,7 @@ class MainActivity : FlutterActivity() {
         Thread {
             var testSuccess = false
             var previousConfig: String? = null
-            
+
             try {
                 CrashLogger.d(TAG, "  Extracting server info...")
                 val serverAddress = try {
@@ -958,9 +988,9 @@ class MainActivity : FlutterActivity() {
                 } catch (e: Exception) {
                     "unknown"
                 }
-                
+
                 CrashLogger.d(TAG, "  Testing server: $serverAddress")
-                
+
                 try {
                     CrashLogger.d(TAG, "  Saving current config...")
                     previousConfig = goEngine!!.javaClass.getMethod("exportConfigJSON")
@@ -971,23 +1001,23 @@ class MainActivity : FlutterActivity() {
                 } catch (e: Throwable) {
                     CrashLogger.w(TAG, "  Could not save previous config (OK if first run)")
                 }
-                
+
                 CrashLogger.d(TAG, "  Loading test config...")
                 goEngine!!.javaClass.getMethod("loadConfigJSON", String::class.java)
                     .invoke(goEngine, configJson)
-                
+
                 CrashLogger.d(TAG, "  Connecting to test server...")
                 val startTime = System.currentTimeMillis()
                 val connectMethod = goEngine!!.javaClass.getMethod("connect")
                 val success = connectMethod.invoke(goEngine) as? Boolean ?: false
                 val elapsed = System.currentTimeMillis() - startTime
-                
+
                 CrashLogger.d(TAG, "  Connection result: $success (${elapsed}ms)")
-                
+
                 if (success) {
                     testSuccess = true
                     Thread.sleep(100)
-                    
+
                     try {
                         CrashLogger.d(TAG, "  Disconnecting test connection...")
                         goEngine!!.javaClass.getMethod("disconnect").invoke(goEngine)
@@ -996,7 +1026,7 @@ class MainActivity : FlutterActivity() {
                         CrashLogger.e(TAG, "  Disconnect error", unwrapException(e))
                     }
                 }
-                
+
             } catch (e: Throwable) {
                 val real = unwrapException(e)
                 CrashLogger.e(TAG, "  Test failed: ${real.message}", real)
@@ -1012,10 +1042,10 @@ class MainActivity : FlutterActivity() {
                     }
                 }
             }
-            
+
             val engineStillAlive = goEngine != null
             CrashLogger.d(TAG, "  After test: engine=${if (engineStillAlive) "ALIVE ✅" else "NULL ❌"}")
-            
+
             runOnUiThread {
                 result.success(testSuccess)
             }
@@ -1024,7 +1054,7 @@ class MainActivity : FlutterActivity() {
 
     private fun handleTestConnection(arguments: Any?, result: MethodChannel.Result) {
         CrashLogger.d(TAG, "=== testConnection ===")
-        
+
         val configJson = arguments as? String
         if (configJson == null) {
             CrashLogger.w(TAG, "  Config is null")
@@ -1043,13 +1073,13 @@ class MainActivity : FlutterActivity() {
                 CrashLogger.d(TAG, "  Loading test config...")
                 goEngine!!.javaClass.getMethod("loadConfigJSON", String::class.java)
                     .invoke(goEngine, configJson)
-                
+
                 CrashLogger.d(TAG, "  Attempting connection...")
                 val connectMethod = goEngine!!.javaClass.getMethod("connect")
                 val success = connectMethod.invoke(goEngine) as? Boolean ?: false
-                
+
                 CrashLogger.d(TAG, "  Test result: $success")
-                
+
                 if (success) {
                     Thread.sleep(50)
                     try {
@@ -1057,11 +1087,11 @@ class MainActivity : FlutterActivity() {
                         CrashLogger.d(TAG, "  Disconnected")
                     } catch (_: Throwable) {}
                 }
-                
+
                 runOnUiThread {
                     result.success(success)
                 }
-                
+
             } catch (e: Throwable) {
                 CrashLogger.e(TAG, "  Test connection failed", unwrapException(e))
                 runOnUiThread {
@@ -1081,10 +1111,10 @@ class MainActivity : FlutterActivity() {
         try {
             CrashLogger.d(TAG, "  Loading Mobile class...")
             val cls = Class.forName("com.guarch.mobile.mobile.Mobile")
-            
+
             CrashLogger.d(TAG, "  Creating new engine instance...")
             goEngine = cls.getMethod("new_").invoke(null)
-            
+
             try {
                 val logPath = File(filesDir, "go_engine.log").absolutePath
                 CrashLogger.d(TAG, "  Initializing Go log: $logPath")
@@ -1094,7 +1124,7 @@ class MainActivity : FlutterActivity() {
             } catch (e: Throwable) {
                 CrashLogger.w(TAG, "  Go log init failed (method may not exist yet)")
             }
-            
+
             try {
                 CrashLogger.d(TAG, "  Setting up callback...")
                 val callbackClass = Class.forName("com.guarch.mobile.mobile.Callback")
@@ -1157,7 +1187,7 @@ class MainActivity : FlutterActivity() {
             }
 
             CrashLogger.d(TAG, "  Go engine LOADED ✅")
-            
+
             val methods = goEngine!!.javaClass.methods
                 .map { it.name }
                 .distinct()
@@ -1220,14 +1250,14 @@ class MainActivity : FlutterActivity() {
 
     override fun onDestroy() {
         CrashLogger.d(TAG, "=== Activity onDestroy ===")
-        
+
         try {
-            batteryReceiver?.let { 
+            batteryReceiver?.let {
                 unregisterReceiver(it)
                 CrashLogger.d(TAG, "  Battery receiver unregistered")
             }
         } catch (_: Throwable) {}
-        
+
         CrashLogger.close()
         super.onDestroy()
     }
