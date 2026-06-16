@@ -23,7 +23,7 @@ class GuarchService : VpnService() {
 
         private val _isRunning = AtomicBoolean(false)
         private val _tunFd = AtomicInteger(-1)
-        
+
         @Volatile
         private var _instance: GuarchService? = null
 
@@ -50,7 +50,10 @@ class GuarchService : VpnService() {
     override fun onCreate() {
         super.onCreate()
         CrashLogger.d("Service", "=== onCreate (v1.0.1) ===")
+
         _instance = this
+        MainActivity.setVpnServiceReference(this)
+
         createNotificationChannel()
     }
 
@@ -67,14 +70,15 @@ class GuarchService : VpnService() {
 
                 ACTION_START -> {
                     val socksPort = intent?.getIntExtra("socks_port", 7070) ?: 7070
-                    CrashLogger.d("Service", "  socksPort=$socksPort isRunning=$isRunning")
+                    val enableIPv6 = intent?.getBooleanExtra("enable_ipv6", false) ?: false
+                    CrashLogger.d("Service", "  socksPort=$socksPort enableIPv6=$enableIPv6 isRunning=$isRunning")
 
                     if (isRunning) {
                         CrashLogger.d("Service", "  Already running — restarting...")
                         cleanupTun()
                     }
 
-                    startVpn(socksPort)
+                    startVpn(socksPort, enableIPv6)
                 }
 
                 ACTION_UPDATE_NOTIFICATION -> {
@@ -93,7 +97,7 @@ class GuarchService : VpnService() {
         return START_STICKY
     }
 
-    private fun startVpn(socksPort: Int) {
+    private fun startVpn(socksPort: Int, enableIPv6: Boolean) {
         CrashLogger.d("Service", "--- startVpn ---")
 
         try {
@@ -108,7 +112,7 @@ class GuarchService : VpnService() {
 
         try {
             CrashLogger.d("Service", "  S2: Building VPN interface...")
-            
+
             val builder = Builder()
                 .setSession("Guarch VPN v1.0.1")
                 .addAddress("10.10.10.2", 32)
@@ -128,12 +132,20 @@ class GuarchService : VpnService() {
                 CrashLogger.w("Service", "  S2: Could not exclude self (OK on older Android)")
             }
 
-            try {
-                builder.addAddress("fd00::2", 64)
-                builder.addRoute("::", 0)
-                CrashLogger.d("Service", "  S2: IPv6 enabled ✅")
-            } catch (e: Throwable) {
-                CrashLogger.w("Service", "  S2: IPv6 not supported on this device")
+            if (enableIPv6) {
+                try {
+                    builder.addAddress("fd00::2", 64)
+                    builder.addRoute("::", 0)
+                    CrashLogger.d("Service", "  S2: IPv6 enabled ✅")
+                } catch (e: Throwable) {
+                    CrashLogger.w("Service", "  S2: IPv6 setup failed: ${e.message}")
+                }
+            } else {
+                try {
+                    builder.addRoute("2000::", 3)
+                    CrashLogger.d("Service", "  S2: IPv6 disabled (blackhole route)")
+                } catch (e: Throwable) {
+                }
             }
 
             CrashLogger.d("Service", "  S2: Calling establish()...")
@@ -158,6 +170,7 @@ class GuarchService : VpnService() {
             CrashLogger.d("Service", "  S2: Route = 0.0.0.0/0")
             CrashLogger.d("Service", "  S2: DNS = 8.8.8.8, 1.1.1.1")
             CrashLogger.d("Service", "  S2: MTU = 1500")
+            CrashLogger.d("Service", "  S2: IPv6 = ${if (enableIPv6) "enabled" else "disabled"}")
 
             updateNotificationText("Connected ✅")
 
@@ -174,7 +187,7 @@ class GuarchService : VpnService() {
     private fun cleanupTun() {
         CrashLogger.d("Service", "  cleanupTun")
         _tunFd.set(-1)
-        
+
         try {
             vpnInterface?.close()
             vpnInterface = null
@@ -185,7 +198,7 @@ class GuarchService : VpnService() {
 
     private fun stopVpn() {
         CrashLogger.d("Service", "--- stopVpn ---")
-        
+
         _isRunning.set(false)
         _tunFd.set(-1)
         _instance = null
@@ -271,9 +284,9 @@ class GuarchService : VpnService() {
 
     fun updateNotificationText(text: String) {
         if (text == lastNotificationText) return
-        
+
         lastNotificationText = text
-        
+
         try {
             val manager = getSystemService(NotificationManager::class.java)
             manager?.notify(NOTIFICATION_ID, createNotification(text))
@@ -288,7 +301,7 @@ class GuarchService : VpnService() {
 
         val uploadMB = upload / (1024.0 * 1024.0)
         val downloadMB = download / (1024.0 * 1024.0)
-        
+
         val uptime = if (connectedTime > 0) {
             (System.currentTimeMillis() - connectedTime) / 1000
         } else {
@@ -314,17 +327,19 @@ class GuarchService : VpnService() {
 
     override fun onDestroy() {
         CrashLogger.d("Service", "=== onDestroy ===")
-        
+
         _isRunning.set(false)
         _tunFd.set(-1)
+
         _instance = null
+        MainActivity.setVpnServiceReference(null)
 
         try {
             vpnInterface?.close()
         } catch (_: Throwable) {}
-        
+
         vpnInterface = null
-        
+
         super.onDestroy()
     }
 }
