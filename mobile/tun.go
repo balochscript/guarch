@@ -514,16 +514,6 @@ func sendTargetAddress(stream io.ReadWriter, target string) error {
 	return nil
 }
 
-func parsePort(s string) uint16 {
-	var p uint16
-	for _, c := range s {
-		if c >= '0' && c <= '9' {
-			p = p*10 + uint16(c-'0')
-		}
-	}
-	return p
-}
-
 func handleUDPConnection(r *udp.ForwarderRequest, e *Engine) {
 	defer func() {
 		if rec := recover(); rec != nil {
@@ -600,7 +590,7 @@ func isAllowedDNSServer(ip string) bool {
 	return allowedDNS[ip]
 }
 
-func relayTCP(local, remote net.Conn, stats *TUNStats) {
+func relayTCP(local, remote io.ReadWriteCloser, stats *TUNStats) {
 	defer func() {
 		if r := recover(); r != nil {
 			log.Printf("[TUN] PANIC in relayTCP: %v", r)
