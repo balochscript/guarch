@@ -25,13 +25,13 @@ const (
 
 	muxHeaderSize = 5
 	
-	DefaultMaxStreams     = 1000
-	DefaultStreamBuffer   = 256
+	DefaultMaxStreams     = 2000
+	DefaultStreamBuffer   = 1024
 	DefaultAcceptTimeout  = 5 * time.Minute
 	DefaultOpenTimeout    = 10 * time.Second
-	DefaultReadTimeout    = 60 * time.Second
-	DefaultWriteTimeout   = 30 * time.Second
-	DefaultMaxChunkSize   = 32768
+	DefaultReadTimeout    = 30 * time.Second
+	DefaultWriteTimeout   = 15 * time.Second
+	DefaultMaxChunkSize   = 65536
 )
 
 type MuxConfig struct {
@@ -175,7 +175,7 @@ func (m *Mux) handleMuxFrame(data []byte) {
 				case <-s.doneCh:
 				case <-m.closeCh:
 					return
-				case <-time.After(m.config.WriteTimeout):
+				case <-time.After(2 * time.Second):
 					log.Printf("[mux] stream %d read buffer full, dropping packet", streamID)
 				}
 			}
@@ -395,7 +395,7 @@ func (s *Stream) Read(p []byte) (int, error) {
 	case <-s.doneCh:
 		return 0, io.EOF
 	case <-timeout.C:
-		return 0, fmt.Errorf("stream: read timeout")
+		return 0, fmt.Errorf("stream: read timeout (%v)", s.readTimeout)
 	}
 }
 
@@ -414,12 +414,24 @@ func (s *Stream) Write(p []byte) (int, error) {
 		}
 		
 		chunk := p[sent:end]
-		if err := s.mux.sendFrame(cmdData, s.id, chunk); err != nil {
-			return sent, err
+		
+		errCh := make(chan error, 1)
+		go func() {
+			errCh <- s.mux.sendFrame(cmdData, s.id, chunk)
+		}()
+		
+		select {
+		case err := <-errCh:
+			if err != nil {
+				return sent, err
+			}
+		case <-time.After(s.writeTimeout):
+			return sent, fmt.Errorf("stream: write timeout")
+		case <-s.doneCh:
+			return sent, io.ErrClosedPipe
 		}
 		
 		s.bytesSent.Add(uint64(len(chunk)))
-		
 		sent = end
 	}
 
