@@ -6,26 +6,27 @@ class AppSettings {
   static const String _keySocksPort = 'socks_port';
   static const String _keyDialTimeout = 'dial_timeout';
   static const String _keyHandshakeTimeout = 'handshake_timeout';
-  
+  static const String _keyEnableIPv6 = 'enable_ipv6';
+
   static const String _keyGlobalSniEnabled = 'global_sni_enabled';
   static const String _keyGlobalSniMode = 'global_sni_mode';
   static const String _keyGlobalSniRotationMinutes = 'global_sni_rotation_minutes';
   static const String _keyGlobalSniDomains = 'global_sni_domains';
-  
+
   static const String _keyGlobalCoverEnabled = 'global_cover_enabled';
   static const String _keyGlobalCoverMode = 'global_cover_mode';
   static const String _keyGlobalBatteryAware = 'global_battery_aware';
   static const String _keyGlobalDataSaver = 'global_data_saver';
   static const String _keyGlobalCoverDomains = 'global_cover_domains';
-  
+
   static const String _keyGlobalDnsEnabled = 'global_dns_enabled';
   static const String _keyGlobalDnsDomain = 'global_dns_domain';
   static const String _keyGlobalDnsServers = 'global_dns_servers';
   static const String _keyGlobalDnsSwitchThreshold = 'global_dns_switch_threshold';
-  
+
   static const String _keyGlobalUtlsEnabled = 'global_utls_enabled';
   static const String _keyGlobalUtlsFingerprint = 'global_utls_fingerprint';
-  
+
   static const String _keyGlobalFragmentEnabled = 'global_fragment_enabled';
   static const String _keyGlobalFragmentMinSize = 'global_fragment_min_size';
   static const String _keyGlobalFragmentMaxSize = 'global_fragment_max_size';
@@ -48,26 +49,27 @@ class AppSettings {
   final int socksPort;
   final int dialTimeout;
   final int handshakeTimeout;
-  
+  final bool enableIPv6;
+
   final bool globalSniEnabled;
   final String globalSniMode;
   final int globalSniRotationMinutes;
   final List<SNIDomain> globalSniDomains;
-  
+
   final bool globalCoverEnabled;
   final String globalCoverMode;
   final bool globalBatteryAware;
   final bool globalDataSaver;
   final List<CoverDomain> globalCoverDomains;
-  
+
   final bool globalDnsEnabled;
   final String globalDnsDomain;
   final List<String> globalDnsServers;
   final int globalDnsSwitchThreshold;
-  
+
   final bool globalUtlsEnabled;
   final String globalUtlsFingerprint;
-  
+
   final bool globalFragmentEnabled;
   final int globalFragmentMinSize;
   final int globalFragmentMaxSize;
@@ -87,6 +89,7 @@ class AppSettings {
     this.socksPort = _defaultSocksPort,
     this.dialTimeout = _defaultDialTimeout,
     this.handshakeTimeout = _defaultHandshakeTimeout,
+    this.enableIPv6 = false,
     this.globalSniEnabled = false,
     this.globalSniMode = 'weighted',
     this.globalSniRotationMinutes = 5,
@@ -137,6 +140,7 @@ class AppSettings {
       socksPort: _defaultSocksPort,
       dialTimeout: _defaultDialTimeout,
       handshakeTimeout: _defaultHandshakeTimeout,
+      enableIPv6: false,
       globalSniEnabled: false,
       globalSniMode: 'weighted',
       globalSniRotationMinutes: 5,
@@ -170,7 +174,7 @@ class AppSettings {
 
   static Future<AppSettings> load() async {
     final prefs = await SharedPreferences.getInstance();
-    
+
     List<SNIDomain> sniDomains = [];
     final sniDomainsJson = prefs.getStringList(_keyGlobalSniDomains);
     if (sniDomainsJson != null && sniDomainsJson.isNotEmpty) {
@@ -180,7 +184,7 @@ class AppSettings {
         sniDomains = [];
       }
     }
-    
+
     List<CoverDomain> coverDomains = [];
     final coverDomainsJson = prefs.getStringList(_keyGlobalCoverDomains);
     if (coverDomainsJson != null && coverDomainsJson.isNotEmpty) {
@@ -190,17 +194,18 @@ class AppSettings {
         coverDomains = [];
       }
     }
-    
+
     List<String> dnsServers = ['8.8.8.8:53', '1.1.1.1:53'];
     final dnsServersStored = prefs.getStringList(_keyGlobalDnsServers);
     if (dnsServersStored != null && dnsServersStored.isNotEmpty) {
       dnsServers = dnsServersStored;
     }
-    
+
     return AppSettings(
       socksPort: prefs.getInt(_keySocksPort) ?? _defaultSocksPort,
       dialTimeout: prefs.getInt(_keyDialTimeout) ?? _defaultDialTimeout,
       handshakeTimeout: prefs.getInt(_keyHandshakeTimeout) ?? _defaultHandshakeTimeout,
+      enableIPv6: prefs.getBool(_keyEnableIPv6) ?? false,
       globalSniEnabled: prefs.getBool(_keyGlobalSniEnabled) ?? false,
       globalSniMode: prefs.getString(_keyGlobalSniMode) ?? 'weighted',
       globalSniRotationMinutes: prefs.getInt(_keyGlobalSniRotationMinutes) ?? 5,
@@ -237,28 +242,29 @@ class AppSettings {
     await prefs.setInt(_keySocksPort, socksPort);
     await prefs.setInt(_keyDialTimeout, dialTimeout);
     await prefs.setInt(_keyHandshakeTimeout, handshakeTimeout);
-    
+    await prefs.setBool(_keyEnableIPv6, enableIPv6);
+
     await prefs.setBool(_keyGlobalSniEnabled, globalSniEnabled);
     await prefs.setString(_keyGlobalSniMode, globalSniMode);
     await prefs.setInt(_keyGlobalSniRotationMinutes, globalSniRotationMinutes);
     final sniDomainsJson = globalSniDomains.map((d) => jsonEncode(d.toJson())).toList();
     await prefs.setStringList(_keyGlobalSniDomains, sniDomainsJson);
-    
+
     await prefs.setBool(_keyGlobalCoverEnabled, globalCoverEnabled);
     await prefs.setString(_keyGlobalCoverMode, globalCoverMode);
     await prefs.setBool(_keyGlobalBatteryAware, globalBatteryAware);
     await prefs.setBool(_keyGlobalDataSaver, globalDataSaver);
     final coverDomainsJson = globalCoverDomains.map((d) => jsonEncode(d.toJson())).toList();
     await prefs.setStringList(_keyGlobalCoverDomains, coverDomainsJson);
-    
+
     await prefs.setBool(_keyGlobalDnsEnabled, globalDnsEnabled);
     await prefs.setString(_keyGlobalDnsDomain, globalDnsDomain);
     await prefs.setStringList(_keyGlobalDnsServers, globalDnsServers);
     await prefs.setInt(_keyGlobalDnsSwitchThreshold, globalDnsSwitchThreshold);
-    
+
     await prefs.setBool(_keyGlobalUtlsEnabled, globalUtlsEnabled);
     await prefs.setString(_keyGlobalUtlsFingerprint, globalUtlsFingerprint);
-    
+
     await prefs.setBool(_keyGlobalFragmentEnabled, globalFragmentEnabled);
     await prefs.setInt(_keyGlobalFragmentMinSize, globalFragmentMinSize);
     await prefs.setInt(_keyGlobalFragmentMaxSize, globalFragmentMaxSize);
@@ -309,6 +315,7 @@ class AppSettings {
     final prefs = await SharedPreferences.getInstance();
     final keys = [
       _keySocksPort, _keyDialTimeout, _keyHandshakeTimeout,
+      _keyEnableIPv6,
       _keyGlobalSniEnabled, _keyGlobalSniMode, _keyGlobalSniRotationMinutes, _keyGlobalSniDomains,
       _keyGlobalCoverEnabled, _keyGlobalCoverMode, _keyGlobalBatteryAware, _keyGlobalDataSaver, _keyGlobalCoverDomains,
       _keyGlobalDnsEnabled, _keyGlobalDnsDomain, _keyGlobalDnsServers, _keyGlobalDnsSwitchThreshold,
@@ -332,6 +339,7 @@ class AppSettings {
     int? socksPort,
     int? dialTimeout,
     int? handshakeTimeout,
+    bool? enableIPv6,
     bool? globalSniEnabled,
     String? globalSniMode,
     int? globalSniRotationMinutes,
@@ -365,6 +373,7 @@ class AppSettings {
       socksPort: socksPort ?? this.socksPort,
       dialTimeout: dialTimeout ?? this.dialTimeout,
       handshakeTimeout: handshakeTimeout ?? this.handshakeTimeout,
+      enableIPv6: enableIPv6 ?? this.enableIPv6,
       globalSniEnabled: globalSniEnabled ?? this.globalSniEnabled,
       globalSniMode: globalSniMode ?? this.globalSniMode,
       globalSniRotationMinutes: globalSniRotationMinutes ?? this.globalSniRotationMinutes,
@@ -404,7 +413,7 @@ class AppSettings {
         sniDomains: globalSniDomains,
       );
     }
-    
+
     if (server.coverDomains.isEmpty && globalCoverEnabled && globalCoverDomains.isNotEmpty) {
       server = server.copyWith(
         coverEnabled: true,
@@ -432,7 +441,7 @@ class AppSettings {
       batteryThreshold: globalBatteryThreshold,
       hysteresisDelay: globalHysteresisDelay,
     );
-    
+
     if (!server.dnsFallbackEnabled && globalDnsEnabled) {
       server = server.copyWith(
         dnsFallbackEnabled: true,
@@ -448,7 +457,7 @@ class AppSettings {
       probeMaxRate: globalProbeMaxRate,
       probeWindow: globalProbeWindow,
     );
-    
+
     return server;
   }
 }
