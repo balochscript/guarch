@@ -1,3 +1,4 @@
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -194,6 +195,57 @@ class _AdvancedSettingsScreenState extends State<AdvancedSettingsScreen> {
               _sectionTitle(context, 'Performance'),
               Card(
                 child: _buildBufferSizeTile(context, provider),
+              ),
+
+              const SizedBox(height: 24),
+              _sectionTitle(context, 'Network Settings'),
+              Card(
+                child: Column(
+                  children: [
+                    SwitchListTile(
+                      secondary: Icon(Icons.language, color: accentColor(context)),
+                      title: Text(
+                        'Enable IPv6',
+                        style: TextStyle(color: textSecondary(context)),
+                      ),
+                      subtitle: Text(
+                        provider.enableIPv6
+                            ? 'IPv6 routes enabled (if server supports)'
+                            : 'IPv6 traffic blackholed (IPv4 only)',
+                        style: TextStyle(color: textMuted(context), fontSize: 12),
+                      ),
+                      value: provider.enableIPv6,
+                      onChanged: (_) => provider.toggleEnableIPv6(),
+                    ),
+                    
+                    if (!provider.enableIPv6)
+                      Container(
+                        margin: const EdgeInsets.all(12),
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: Colors.blue.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: Colors.blue.withOpacity(0.3)),
+                        ),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.info_outline, color: Colors.blue, size: 20),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Text(
+                                'IPv6 disabled: DNS AAAA lookups won\'t timeout\n'
+                                'Faster connection on IPv4-only networks',
+                                style: TextStyle(
+                                  color: textSecondary(context),
+                                  fontSize: 12,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                  ],
+                ),
               ),
 
               const SizedBox(height: 24),
@@ -455,6 +507,19 @@ class _AdvancedSettingsScreenState extends State<AdvancedSettingsScreen> {
                       _buildInfoRow('Retry Delay', '${provider.retryDelay}s'),
                       const SizedBox(height: 8),
                       _buildInfoRow('Buffer Size', '${provider.bufferSize ~/ 1024} KB'),
+                      const SizedBox(height: 16),
+                      Divider(color: accentColor(context).withOpacity(0.1)),
+                      const SizedBox(height: 16),
+                      Text(
+                        'Network Settings',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w600,
+                          fontSize: 13,
+                          color: textSecondary(context),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      _buildInfoRow('IPv6 Support', provider.enableIPv6 ? 'Enabled' : 'Disabled'),
                       const SizedBox(height: 16),
                       Divider(color: accentColor(context).withOpacity(0.1)),
                       const SizedBox(height: 16),
