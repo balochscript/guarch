@@ -30,6 +30,8 @@ type ServerConfig struct {
 	
 	Modes     *ModesConfig      `json:"modes,omitempty"`
 	Metadata  *Metadata         `json:"metadata,omitempty"`
+	
+	PreferIPv6 bool `json:"prefer_ipv6,omitempty"`
 }
 
 type ServerInfo struct {
