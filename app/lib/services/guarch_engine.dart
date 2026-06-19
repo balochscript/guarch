@@ -283,9 +283,9 @@ class GuarchEngine {
     }
   }
 
-  Future<bool> connectWithConfig(String configJson, bool vpnModeEnabled, {bool enableIPv6 = false}) async {
+  Future<bool> connectWithConfig(String configJson, bool vpnModeEnabled, {bool preferIPv6 = false}) async {
     FlutterLog.d('Engine', '=== connectWithConfig() (v1.0.1) ===');
-    FlutterLog.d('Engine', '  VPN Mode: $vpnModeEnabled, IPv6: $enableIPv6');
+    FlutterLog.d('Engine', '  VPN Mode: $vpnModeEnabled, Prefer IPv6: $preferIPv6');
 
     if (!_nativeAvailable) {
       FlutterLog.e('Engine', '  Native not available');
@@ -320,7 +320,7 @@ class GuarchEngine {
       final params = {
         'config': updatedConfigJson,
         'vpnMode': vpnModeEnabled,
-        'enableIPv6': enableIPv6,
+        'preferIPv6': preferIPv6,
       };
 
       final result = await _channel.invokeMethod('connectWithConfig', params);
