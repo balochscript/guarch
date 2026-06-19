@@ -222,6 +222,15 @@ func (e *Engine) LoadConfigJSON(jsonStr string) bool {
 	e.mu.Lock()
 	e.config = cfg
 	e.protocol = cfg.Server.Protocol
+
+	if cfg.PreferIPv6 {
+		SetPreferIPv6(true)
+		log.Println("[mobile] IPv6 preferred mode enabled")
+	} else {
+		SetPreferIPv6(false)
+		log.Println("[mobile] IPv4 preferred mode (default)")
+	}
+
 	e.mu.Unlock()
 
 	log.Printf("[Engine] Config loaded: %s (%s)", cfg.Server.Name, cfg.Server.Protocol)
