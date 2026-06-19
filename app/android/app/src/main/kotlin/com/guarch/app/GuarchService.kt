@@ -71,7 +71,7 @@ class GuarchService : VpnService() {
                 ACTION_START -> {
                     val socksPort = intent?.getIntExtra("socks_port", 7070) ?: 7070
                     val enableIPv6 = intent?.getBooleanExtra("enable_ipv6", false) ?: false
-                    CrashLogger.d("Service", "  socksPort=$socksPort enableIPv6=$enableIPv6 isRunning=$isRunning")
+                    CrashLogger.d("Service", "  socksPort=$socksPort preferIPv6=$enableIPv6 isRunning=$isRunning")
 
                     if (isRunning) {
                         CrashLogger.d("Service", "  Already running — restarting...")
@@ -138,7 +138,7 @@ class GuarchService : VpnService() {
             if (enableIPv6) {
                 try {
                     builder.addAddress("fd00::2", 64)
-                    builder.addRoute("::/0", 0)
+                    builder.addRoute("::", 0)
                     CrashLogger.d("Service", "  S2: IPv6 enabled ✅")
                 } catch (e: Throwable) {
                     CrashLogger.w("Service", "  S2: IPv6 setup failed: ${e.message}")
@@ -173,7 +173,7 @@ class GuarchService : VpnService() {
             CrashLogger.d("Service", "  S2: Route = Public IPs only (split tunnel)")
             CrashLogger.d("Service", "  S2: DNS = 8.8.8.8, 1.1.1.1")
             CrashLogger.d("Service", "  S2: MTU = 1500")
-            CrashLogger.d("Service", "  S2: IPv6 = ${if (enableIPv6) "enabled" else "disabled"}")
+            CrashLogger.d("Service", "  S2: IPv6 = ${if (enableIPv6) "preferred" else "not preferred (IPv4 first)"}")
 
             updateNotificationText("Connected ✅")
 
