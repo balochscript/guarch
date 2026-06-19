@@ -295,7 +295,7 @@ class MainActivity : FlutterActivity() {
 
         val configJson = params["config"] as? String
         val vpnMode = params["vpnMode"] as? Boolean ?: true
-        val enableIPv6 = params["enableIPv6"] as? Boolean ?: false
+        val preferIPv6 = params["preferIPv6"] as? Boolean ?: false
 
         if (configJson == null) {
             result.error("NULL_CONFIG", "Config JSON is null", null)
@@ -322,11 +322,11 @@ class MainActivity : FlutterActivity() {
         CrashLogger.d(TAG, "  Mode: $mode")
         CrashLogger.d(TAG, "  Config: ${configJson.take(200)}...")
         CrashLogger.d(TAG, "  SOCKS5 Port: $socksPort")
-        CrashLogger.d(TAG, "  IPv6: $enableIPv6")
+        CrashLogger.d(TAG, "  Prefer IPv6: $preferIPv6")
 
         pendingConfig = configJson
         pendingSocksPort = socksPort
-        pendingIPv6Enabled = enableIPv6
+        pendingIPv6Enabled = preferIPv6
 
         if (vpnMode) {
             if (vpnAndTunStarted && GuarchService.isRunning) {
@@ -516,7 +516,7 @@ class MainActivity : FlutterActivity() {
                 putExtra("enable_ipv6", pendingIPv6Enabled)
             }
 
-            CrashLogger.d(TAG, "  Starting service with SOCKS port: $pendingSocksPort, IPv6: $pendingIPv6Enabled")
+            CrashLogger.d(TAG, "  Starting service with SOCKS port: $pendingSocksPort, Prefer IPv6: $pendingIPv6Enabled")
 
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 startForegroundService(serviceIntent)
