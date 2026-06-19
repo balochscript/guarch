@@ -57,6 +57,7 @@ var (
 
 	currentTunMode TunMode = TunModeDirect
 	globalMux      *mux.Mux
+	preferIPv6     bool = false
 )
 
 type TUNStats struct {
@@ -348,15 +349,19 @@ func handleTCPWithMux(r *tcp.ForwarderRequest, m *mux.Mux, e *Engine) {
 	}()
 
 	id := r.ID()
-	dst := net.JoinHostPort(id.LocalAddress.String(), fmt.Sprintf("%d", id.LocalPort))
+	originalAddr := id.LocalAddress.String()
+	originalPort := id.LocalPort
+	dst := net.JoinHostPort(originalAddr, fmt.Sprintf("%d", originalPort))
+
+	finalDst := selectPreferredAddress(dst)
 
 	tunStats.RecordTCPConn()
 
-	if splitTunnelCfg.ShouldBypass(dst) {
+	if splitTunnelCfg.ShouldBypass(finalDst) {
 		tunStats.RecordSplitBypass()
-		log.Printf("[TUN] TCP bypass (split tunnel): %s", dst)
+		log.Printf("[TUN] TCP bypass (split tunnel): %s", finalDst)
 
-		directConn, err := net.DialTimeout("tcp", dst, 10*time.Second)
+		directConn, err := net.DialTimeout("tcp", finalDst, 10*time.Second)
 		if err != nil {
 			r.Complete(true)
 			return
@@ -380,13 +385,13 @@ func handleTCPWithMux(r *tcp.ForwarderRequest, m *mux.Mux, e *Engine) {
 
 	stream, err := m.OpenStream()
 	if err != nil {
-		log.Printf("[TUN] Failed to open mux stream for %s: %v", dst, err)
+		log.Printf("[TUN] Failed to open mux stream for %s: %v", finalDst, err)
 		r.Complete(true)
 		return
 	}
 
-	if err := sendTargetAddress(stream, dst); err != nil {
-		log.Printf("[TUN] Failed to send target for %s: %v", dst, err)
+	if err := sendTargetAddress(stream, finalDst); err != nil {
+		log.Printf("[TUN] Failed to send target for %s: %v", finalDst, err)
 		stream.Close()
 		r.Complete(true)
 		return
@@ -533,6 +538,11 @@ func handleUDPConnection(r *udp.ForwarderRequest, e *Engine) {
 			return
 		}
 		tunStats.RecordDNSAllowed()
+
+		if !preferIPv6 {
+			handleDNSQuery(r, e)
+			return
+		}
 	}
 
 	if splitTunnelCfg.ShouldBypass(dst) {
@@ -573,6 +583,121 @@ func handleUDPConnection(r *udp.ForwarderRequest, e *Engine) {
 	}
 
 	relayUDP(tunConn, remoteConn, tunStats)
+}
+
+func handleDNSQuery(r *udp.ForwarderRequest, e *Engine) {
+	defer func() {
+		if rec := recover(); rec != nil {
+			log.Printf("[TUN] PANIC in handleDNSQuery: %v", rec)
+		}
+	}()
+
+	id := r.ID()
+	dnsServer := net.JoinHostPort(id.LocalAddress.String(), "53")
+
+	var wq waiter.Queue
+	ep, err := r.CreateEndpoint(&wq)
+	if err != nil {
+		return
+	}
+
+	tunConn := gonet.NewUDPConn(&wq, ep)
+	defer tunConn.Close()
+
+	dnsConn, err := net.DialTimeout("udp", dnsServer, 5*time.Second)
+	if err != nil {
+		log.Printf("[TUN] DNS dial failed: %v", err)
+		return
+	}
+	defer dnsConn.Close()
+
+	queryBuf := make([]byte, 512)
+	n, err := tunConn.Read(queryBuf)
+	if err != nil {
+		return
+	}
+
+	query := queryBuf[:n]
+
+	isAAAA := isDNSQueryAAAA(query)
+
+	if isAAAA {
+		log.Printf("[TUN] 🚫 Blocking AAAA query (IPv4 preferred mode)")
+
+		emptyResponse := createEmptyDNSResponse(query)
+		tunConn.Write(emptyResponse)
+		return
+	}
+
+	log.Printf("[TUN] ✅ Forwarding DNS query (type: A or other)")
+
+	_, err = dnsConn.Write(query)
+	if err != nil {
+		return
+	}
+
+	dnsConn.SetReadDeadline(time.Now().Add(5 * time.Second))
+	responseBuf := make([]byte, 512)
+	n, err = dnsConn.Read(responseBuf)
+	if err != nil {
+		return
+	}
+
+	tunConn.Write(responseBuf[:n])
+}
+
+func isDNSQueryAAAA(query []byte) bool {
+	if len(query) < 12 {
+		return false
+	}
+
+	pos := 12
+
+	for pos < len(query) && query[pos] != 0 {
+		labelLen := int(query[pos])
+		if labelLen == 0 {
+			break
+		}
+		pos += labelLen + 1
+		if pos >= len(query) {
+			return false
+		}
+	}
+
+	pos++
+
+	if pos+2 > len(query) {
+		return false
+	}
+
+	qtype := uint16(query[pos])<<8 | uint16(query[pos+1])
+
+	return qtype == 28
+}
+
+func createEmptyDNSResponse(query []byte) []byte {
+	if len(query) < 12 {
+		return nil
+	}
+
+	response := make([]byte, len(query))
+	copy(response, query)
+
+	response[2] |= 0x80
+
+	response[3] &= 0xF0
+	response[3] |= 0x00
+
+	response[6] = 0
+	response[7] = 0
+
+	response[8] = 0
+	response[9] = 0
+
+	response[10] = 0
+	response[11] = 0
+
+	return response
 }
 
 func isAllowedDNSServer(ip string) bool {
@@ -791,4 +916,51 @@ func waitForSOCKS5(addr string, timeout time.Duration) error {
 	}
 
 	return fmt.Errorf("SOCKS5 not ready after %v", timeout)
+}
+
+func selectPreferredAddress(dst string) string {
+	host, port, err := net.SplitHostPort(dst)
+	if err != nil {
+		return dst
+	}
+
+	ip := net.ParseIP(host)
+	if ip == nil {
+		return dst
+	}
+
+	isIPv6 := ip.To4() == nil
+
+	if !isIPv6 {
+		return dst
+	}
+
+	if preferIPv6 {
+		log.Printf("[TUN] Using IPv6 (preferred): %s", dst)
+		return dst
+	}
+
+	log.Printf("[TUN] IPv6 detected but not preferred, trying IPv4 for: %s", host)
+
+	names, err := net.LookupAddr(host)
+	if err == nil && len(names) > 0 {
+		ips, err := net.LookupIP(names[0])
+		if err == nil {
+			for _, resolvedIP := range ips {
+				if resolvedIP.To4() != nil {
+					ipv4Dst := net.JoinHostPort(resolvedIP.String(), port)
+					log.Printf("[TUN] ✅ Fallback to IPv4: %s → %s", dst, ipv4Dst)
+					return ipv4Dst
+				}
+			}
+		}
+	}
+
+	log.Printf("[TUN] ⚠️ No IPv4 alternative found, using IPv6: %s", dst)
+	return dst
+}
+
+func SetPreferIPv6(prefer bool) {
+	preferIPv6 = prefer
+	log.Printf("[TUN] Prefer IPv6: %v", prefer)
 }
