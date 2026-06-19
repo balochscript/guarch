@@ -78,7 +78,7 @@ class AppProvider extends ChangeNotifier {
   int get globalProbeMaxRate => _appSettings?.globalProbeMaxRate ?? 10;
   int get globalProbeWindow => _appSettings?.globalProbeWindow ?? 5;
 
-  bool get enableIPv6 => _appSettings?.enableIPv6 ?? false;
+  bool get preferIPv6 => _appSettings?.preferIPv6 ?? false;
 
   int get connectionTimeout => _connectionTimeout;
   int get maxRetryAttempts => _maxRetryAttempts;
@@ -410,7 +410,7 @@ class AppProvider extends ChangeNotifier {
       final success = await _engine.connectWithConfig(
         jsonEncode(configJson),
         _vpnModeEnabled,
-        enableIPv6: _appSettings?.enableIPv6 ?? false,
+        preferIPv6: _appSettings?.preferIPv6 ?? false,
       ).timeout(
         Duration(seconds: _connectionTimeout),
         onTimeout: () {
@@ -793,14 +793,14 @@ class AppProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> toggleEnableIPv6() async {
+  Future<void> togglePreferIPv6() async {
     if (_appSettings == null) return;
 
     _appSettings = _appSettings!.copyWith(
-      enableIPv6: !_appSettings!.enableIPv6,
+      preferIPv6: !_appSettings!.preferIPv6,
     );
     await _appSettings!.save();
-    _addLog('IPv6: ${_appSettings!.enableIPv6 ? "Enabled" : "Disabled"}');
+    _addLog('IPv6: ${_appSettings!.preferIPv6 ? "Preferred" : "Not Preferred (IPv4 first)"}');
     notifyListeners();
   }
 
