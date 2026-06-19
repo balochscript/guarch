@@ -688,6 +688,33 @@ func handleStream(stream *mux.Stream, remoteAddr string) {
 	log.Printf("[guarch] %s → %s (stream %d)", remoteAddr, target, stream.ID())
 
 	targetConn, err := net.DialTimeout("tcp", target, 10*time.Second)
+
+	if err != nil && req.AddrType == protocol.AddrTypeIPv6 {
+		log.Printf("[guarch] IPv6 dial failed: %v, trying IPv4 fallback...", err)
+		
+		host, port, _ := net.SplitHostPort(target)
+		
+		names, lookupErr := net.LookupAddr(host)
+		if lookupErr == nil && len(names) > 0 {
+			ips, resolveErr := net.LookupIP(names[0])
+			if resolveErr == nil {
+				for _, ip := range ips {
+					if ip.To4() != nil {
+						ipv4Target := net.JoinHostPort(ip.String(), port)
+						log.Printf("[guarch] ✅ Trying IPv4: %s", ipv4Target)
+						
+						targetConn, err = net.DialTimeout("tcp", ipv4Target, 10*time.Second)
+						if err == nil {
+							log.Printf("[guarch] ✅ IPv4 fallback successful: %s", ipv4Target)
+							target = ipv4Target
+							break
+						}
+					}
+				}
+			}
+		}
+	}
+
 	if err != nil {
 		log.Printf("[guarch] dial %s: %v", target, err)
 		stream.Write([]byte{protocol.ConnectFailed})
