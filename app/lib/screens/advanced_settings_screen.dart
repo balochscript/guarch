@@ -1,4 +1,3 @@
-
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -205,39 +204,41 @@ class _AdvancedSettingsScreenState extends State<AdvancedSettingsScreen> {
                     SwitchListTile(
                       secondary: Icon(Icons.language, color: accentColor(context)),
                       title: Text(
-                        'Enable IPv6',
+                        'Prefer IPv6',
                         style: TextStyle(color: textSecondary(context)),
                       ),
                       subtitle: Text(
-                        provider.enableIPv6
-                            ? 'IPv6 routes enabled (if server supports)'
-                            : 'IPv6 traffic blackholed (IPv4 only)',
+                        provider.preferIPv6
+                            ? 'IPv6 preferred when available (faster on modern networks)'
+                            : 'IPv4 preferred (safer, better compatibility)',
                         style: TextStyle(color: textMuted(context), fontSize: 12),
                       ),
-                      value: provider.enableIPv6,
-                      onChanged: (_) => provider.toggleEnableIPv6(),
+                      value: provider.preferIPv6,
+                      onChanged: (_) => provider.togglePreferIPv6(),
                     ),
                     
-                    if (!provider.enableIPv6)
+                    if (!provider.preferIPv6)
                       Container(
                         margin: const EdgeInsets.all(12),
                         padding: const EdgeInsets.all(12),
                         decoration: BoxDecoration(
-                          color: Colors.blue.withOpacity(0.1),
+                          color: Colors.green.withOpacity(0.1),
                           borderRadius: BorderRadius.circular(8),
-                          border: Border.all(color: Colors.blue.withOpacity(0.3)),
+                          border: Border.all(color: Colors.green.withOpacity(0.3)),
                         ),
                         child: Row(
                           children: [
-                            const Icon(Icons.info_outline, color: Colors.blue, size: 20),
+                            const Icon(Icons.check_circle_outline, color: Colors.green, size: 20),
                             const SizedBox(width: 12),
                             Expanded(
                               child: Text(
-                                'IPv6 disabled: DNS AAAA lookups won\'t timeout\n'
-                                'Faster connection on IPv4-only networks',
+                                'Recommended mode (Default)\n'
+                                '✅ Faster on most networks\n'
+                                '✅ Better compatibility\n'
+                                '✅ Automatic IPv6 fallback on server',
                                 style: TextStyle(
                                   color: textSecondary(context),
-                                  fontSize: 12,
+                                  fontSize: 11,
                                 ),
                               ),
                             ),
@@ -519,7 +520,10 @@ class _AdvancedSettingsScreenState extends State<AdvancedSettingsScreen> {
                         ),
                       ),
                       const SizedBox(height: 8),
-                      _buildInfoRow('IPv6 Support', provider.enableIPv6 ? 'Enabled' : 'Disabled'),
+                      _buildInfoRow(
+                        'IPv6 Preference',
+                        provider.preferIPv6 ? 'Preferred' : 'Not Preferred (IPv4 first)',
+                      ),
                       const SizedBox(height: 16),
                       Divider(color: accentColor(context).withOpacity(0.1)),
                       const SizedBox(height: 16),
