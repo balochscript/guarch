@@ -6,7 +6,7 @@ class AppSettings {
   static const String _keySocksPort = 'socks_port';
   static const String _keyDialTimeout = 'dial_timeout';
   static const String _keyHandshakeTimeout = 'handshake_timeout';
-  static const String _keyEnableIPv6 = 'enable_ipv6';
+  static const String _keyPreferIPv6 = 'prefer_ipv6';
 
   static const String _keyGlobalSniEnabled = 'global_sni_enabled';
   static const String _keyGlobalSniMode = 'global_sni_mode';
@@ -49,7 +49,7 @@ class AppSettings {
   final int socksPort;
   final int dialTimeout;
   final int handshakeTimeout;
-  final bool enableIPv6;
+  final bool preferIPv6;
 
   final bool globalSniEnabled;
   final String globalSniMode;
@@ -89,7 +89,7 @@ class AppSettings {
     this.socksPort = _defaultSocksPort,
     this.dialTimeout = _defaultDialTimeout,
     this.handshakeTimeout = _defaultHandshakeTimeout,
-    this.enableIPv6 = false,
+    this.preferIPv6 = false,
     this.globalSniEnabled = false,
     this.globalSniMode = 'weighted',
     this.globalSniRotationMinutes = 5,
@@ -140,7 +140,7 @@ class AppSettings {
       socksPort: _defaultSocksPort,
       dialTimeout: _defaultDialTimeout,
       handshakeTimeout: _defaultHandshakeTimeout,
-      enableIPv6: false,
+      preferIPv6: false,
       globalSniEnabled: false,
       globalSniMode: 'weighted',
       globalSniRotationMinutes: 5,
@@ -205,7 +205,7 @@ class AppSettings {
       socksPort: prefs.getInt(_keySocksPort) ?? _defaultSocksPort,
       dialTimeout: prefs.getInt(_keyDialTimeout) ?? _defaultDialTimeout,
       handshakeTimeout: prefs.getInt(_keyHandshakeTimeout) ?? _defaultHandshakeTimeout,
-      enableIPv6: prefs.getBool(_keyEnableIPv6) ?? false,
+      preferIPv6: prefs.getBool(_keyPreferIPv6) ?? false,
       globalSniEnabled: prefs.getBool(_keyGlobalSniEnabled) ?? false,
       globalSniMode: prefs.getString(_keyGlobalSniMode) ?? 'weighted',
       globalSniRotationMinutes: prefs.getInt(_keyGlobalSniRotationMinutes) ?? 5,
@@ -242,7 +242,7 @@ class AppSettings {
     await prefs.setInt(_keySocksPort, socksPort);
     await prefs.setInt(_keyDialTimeout, dialTimeout);
     await prefs.setInt(_keyHandshakeTimeout, handshakeTimeout);
-    await prefs.setBool(_keyEnableIPv6, enableIPv6);
+    await prefs.setBool(_keyPreferIPv6, preferIPv6);
 
     await prefs.setBool(_keyGlobalSniEnabled, globalSniEnabled);
     await prefs.setString(_keyGlobalSniMode, globalSniMode);
@@ -315,7 +315,7 @@ class AppSettings {
     final prefs = await SharedPreferences.getInstance();
     final keys = [
       _keySocksPort, _keyDialTimeout, _keyHandshakeTimeout,
-      _keyEnableIPv6,
+      _keyPreferIPv6,
       _keyGlobalSniEnabled, _keyGlobalSniMode, _keyGlobalSniRotationMinutes, _keyGlobalSniDomains,
       _keyGlobalCoverEnabled, _keyGlobalCoverMode, _keyGlobalBatteryAware, _keyGlobalDataSaver, _keyGlobalCoverDomains,
       _keyGlobalDnsEnabled, _keyGlobalDnsDomain, _keyGlobalDnsServers, _keyGlobalDnsSwitchThreshold,
@@ -339,7 +339,7 @@ class AppSettings {
     int? socksPort,
     int? dialTimeout,
     int? handshakeTimeout,
-    bool? enableIPv6,
+    bool? preferIPv6,
     bool? globalSniEnabled,
     String? globalSniMode,
     int? globalSniRotationMinutes,
@@ -373,7 +373,7 @@ class AppSettings {
       socksPort: socksPort ?? this.socksPort,
       dialTimeout: dialTimeout ?? this.dialTimeout,
       handshakeTimeout: handshakeTimeout ?? this.handshakeTimeout,
-      enableIPv6: enableIPv6 ?? this.enableIPv6,
+      preferIPv6: preferIPv6 ?? this.preferIPv6,
       globalSniEnabled: globalSniEnabled ?? this.globalSniEnabled,
       globalSniMode: globalSniMode ?? this.globalSniMode,
       globalSniRotationMinutes: globalSniRotationMinutes ?? this.globalSniRotationMinutes,
