@@ -596,24 +596,24 @@ func handleDNSQuery(r *udp.ForwarderRequest, e *Engine) {
 	dnsServer := net.JoinHostPort(id.LocalAddress.String(), "53")
 
 	var wq waiter.Queue
-	ep, err := r.CreateEndpoint(&wq)
-	if err != nil {
+	ep, tcpipErr := r.CreateEndpoint(&wq)
+	if tcpipErr != nil {
 		return
 	}
 
 	tunConn := gonet.NewUDPConn(&wq, ep)
 	defer tunConn.Close()
 
-	dnsConn, err := net.DialTimeout("udp", dnsServer, 5*time.Second)
-	if err != nil {
-		log.Printf("[TUN] DNS dial failed: %v", err)
+	dnsConn, dialErr := net.DialTimeout("udp", dnsServer, 5*time.Second)
+	if dialErr != nil {
+		log.Printf("[TUN] DNS dial failed: %v", dialErr)
 		return
 	}
 	defer dnsConn.Close()
 
 	queryBuf := make([]byte, 512)
-	n, err := tunConn.Read(queryBuf)
-	if err != nil {
+	n, readErr := tunConn.Read(queryBuf)
+	if readErr != nil {
 		return
 	}
 
@@ -631,15 +631,15 @@ func handleDNSQuery(r *udp.ForwarderRequest, e *Engine) {
 
 	log.Printf("[TUN] ✅ Forwarding DNS query (type: A or other)")
 
-	_, err = dnsConn.Write(query)
-	if err != nil {
+	_, writeErr := dnsConn.Write(query)
+	if writeErr != nil {
 		return
 	}
 
 	dnsConn.SetReadDeadline(time.Now().Add(5 * time.Second))
 	responseBuf := make([]byte, 512)
-	n, err = dnsConn.Read(responseBuf)
-	if err != nil {
+	n, responseErr := dnsConn.Read(responseBuf)
+	if responseErr != nil {
 		return
 	}
 
