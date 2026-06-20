@@ -120,9 +120,7 @@ class GuarchService : VpnService() {
                 .setBlocking(false)
 
             builder.addDnsServer("8.8.8.8")
-            builder.addDnsServer("8.8.4.4")
             builder.addDnsServer("1.1.1.1")
-            builder.addDnsServer("1.0.0.1")
 
             try {
                 builder.addDisallowedApplication(packageName)
@@ -131,9 +129,9 @@ class GuarchService : VpnService() {
                 CrashLogger.w("Service", "  S2: Could not exclude self (OK on older Android)")
             }
 
-            CrashLogger.d("Service", "  S2: Configuring split tunneling...")
-            addPublicRoutes(builder)
-            CrashLogger.d("Service", "  S2: ✅ Split tunneling configured (private IPs bypass VPN)")
+            CrashLogger.d("Service", "  S2: Configuring full tunnel...")
+            builder.addRoute("0.0.0.0", 0)
+            CrashLogger.d("Service", "  S2: ✅ Full tunneling configured (0.0.0.0/0)")
 
             if (enableIPv6) {
                 try {
@@ -170,7 +168,7 @@ class GuarchService : VpnService() {
             CrashLogger.d("Service", "  S2: VPN interface established ✅")
             CrashLogger.d("Service", "  S2: TUN fd = $fd")
             CrashLogger.d("Service", "  S2: Address = 10.10.10.2/32")
-            CrashLogger.d("Service", "  S2: Route = Public IPs only (split tunnel)")
+            CrashLogger.d("Service", "  S2: Route = 0.0.0.0/0 (full tunnel)")
             CrashLogger.d("Service", "  S2: DNS = 8.8.8.8, 1.1.1.1")
             CrashLogger.d("Service", "  S2: MTU = 1500")
             CrashLogger.d("Service", "  S2: IPv6 = ${if (enableIPv6) "preferred" else "not preferred (IPv4 first)"}")
@@ -185,70 +183,6 @@ class GuarchService : VpnService() {
             _isRunning.set(false)
             stopSelf()
         }
-    }
-
-    private fun addPublicRoutes(builder: Builder) {
-        val publicRanges = listOf(
-            "0.0.0.0" to 5,
-            "8.0.0.0" to 7,
-            "11.0.0.0" to 8,
-            "12.0.0.0" to 6,
-            "16.0.0.0" to 4,
-            "32.0.0.0" to 3,
-            "64.0.0.0" to 3,
-            "96.0.0.0" to 4,
-            "112.0.0.0" to 5,
-            "120.0.0.0" to 6,
-            "124.0.0.0" to 7,
-            "126.0.0.0" to 8,
-            "128.0.0.0" to 3,
-            "160.0.0.0" to 5,
-            "168.0.0.0" to 8,
-            "169.0.0.0" to 9,
-            "169.128.0.0" to 10,
-            "169.192.0.0" to 11,
-            "169.224.0.0" to 12,
-            "169.240.0.0" to 13,
-            "169.248.0.0" to 14,
-            "169.252.0.0" to 15,
-            "169.255.0.0" to 16,
-            "170.0.0.0" to 7,
-            "172.0.0.0" to 12,
-            "172.32.0.0" to 11,
-            "172.64.0.0" to 10,
-            "172.128.0.0" to 9,
-            "173.0.0.0" to 8,
-            "174.0.0.0" to 7,
-            "176.0.0.0" to 4,
-            "192.0.0.0" to 9,
-            "192.128.0.0" to 11,
-            "192.169.0.0" to 16,
-            "192.170.0.0" to 15,
-            "192.172.0.0" to 14,
-            "192.176.0.0" to 12,
-            "192.192.0.0" to 10,
-            "193.0.0.0" to 8,
-            "194.0.0.0" to 7,
-            "196.0.0.0" to 6,
-            "200.0.0.0" to 5,
-            "208.0.0.0" to 4,
-            "224.0.0.0" to 3
-        )
-
-        var successCount = 0
-        var failCount = 0
-
-        for ((ip, prefix) in publicRanges) {
-            try {
-                builder.addRoute(ip, prefix)
-                successCount++
-            } catch (e: Exception) {
-                failCount++
-                CrashLogger.w("Service", "  ⚠️ Failed to add route $ip/$prefix: ${e.message}")
-            }
-        }
-
-        CrashLogger.d("Service", "  S2: Routes added: $successCount success, $failCount failed")
     }
 
     private fun cleanupTun() {
