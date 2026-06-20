@@ -41,6 +41,12 @@ var (
 	goLogMu   sync.Mutex
 )
 
+var relayBufferPool = sync.Pool{
+	New: func() interface{} {
+		return make([]byte, 65536)
+	},
+}
+
 type Callback interface {
 	OnStatusChanged(status string)
 	OnStatsUpdate(jsonData string)
@@ -1210,7 +1216,9 @@ func (e *Engine) relayWithStats(stream io.ReadWriteCloser, conn net.Conn) {
 
 	go func() {
 		defer e.recoverPanic("relay upload")
-		buf := make([]byte, 32768)
+		
+		buf := relayBufferPool.Get().([]byte)
+		defer relayBufferPool.Put(buf)
 		
 		for {
 			n, err := conn.Read(buf)
@@ -1242,7 +1250,9 @@ func (e *Engine) relayWithStats(stream io.ReadWriteCloser, conn net.Conn) {
 
 	go func() {
 		defer e.recoverPanic("relay download")
-		buf := make([]byte, 32768)
+		
+		buf := relayBufferPool.Get().([]byte)
+		defer relayBufferPool.Put(buf)
 		
 		for {
 			n, err := stream.Read(buf)
