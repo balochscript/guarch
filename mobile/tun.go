@@ -2,7 +2,6 @@ package mobile
 
 import (
 	"context"
-	"encoding/binary"
 	"fmt"
 	"io"
 	"net"
@@ -11,9 +10,6 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
-
-	"guarch/pkg/mux"
-	"guarch/pkg/protocol"
 
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/adapters/gonet"
@@ -29,22 +25,10 @@ import (
 	"log"
 )
 
-type TunMode int
-
-const (
-	TunModeDirect TunMode = iota
-	TunModeSOCKS
-)
-
-func (m TunMode) String() string {
-	switch m {
-	case TunModeDirect:
-		return "Direct"
-	case TunModeSOCKS:
-		return "SOCKS5"
-	default:
-		return "Unknown"
-	}
+var tunBufferPool = sync.Pool{
+	New: func() interface{} {
+		return make([]byte, 65536)
+	},
 }
 
 var (
@@ -55,9 +39,8 @@ var (
 	tunStats       *TUNStats
 	splitTunnelCfg *SplitTunnelConfig
 
-	currentTunMode TunMode = TunModeDirect
-	globalMux      *mux.Mux
-	preferIPv6     bool = false
+	globalDialer proxy.Dialer
+	preferIPv6   bool = false
 )
 
 type TUNStats struct {
@@ -233,43 +216,26 @@ func (e *Engine) StartTun(fd int32, socksPort int32) (retErr error) {
 
 	tunStats = &TUNStats{startTime: time.Now()}
 	splitTunnelCfg = NewSplitTunnelConfig()
-
 	tunCtx, tunCancel = context.WithCancel(context.Background())
 
-	e.mu.RLock()
-	proxyMode := e.proxyOnlyMode
-	muxConn := e.muxConn
-	e.mu.RUnlock()
+	socksAddr := fmt.Sprintf("127.0.0.1:%d", socksPort)
+	log.Println("[TUN] Step 1: Waiting for SOCKS5 on " + socksAddr)
 
-	var dialer proxy.Dialer
-
-	if proxyMode || muxConn == nil {
-		currentTunMode = TunModeSOCKS
-		log.Println("[TUN] Mode: SOCKS5 (proxy-only or no mux)")
-
-		socksAddr := fmt.Sprintf("127.0.0.1:%d", socksPort)
-		log.Println("[TUN] Step 1: Waiting for SOCKS5 on " + socksAddr)
-
-		if err := waitForSOCKS5(socksAddr, 60*time.Second); err != nil {
-			log.Println("[TUN] Step 1: SOCKS5 not ready ❌")
-			e.logError("SOCKS5 not ready")
-			return err
-		}
-		log.Println("[TUN] Step 1: SOCKS5 ready ✅")
-
-		log.Println("[TUN] Step 2: Creating SOCKS5 dialer...")
-		var err error
-		dialer, err = proxy.SOCKS5("tcp", socksAddr, nil, proxy.Direct)
-		if err != nil {
-			log.Printf("[TUN] Step 2: FAILED: %v", err)
-			return fmt.Errorf("SOCKS5 dialer: %w", err)
-		}
-		log.Println("[TUN] Step 2: SOCKS5 dialer ✅")
-	} else {
-		currentTunMode = TunModeDirect
-		globalMux = muxConn
-		log.Println("[TUN] Mode: Direct Mux (VPN mode) ✅")
+	if err := waitForSOCKS5(socksAddr, 60*time.Second); err != nil {
+		log.Println("[TUN] Step 1: SOCKS5 not ready ❌")
+		e.logError("SOCKS5 not ready")
+		return err
 	}
+	log.Println("[TUN] Step 1: SOCKS5 ready ✅")
+
+	log.Println("[TUN] Step 2: Creating SOCKS5 dialer...")
+	var err error
+	globalDialer, err = proxy.SOCKS5("tcp", socksAddr, nil, proxy.Direct)
+	if err != nil {
+		log.Printf("[TUN] Step 2: FAILED: %v", err)
+		return fmt.Errorf("SOCKS5 dialer: %w", err)
+	}
+	log.Println("[TUN] Step 2: SOCKS5 dialer ✅")
 
 	log.Println("[TUN] Step 3: Creating gVisor stack...")
 	s := stack.New(stack.Options{
@@ -282,6 +248,12 @@ func (e *Engine) StartTun(fd int32, socksPort int32) (retErr error) {
 			udp.NewProtocol,
 		},
 	})
+
+	opt1 := tcpip.TCPReceiveBufferSizeRangeOption{Min: 4096, Default: 1048576, Max: 4194304}
+	s.SetTransportProtocolOption(tcp.ProtocolNumber, &opt1)
+	opt2 := tcpip.TCPSendBufferSizeRangeOption{Min: 4096, Default: 1048576, Max: 4194304}
+	s.SetTransportProtocolOption(tcp.ProtocolNumber, &opt2)
+
 	log.Println("[TUN] Step 3: Stack created ✅")
 
 	log.Println("[TUN] Step 4: Creating link endpoint from fd...")
@@ -318,11 +290,7 @@ func (e *Engine) StartTun(fd int32, socksPort int32) (retErr error) {
 
 	log.Println("[TUN] Step 7: Setting up TCP forwarder...")
 	tcpFwd := tcp.NewForwarder(s, 0, 65535, func(r *tcp.ForwarderRequest) {
-		if currentTunMode == TunModeDirect {
-			handleTCPWithMux(r, globalMux, e)
-		} else {
-			handleTCPWithSOCKS(r, dialer, e)
-		}
+		handleTCPConnection(r, e)
 	})
 	s.SetTransportProtocolHandler(tcp.ProtocolNumber, tcpFwd.HandlePacket)
 	log.Println("[TUN] Step 7: TCP forwarder ✅")
@@ -335,86 +303,16 @@ func (e *Engine) StartTun(fd int32, socksPort int32) (retErr error) {
 	log.Println("[TUN] Step 8: UDP forwarder ✅")
 
 	tunStack = s
-	log.Printf("[TUN] === TUN STARTED (mode: %s, gVisor v1.0.1) ✅ ===", currentTunMode)
-	e.logInfo(fmt.Sprintf("TUN started ✅ (mode: %s)", currentTunMode))
+	log.Printf("[TUN] === TUN STARTED (SOCKS mode) ✅ ===")
+	e.logInfo("TUN started ✅ (SOCKS mode)")
 
 	return nil
 }
 
-func handleTCPWithMux(r *tcp.ForwarderRequest, m *mux.Mux, e *Engine) {
+func handleTCPConnection(r *tcp.ForwarderRequest, e *Engine) {
 	defer func() {
 		if rec := recover(); rec != nil {
-			log.Printf("[TUN] PANIC in handleTCPWithMux: %v", rec)
-		}
-	}()
-
-	id := r.ID()
-	originalAddr := id.LocalAddress.String()
-	originalPort := id.LocalPort
-	dst := net.JoinHostPort(originalAddr, fmt.Sprintf("%d", originalPort))
-
-	finalDst := selectPreferredAddress(dst)
-
-	tunStats.RecordTCPConn()
-
-	if splitTunnelCfg.ShouldBypass(finalDst) {
-		tunStats.RecordSplitBypass()
-		log.Printf("[TUN] TCP bypass (split tunnel): %s", finalDst)
-
-		directConn, err := net.DialTimeout("tcp", finalDst, 10*time.Second)
-		if err != nil {
-			r.Complete(true)
-			return
-		}
-
-		var wq waiter.Queue
-		ep, tcpErr := r.CreateEndpoint(&wq)
-		if tcpErr != nil {
-			directConn.Close()
-			r.Complete(true)
-			return
-		}
-		r.Complete(false)
-
-		tunConn := gonet.NewTCPConn(&wq, ep)
-		relayTCP(tunConn, directConn, tunStats)
-		return
-	}
-
-	tunStats.RecordSplitTunneled()
-
-	stream, err := m.OpenStream()
-	if err != nil {
-		log.Printf("[TUN] Failed to open mux stream for %s: %v", finalDst, err)
-		r.Complete(true)
-		return
-	}
-
-	if err := sendTargetAddress(stream, finalDst); err != nil {
-		log.Printf("[TUN] Failed to send target for %s: %v", finalDst, err)
-		stream.Close()
-		r.Complete(true)
-		return
-	}
-
-	var wq waiter.Queue
-	ep, tcpErr := r.CreateEndpoint(&wq)
-	if tcpErr != nil {
-		stream.Close()
-		r.Complete(true)
-		return
-	}
-	r.Complete(false)
-
-	tunConn := gonet.NewTCPConn(&wq, ep)
-
-	relayTCP(tunConn, stream, tunStats)
-}
-
-func handleTCPWithSOCKS(r *tcp.ForwarderRequest, dialer proxy.Dialer, e *Engine) {
-	defer func() {
-		if rec := recover(); rec != nil {
-			log.Printf("[TUN] PANIC in handleTCPWithSOCKS: %v", rec)
+			log.Printf("[TUN] PANIC in handleTCPConnection: %v", rec)
 		}
 	}()
 
@@ -425,30 +323,41 @@ func handleTCPWithSOCKS(r *tcp.ForwarderRequest, dialer proxy.Dialer, e *Engine)
 
 	if splitTunnelCfg.ShouldBypass(dst) {
 		tunStats.RecordSplitBypass()
-		log.Printf("[TUN] TCP bypass (split tunnel): %s", dst)
-
-		directConn, err := net.DialTimeout("tcp", dst, 10*time.Second)
-		if err != nil {
-			r.Complete(true)
-			return
-		}
-
-		var wq waiter.Queue
-		ep, tcpErr := r.CreateEndpoint(&wq)
-		if tcpErr != nil {
-			directConn.Close()
-			r.Complete(true)
-			return
-		}
-		r.Complete(false)
-
-		tunConn := gonet.NewTCPConn(&wq, ep)
-		relayTCP(tunConn, directConn, tunStats)
+		log.Printf("[TUN] TCP bypass: %s", dst)
+		handleDirectTCP(r, dst)
 		return
 	}
 
 	tunStats.RecordSplitTunneled()
 
+	if globalDialer != nil {
+		handleTCPWithSOCKS(r, dst)
+	} else {
+		r.Complete(true)
+	}
+}
+
+func handleDirectTCP(r *tcp.ForwarderRequest, dst string) {
+	directConn, err := net.DialTimeout("tcp", dst, 10*time.Second)
+	if err != nil {
+		r.Complete(true)
+		return
+	}
+
+	var wq waiter.Queue
+	ep, tcpErr := r.CreateEndpoint(&wq)
+	if tcpErr != nil {
+		directConn.Close()
+		r.Complete(true)
+		return
+	}
+	r.Complete(false)
+
+	tunConn := gonet.NewTCPConn(&wq, ep)
+	relayTCP(tunConn, directConn)
+}
+
+func handleTCPWithSOCKS(r *tcp.ForwarderRequest, dst string) {
 	var wq waiter.Queue
 	ep, tcpErr := r.CreateEndpoint(&wq)
 	if tcpErr != nil {
@@ -459,64 +368,14 @@ func handleTCPWithSOCKS(r *tcp.ForwarderRequest, dialer proxy.Dialer, e *Engine)
 
 	tunConn := gonet.NewTCPConn(&wq, ep)
 
-	remoteConn, err := dialer.Dial("tcp", dst)
+	remoteConn, err := globalDialer.Dial("tcp", dst)
 	if err != nil {
 		tunConn.Close()
 		log.Printf("[TUN] TCP dial failed: %s -> %v", dst, err)
 		return
 	}
 
-	relayTCP(tunConn, remoteConn, tunStats)
-}
-
-func sendTargetAddress(stream io.ReadWriter, target string) error {
-	host, portStr, err := net.SplitHostPort(target)
-	if err != nil {
-		return fmt.Errorf("invalid target: %w", err)
-	}
-
-	port := parsePort(portStr)
-
-	addrType := protocol.AddrTypeDomain
-	if ip := net.ParseIP(host); ip != nil {
-		if ip.To4() != nil {
-			addrType = protocol.AddrTypeIPv4
-		} else {
-			addrType = protocol.AddrTypeIPv6
-		}
-	}
-
-	req := &protocol.ConnectRequest{
-		AddrType: addrType,
-		Addr:     host,
-		Port:     port,
-	}
-
-	reqData, err := req.Marshal()
-	if err != nil {
-		return fmt.Errorf("marshal request: %w", err)
-	}
-
-	lenBuf := make([]byte, 2)
-	binary.BigEndian.PutUint16(lenBuf, uint16(len(reqData)))
-
-	if _, err := stream.Write(lenBuf); err != nil {
-		return fmt.Errorf("write length: %w", err)
-	}
-	if _, err := stream.Write(reqData); err != nil {
-		return fmt.Errorf("write request: %w", err)
-	}
-
-	statusBuf := make([]byte, 1)
-	if _, err := io.ReadFull(stream, statusBuf); err != nil {
-		return fmt.Errorf("read status: %w", err)
-	}
-
-	if statusBuf[0] != protocol.ConnectSuccess {
-		return fmt.Errorf("server rejected connection (code: %d)", statusBuf[0])
-	}
-
-	return nil
+	relayTCP(tunConn, remoteConn)
 }
 
 func handleUDPConnection(r *udp.ForwarderRequest, e *Engine) {
@@ -538,36 +397,42 @@ func handleUDPConnection(r *udp.ForwarderRequest, e *Engine) {
 			return
 		}
 		tunStats.RecordDNSAllowed()
-
-		if !preferIPv6 {
-			handleDNSQuery(r, e)
-			return
-		}
+		handleDNSQuery(r, e)
+		return
 	}
 
 	if splitTunnelCfg.ShouldBypass(dst) {
 		tunStats.RecordSplitBypass()
-		log.Printf("[TUN] UDP bypass (split tunnel): %s", dst)
-
-		directConn, err := net.DialTimeout("udp", dst, 5*time.Second)
-		if err != nil {
-			return
-		}
-
-		var wq waiter.Queue
-		ep, udpErr := r.CreateEndpoint(&wq)
-		if udpErr != nil {
-			directConn.Close()
-			return
-		}
-
-		tunConn := gonet.NewUDPConn(&wq, ep)
-		relayUDP(tunConn, directConn, tunStats)
+		log.Printf("[TUN] UDP bypass: %s", dst)
+		handleDirectUDP(r, dst)
 		return
 	}
 
 	tunStats.RecordSplitTunneled()
 
+	if globalDialer != nil {
+		handleUDPWithSOCKS(r, dst)
+	}
+}
+
+func handleDirectUDP(r *udp.ForwarderRequest, dst string) {
+	directConn, err := net.DialTimeout("udp", dst, 5*time.Second)
+	if err != nil {
+		return
+	}
+
+	var wq waiter.Queue
+	ep, udpErr := r.CreateEndpoint(&wq)
+	if udpErr != nil {
+		directConn.Close()
+		return
+	}
+
+	tunConn := gonet.NewUDPConn(&wq, ep)
+	relayUDP(tunConn, directConn)
+}
+
+func handleUDPWithSOCKS(r *udp.ForwarderRequest, dst string) {
 	var wq waiter.Queue
 	ep, udpErr := r.CreateEndpoint(&wq)
 	if udpErr != nil {
@@ -576,13 +441,14 @@ func handleUDPConnection(r *udp.ForwarderRequest, e *Engine) {
 
 	tunConn := gonet.NewUDPConn(&wq, ep)
 
-	remoteConn, err := net.DialTimeout("udp", dst, 5*time.Second)
+	remoteConn, err := globalDialer.Dial("udp", dst)
 	if err != nil {
 		tunConn.Close()
+		log.Printf("[TUN] UDP dial failed: %s -> %v", dst, err)
 		return
 	}
 
-	relayUDP(tunConn, remoteConn, tunStats)
+	relayUDP(tunConn, remoteConn)
 }
 
 func handleDNSQuery(r *udp.ForwarderRequest, e *Engine) {
@@ -621,15 +487,14 @@ func handleDNSQuery(r *udp.ForwarderRequest, e *Engine) {
 
 	isAAAA := isDNSQueryAAAA(query)
 
-	if isAAAA {
-		log.Printf("[TUN] 🚫 Blocking AAAA query (IPv4 preferred mode)")
-
+	if isAAAA && !preferIPv6 {
+		log.Printf("[TUN] 🚫 Blocking AAAA query (IPv4 preferred)")
 		emptyResponse := createEmptyDNSResponse(query)
 		tunConn.Write(emptyResponse)
 		return
 	}
 
-	log.Printf("[TUN] ✅ Forwarding DNS query (type: A or other)")
+	log.Printf("[TUN] ✅ Forwarding DNS query")
 
 	_, writeErr := dnsConn.Write(query)
 	if writeErr != nil {
@@ -684,16 +549,13 @@ func createEmptyDNSResponse(query []byte) []byte {
 	copy(response, query)
 
 	response[2] |= 0x80
-
 	response[3] &= 0xF0
 	response[3] |= 0x00
 
 	response[6] = 0
 	response[7] = 0
-
 	response[8] = 0
 	response[9] = 0
-
 	response[10] = 0
 	response[11] = 0
 
@@ -715,7 +577,7 @@ func isAllowedDNSServer(ip string) bool {
 	return allowedDNS[ip]
 }
 
-func relayTCP(local, remote io.ReadWriteCloser, stats *TUNStats) {
+func relayTCP(local, remote io.ReadWriteCloser) {
 	defer func() {
 		if r := recover(); r != nil {
 			log.Printf("[TUN] PANIC in relayTCP: %v", r)
@@ -727,12 +589,14 @@ func relayTCP(local, remote io.ReadWriteCloser, stats *TUNStats) {
 	done := make(chan struct{}, 2)
 
 	go func() {
-		buf := make([]byte, 32768)
+		buf := tunBufferPool.Get().([]byte)
+		defer tunBufferPool.Put(buf)
+
 		for {
 			n, err := local.Read(buf)
 			if n > 0 {
 				remote.Write(buf[:n])
-				stats.RecordTX(int64(n))
+				tunStats.RecordTX(int64(n))
 			}
 			if err != nil {
 				break
@@ -742,12 +606,14 @@ func relayTCP(local, remote io.ReadWriteCloser, stats *TUNStats) {
 	}()
 
 	go func() {
-		buf := make([]byte, 32768)
+		buf := tunBufferPool.Get().([]byte)
+		defer tunBufferPool.Put(buf)
+
 		for {
 			n, err := remote.Read(buf)
 			if n > 0 {
 				local.Write(buf[:n])
-				stats.RecordRX(int64(n))
+				tunStats.RecordRX(int64(n))
 			}
 			if err != nil {
 				break
@@ -757,9 +623,10 @@ func relayTCP(local, remote io.ReadWriteCloser, stats *TUNStats) {
 	}()
 
 	<-done
+	<-done
 }
 
-func relayUDP(local *gonet.UDPConn, remote net.Conn, stats *TUNStats) {
+func relayUDP(local *gonet.UDPConn, remote net.Conn) {
 	defer func() {
 		if r := recover(); r != nil {
 			log.Printf("[TUN] PANIC in relayUDP: %v", r)
@@ -773,12 +640,14 @@ func relayUDP(local *gonet.UDPConn, remote net.Conn, stats *TUNStats) {
 	done := make(chan struct{}, 2)
 
 	go func() {
-		buf := make([]byte, 2048)
+		buf := tunBufferPool.Get().([]byte)
+		defer tunBufferPool.Put(buf)
+
 		for {
 			n, err := local.Read(buf)
 			if n > 0 {
 				remote.Write(buf[:n])
-				stats.RecordTX(int64(n))
+				tunStats.RecordTX(int64(n))
 			}
 			if err != nil {
 				break
@@ -788,12 +657,14 @@ func relayUDP(local *gonet.UDPConn, remote net.Conn, stats *TUNStats) {
 	}()
 
 	go func() {
-		buf := make([]byte, 2048)
+		buf := tunBufferPool.Get().([]byte)
+		defer tunBufferPool.Put(buf)
+
 		for {
 			n, err := remote.Read(buf)
 			if n > 0 {
 				local.Write(buf[:n])
-				stats.RecordRX(int64(n))
+				tunStats.RecordRX(int64(n))
 			}
 			if err != nil {
 				break
@@ -802,6 +673,7 @@ func relayUDP(local *gonet.UDPConn, remote net.Conn, stats *TUNStats) {
 		done <- struct{}{}
 	}()
 
+	<-done
 	<-done
 }
 
@@ -828,6 +700,7 @@ func (e *Engine) StopTun() {
 
 	tunStack.Close()
 	tunStack = nil
+	globalDialer = nil
 
 	log.Println("[TUN] StopTun: done ✅")
 	e.logInfo("TUN stopped ✅")
@@ -864,7 +737,7 @@ func (e *Engine) AddSplitTunnelDomain(domain string, isWhitelist bool) bool {
 		splitTunnelCfg.DomainBlacklist[domain] = true
 	}
 
-	e.logInfo(fmt.Sprintf("Added domain to split tunnel: %s (whitelist: %v)", domain, isWhitelist))
+	e.logInfo(fmt.Sprintf("Added domain: %s (whitelist: %v)", domain, isWhitelist))
 	return true
 }
 
@@ -916,48 +789,6 @@ func waitForSOCKS5(addr string, timeout time.Duration) error {
 	}
 
 	return fmt.Errorf("SOCKS5 not ready after %v", timeout)
-}
-
-func selectPreferredAddress(dst string) string {
-	host, port, err := net.SplitHostPort(dst)
-	if err != nil {
-		return dst
-	}
-
-	ip := net.ParseIP(host)
-	if ip == nil {
-		return dst
-	}
-
-	isIPv6 := ip.To4() == nil
-
-	if !isIPv6 {
-		return dst
-	}
-
-	if preferIPv6 {
-		log.Printf("[TUN] Using IPv6 (preferred): %s", dst)
-		return dst
-	}
-
-	log.Printf("[TUN] IPv6 detected but not preferred, trying IPv4 for: %s", host)
-
-	names, err := net.LookupAddr(host)
-	if err == nil && len(names) > 0 {
-		ips, err := net.LookupIP(names[0])
-		if err == nil {
-			for _, resolvedIP := range ips {
-				if resolvedIP.To4() != nil {
-					ipv4Dst := net.JoinHostPort(resolvedIP.String(), port)
-					log.Printf("[TUN] ✅ Fallback to IPv4: %s → %s", dst, ipv4Dst)
-					return ipv4Dst
-				}
-			}
-		}
-	}
-
-	log.Printf("[TUN] ⚠️ No IPv4 alternative found, using IPv6: %s", dst)
-	return dst
 }
 
 func SetPreferIPv6(prefer bool) {
