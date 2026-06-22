@@ -31,6 +31,7 @@ class AppProvider extends ChangeNotifier {
   bool _dataSaverEnabled = false;
   bool _debugModeEnabled = false;
   bool _vpnModeEnabled = true;
+  bool _isTesting = false;
 
   int _connectionTimeout = 15;
   int _maxRetryAttempts = 3;
@@ -146,7 +147,13 @@ class AppProvider extends ChangeNotifier {
     }
 
     _statusSub = _engine.statusStream.listen((status) {
-      FlutterLog.d('Provider', 'Status event: $status');
+      FlutterLog.d('Provider', 'Status event: $status (testing: $_isTesting)');
+      
+      if (_isTesting && (status == 'connected' || status == 'disconnected')) {
+        FlutterLog.w('Provider', 'Ignoring status event during test');
+        return;
+      }
+      
       switch (status) {
         case 'connected':
           if (_status != VpnStatus.connected) {
@@ -951,6 +958,7 @@ class AppProvider extends ChangeNotifier {
   }
 
   Future<int> pingServer(ServerConfig server) async {
+    _isTesting = true;
     _addLog('TCP Ping: ${server.name}...');
     notifyListeners();
 
@@ -962,37 +970,42 @@ class AppProvider extends ChangeNotifier {
       _addLog('${server.name}: unreachable');
     }
 
+    _isTesting = false;
     notifyListeners();
     return ping;
   }
 
   Future<int> testRealDelay(ServerConfig server) async {
+    _isTesting = true;
     _addLog('Real Delay Test: ${server.name}...');
     notifyListeners();
 
-    final delay = await _engine.testRealDelay(server);
+    final delay = await _engine.testRealDelayViaHTTP(server);
 
     if (delay > 0) {
-      _addLog('${server.realDelayEmoji} ${server.name}: ${delay}ms (real)');
+      _addLog('${server.realDelayEmoji} ${server.name}: ${delay}ms (HTTP)');
     } else {
-      _addLog('${server.name}: handshake failed');
+      _addLog('${server.name}: test failed');
     }
 
+    _isTesting = false;
     notifyListeners();
     return delay;
   }
 
   Future<void> pingAllServers({bool includeRealDelay = false}) async {
+    _isTesting = true;
+    
     final testType = includeRealDelay ? 'TCP + Real Delay' : 'TCP Ping';
     _addLog('Testing ${_servers.length} servers ($testType)...');
     notifyListeners();
 
     for (var i = 0; i < _servers.length; i++) {
-      final ping = await pingServer(_servers[i]);
+      final ping = await _engine.ping(_servers[i].address, _servers[i].port);
 
       int? realDelay;
       if (includeRealDelay && ping > 0) {
-        realDelay = await testRealDelay(_servers[i]);
+        realDelay = await _engine.testRealDelayViaHTTP(_servers[i]);
       }
 
       _servers[i] = _servers[i].copyWith(
@@ -1009,18 +1022,22 @@ class AppProvider extends ChangeNotifier {
 
     _saveServers();
     _addLog('Test complete! (${_servers.where((s) => (s.ping ?? 0) > 0).length}/${_servers.length} reachable)');
+    
+    _isTesting = false;
     notifyListeners();
   }
 
   Future<void> testServer(ServerConfig server) async {
+    _isTesting = true;
+    
     _addLog('Full test: ${server.name}...');
     notifyListeners();
 
-    final ping = await pingServer(server);
+    final ping = await _engine.ping(server.address, server.port);
 
     int? realDelay;
     if (ping > 0) {
-      realDelay = await testRealDelay(server);
+      realDelay = await _engine.testRealDelayViaHTTP(server);
     }
 
     final index = _servers.indexWhere((s) => s.id == server.id);
@@ -1039,6 +1056,9 @@ class AppProvider extends ChangeNotifier {
     } else {
       _addLog('${server.name}: Test failed');
     }
+    
+    _isTesting = false;
+    notifyListeners();
   }
 
   void importConfig(String data) {
