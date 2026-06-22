@@ -1,3 +1,4 @@
+
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
@@ -76,6 +77,14 @@ class GuarchEngine {
   bool _nativeAvailable = true;
   StreamSubscription? _eventSubscription;
 
+  Timer? _healthCheckTimer;
+  DateTime? _lastHeartbeat;
+  int _missedHeartbeats = 0;
+  String _currentStatus = 'disconnected';
+  bool _autoRecoveryEnabled = true;
+  int _recoveryAttempts = 0;
+  Map<String, dynamic>? _lastConnectionConfig;
+
   bool get isNativeAvailable => _nativeAvailable;
 
   static Future<String> getVersion() async {
@@ -130,6 +139,7 @@ class GuarchEngine {
     switch (call.method) {
       case 'onStatusChanged':
         final status = call.arguments as String;
+        _currentStatus = status;
         _statusController.add(status);
         break;
 
@@ -182,6 +192,7 @@ class GuarchEngine {
     switch (type) {
       case 'status':
         if (data is String) {
+          _currentStatus = data;
           _statusController.add(data);
         }
         break;
@@ -222,8 +233,164 @@ class GuarchEngine {
         }
         break;
 
+      case 'heartbeat':
+        _lastHeartbeat = DateTime.now();
+        _missedHeartbeats = 0;
+        FlutterLog.d('Engine', 'Heartbeat received');
+        break;
+
+      case 'vpn_service_event':
+        if (data is String) {
+          _handleVpnServiceEvent(data);
+        }
+        break;
+
       default:
         FlutterLog.w('Engine', 'Unknown event type: $type');
+    }
+  }
+
+  void _handleVpnServiceEvent(String eventType) {
+    FlutterLog.w('Engine', 'VPN service event: $eventType');
+
+    switch (eventType) {
+      case 'vpn_revoked':
+        _currentStatus = 'disconnected';
+        _statusController.add('disconnected');
+        _errorController.add('VPN permission revoked by user');
+        _stopHealthMonitoring();
+        break;
+
+      case 'vpn_destroyed':
+        _currentStatus = 'disconnected';
+        _statusController.add('disconnected');
+        _errorController.add('VPN service destroyed by system');
+        _stopHealthMonitoring();
+        _attemptAutoRecovery();
+        break;
+
+      case 'vpn_establish_failed':
+        _currentStatus = 'disconnected';
+        _statusController.add('disconnected');
+        _errorController.add('VPN interface establishment failed');
+        _stopHealthMonitoring();
+        _attemptAutoRecovery();
+        break;
+
+      case 'vpn_started':
+        FlutterLog.d('Engine', 'VPN started successfully');
+        break;
+
+      case 'vpn_stopping':
+        FlutterLog.d('Engine', 'VPN stopping...');
+        break;
+    }
+  }
+
+  void _attemptAutoRecovery() {
+    if (!_autoRecoveryEnabled) {
+      FlutterLog.d('Engine', 'Auto-recovery disabled');
+      return;
+    }
+
+    if (_recoveryAttempts >= 3) {
+      FlutterLog.e('Engine', 'Max recovery attempts reached');
+      _errorController.add('Connection lost - manual reconnection required');
+      _recoveryAttempts = 0;
+      return;
+    }
+
+    if (_lastConnectionConfig == null) {
+      FlutterLog.w('Engine', 'No config for recovery');
+      return;
+    }
+
+    _recoveryAttempts++;
+    final delay = Duration(seconds: 5 * _recoveryAttempts);
+    FlutterLog.w('Engine', 'Auto-recovery attempt $_recoveryAttempts/3 in ${delay.inSeconds}s');
+    _errorController.add('Connection lost, attempting recovery in ${delay.inSeconds}s...');
+
+    Future.delayed(delay, () async {
+      if (_currentStatus == 'disconnected') {
+        FlutterLog.d('Engine', 'Executing auto-recovery...');
+        final config = _lastConnectionConfig!;
+        await connectWithConfig(
+          config['configJson'] as String,
+          config['vpnModeEnabled'] as bool,
+          preferIPv6: config['preferIPv6'] as bool? ?? false,
+        );
+      }
+    });
+  }
+
+  void _startHealthMonitoring() {
+    _stopHealthMonitoring();
+    _lastHeartbeat = DateTime.now();
+    _missedHeartbeats = 0;
+    _recoveryAttempts = 0;
+
+    _healthCheckTimer = Timer.periodic(const Duration(seconds: 5), (timer) async {
+      await _performHealthCheck();
+    });
+
+    FlutterLog.d('Engine', 'Health monitoring started');
+  }
+
+  void _stopHealthMonitoring() {
+    _healthCheckTimer?.cancel();
+    _healthCheckTimer = null;
+  }
+
+  Future<void> _performHealthCheck() async {
+    try {
+      if (_lastHeartbeat != null) {
+        final diff = DateTime.now().difference(_lastHeartbeat!);
+        if (diff.inSeconds > 15) {
+          _missedHeartbeats++;
+          FlutterLog.w('Engine', 'No heartbeat for ${diff.inSeconds}s (missed: $_missedHeartbeats)');
+
+          if (_missedHeartbeats >= 3) {
+            FlutterLog.e('Engine', 'Connection lost (no heartbeat)');
+            _currentStatus = 'disconnected';
+            _statusController.add('disconnected');
+            _errorController.add('Connection lost - no heartbeat from engine');
+            _stopHealthMonitoring();
+            _attemptAutoRecovery();
+            return;
+          }
+        } else {
+          _missedHeartbeats = 0;
+        }
+      }
+
+      final nativeStatus = await getStatus();
+
+      if (nativeStatus != _currentStatus) {
+        FlutterLog.w('Engine', 'State mismatch: native=$nativeStatus, UI=$_currentStatus');
+        _currentStatus = nativeStatus;
+        _statusController.add(nativeStatus);
+
+        if (nativeStatus == 'disconnected') {
+          _stopHealthMonitoring();
+          _attemptAutoRecovery();
+        }
+      }
+
+      if (_nativeAvailable && _currentStatus == 'connected') {
+        try {
+          final tunStats = await getTUNStats();
+          if (tunStats.isEmpty) {
+            FlutterLog.w('Engine', 'TUN stats empty, possible VPN issue');
+          }
+        } catch (e) {
+          FlutterLog.w('Engine', 'TUN stats check failed', e);
+        }
+      }
+
+      FlutterLog.d('Engine', 'Health check OK (native: $nativeStatus, heartbeat: ${_missedHeartbeats})');
+
+    } catch (e) {
+      FlutterLog.e('Engine', 'Health check failed', e);
     }
   }
 
@@ -264,6 +431,11 @@ class GuarchEngine {
       FlutterLog.d('Engine', '  invokeMethod("connect")...');
       final result = await _channel.invokeMethod('connect', config);
       FlutterLog.d('Engine', '  result: $result');
+      
+      if (result == true) {
+        _startHealthMonitoring();
+      }
+      
       return result == true;
     } on PlatformException catch (e) {
       FlutterLog.e('Engine', '  PlatformException: ${e.code} ${e.message}', e);
@@ -294,9 +466,15 @@ class GuarchEngine {
       return false;
     }
 
+    _lastConnectionConfig = {
+      'configJson': configJson,
+      'vpnModeEnabled': vpnModeEnabled,
+      'preferIPv6': preferIPv6,
+    };
+
     try {
       final settings = await AppSettings.load();
-      
+
       FlutterLog.d('Engine', '  User settings: socks=${settings.socksPort}, dial=${settings.dialTimeout}s, handshake=${settings.handshakeTimeout}s');
 
       final config = jsonDecode(configJson) as Map<String, dynamic>;
@@ -326,6 +504,12 @@ class GuarchEngine {
 
       final result = await _channel.invokeMethod('connectWithConfig', params);
       FlutterLog.d('Engine', '  result: $result');
+
+      if (result == true) {
+        _startHealthMonitoring();
+        _recoveryAttempts = 0;
+      }
+
       return result == true;
     } on PlatformException catch (e) {
       FlutterLog.e('Engine', '  PlatformException: ${e.code} ${e.message}', e);
@@ -348,6 +532,10 @@ class GuarchEngine {
 
   Future<bool> disconnect(bool vpnModeEnabled) async {
     FlutterLog.d('Engine', 'disconnect() - VPN mode: $vpnModeEnabled');
+
+    _stopHealthMonitoring();
+    _lastConnectionConfig = null;
+    _recoveryAttempts = 0;
 
     if (!_nativeAvailable) {
       _statusController.add('disconnected');
@@ -527,7 +715,7 @@ class GuarchEngine {
       sw.stop();
 
       socket.destroy();
-      
+
       final ms = sw.elapsedMilliseconds;
       FlutterLog.d('Engine', 'TCP ping: ${ms}ms');
       return ms;
@@ -539,14 +727,14 @@ class GuarchEngine {
 
   Future<int> testRealDelayViaHTTP(ServerConfig server) async {
     FlutterLog.d('Engine', '=== testRealDelayViaHTTP ===');
-    
+
     final startTime = DateTime.now();
-    
+
     try {
       final response = await http.get(
         Uri.parse('https://www.google.com/gen_204'),
       ).timeout(const Duration(seconds: 5));
-      
+
       if (response.statusCode == 204) {
         final delay = DateTime.now().difference(startTime).inMilliseconds;
         FlutterLog.d('Engine', 'HTTP 204 OK: ${delay}ms');
@@ -566,14 +754,14 @@ class GuarchEngine {
 
   Future<int> testRealDelay(ServerConfig server) async {
     FlutterLog.d('Engine', '=== testRealDelay ${server.address}:${server.port} ===');
-    
+
     if (!_nativeAvailable) {
       FlutterLog.w('Engine', 'Native not available');
       return -1;
     }
-    
+
     final startTime = DateTime.now();
-    
+
     try {
       final socksPort = await AppSettings.getSocksPort();
 
@@ -598,11 +786,11 @@ class GuarchEngine {
           'enabled': false,
         },
       };
-      
+
       final configJson = jsonEncode(testConfig);
-      
+
       FlutterLog.d('Engine', 'Calling testRealDelay with minimal config...');
-      
+
       final result = await _channel.invokeMethod(
         'testRealDelay',
         configJson,
@@ -613,7 +801,7 @@ class GuarchEngine {
           return false;
         },
       );
-      
+
       if (result == true) {
         final delay = DateTime.now().difference(startTime).inMilliseconds;
         FlutterLog.d('Engine', 'Real delay: ${delay}ms');
@@ -633,9 +821,9 @@ class GuarchEngine {
 
   Future<bool> testConnection(String address, int port, String psk) async {
     FlutterLog.d('Engine', 'testConnection $address:$port');
-    
+
     if (!_nativeAvailable) return false;
-    
+
     try {
       final socksPort = await AppSettings.getSocksPort();
 
@@ -655,7 +843,7 @@ class GuarchEngine {
         },
         'dns': {'enabled': false},
       };
-      
+
       final result = await _channel.invokeMethod(
         'testConnection',
         jsonEncode(testConfig),
@@ -663,7 +851,7 @@ class GuarchEngine {
         const Duration(seconds: 8),
         onTimeout: () => false,
       );
-      
+
       return result == true;
     } catch (e) {
       FlutterLog.e('Engine', 'testConnection failed', e);
@@ -699,8 +887,14 @@ class GuarchEngine {
     } catch (_) {}
   }
 
+  void setAutoRecovery(bool enabled) {
+    _autoRecoveryEnabled = enabled;
+    FlutterLog.d('Engine', 'Auto-recovery: $enabled');
+  }
+
   void dispose() {
     FlutterLog.d('Engine', 'dispose()');
+    _stopHealthMonitoring();
     _eventSubscription?.cancel();
     _statusController.close();
     _statsController.close();
