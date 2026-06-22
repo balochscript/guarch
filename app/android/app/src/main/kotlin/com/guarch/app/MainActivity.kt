@@ -51,7 +51,7 @@ class MainActivity : FlutterActivity() {
         super.configureFlutterEngine(flutterEngine)
 
         CrashLogger.init(this)
-        CrashLogger.d(TAG, "====== APP STARTED (v1.0.2) ======")
+        CrashLogger.d(TAG, "====== APP STARTED (v1.1.1) ======")
         CrashLogger.d(TAG, "SDK: ${Build.VERSION.SDK_INT} | Device: ${Build.MANUFACTURER} ${Build.MODEL}")
 
         tryInitGoEngine()
@@ -86,7 +86,7 @@ class MainActivity : FlutterActivity() {
             CrashLogger.d(TAG, ">> Method: ${call.method}")
             try {
                 when (call.method) {
-                    "getVersion" -> result.success("Guarch Android v1.0.2")
+                    "getVersion" -> result.success("Guarch Android v1.1.1")
                     "setUserSettings" -> handleSetUserSettings(call.arguments, result)
                     "connect" -> handleConnectLegacy(call.arguments, result)
                     "connectWithConfig" -> handleConnectWithConfig(call.arguments, result)
@@ -303,7 +303,7 @@ class MainActivity : FlutterActivity() {
     }
 
     private fun handleConnectWithConfig(arguments: Any?, result: MethodChannel.Result) {
-        CrashLogger.d(TAG, "=== handleConnectWithConfig (v1.0.2) ===")
+        CrashLogger.d(TAG, "=== handleConnectWithConfig (v1.1.1) ===")
 
         @Suppress("UNCHECKED_CAST")
         val params = arguments as? Map<String, Any>
@@ -702,6 +702,40 @@ class MainActivity : FlutterActivity() {
             CrashLogger.e(TAG, "  startVpnService crashed", e)
             sendEvent("error", e.message ?: "VPN service failed")
             result.success(false)
+        }
+    }
+
+    private fun stopVpnServiceDueToFailure() {
+        CrashLogger.d(TAG, "=== stopVpnServiceDueToFailure ===")
+
+        try {
+            if (vpnAndTunStarted) {
+                CrashLogger.d(TAG, "  Stopping VPN service due to connection failure...")
+
+                val intent = Intent(this, GuarchService::class.java).apply {
+                    action = GuarchService.ACTION_STOP
+                }
+                startService(intent)
+
+                vpnAndTunStarted = false
+                CrashLogger.d(TAG, "  VPN service stopped ✅")
+            }
+        } catch (e: Throwable) {
+            CrashLogger.e(TAG, "  Failed to stop VPN service", e)
+        }
+    }
+
+    private fun updateVpnNotification(statsJson: String) {
+        try {
+            val json = org.json.JSONObject(statsJson)
+            val upload = json.getLong("upload")
+            val download = json.getLong("download")
+            val upSpeed = json.optLong("upSpeed", 0)
+            val downSpeed = json.optLong("downSpeed", 0)
+
+            GuarchService.instance?.updateStatsFromGo(upload, download, upSpeed, downSpeed)
+        } catch (e: Exception) {
+            CrashLogger.e(TAG, "Failed to parse notification stats", e)
         }
     }
 
@@ -1185,6 +1219,10 @@ class MainActivity : FlutterActivity() {
                             if (level != null && msg != null) {
                                 if (level == "debug" && msg == "heartbeat") {
                                     runOnUiThread { sendEvent("heartbeat", null) }
+                                } else if (level == "notification_update") {
+                                    runOnUiThread {
+                                        updateVpnNotification(msg)
+                                    }
                                 } else {
                                     CrashLogger.d("GoEngine", "[$level] $msg")
                                     runOnUiThread { sendEvent("log", msg) }
@@ -1194,8 +1232,16 @@ class MainActivity : FlutterActivity() {
                         "onError" -> {
                             val error = args?.get(0) as? String
                             if (error != null) {
-                                CrashLogger.e("GoEngine", "Error: $error")
-                                runOnUiThread { sendEvent("error", error) }
+                                if (error == "connection_lost_stop_vpn") {
+                                    CrashLogger.w("GoEngine", "Connection lost - stopping VPN service")
+                                    runOnUiThread {
+                                        stopVpnServiceDueToFailure()
+                                        sendEvent("error", "Connection lost - VPN stopped")
+                                    }
+                                } else {
+                                    CrashLogger.e("GoEngine", "Error: $error")
+                                    runOnUiThread { sendEvent("error", error) }
+                                }
                             }
                         }
                         "onSNIRotation" -> {
