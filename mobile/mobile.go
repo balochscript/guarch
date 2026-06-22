@@ -29,7 +29,7 @@ import (
 )
 
 const (
-	Version           = "1.0.1"
+	Version           = "1.0.2"
 	MaxRetryAttempts  = 3
 	RetryDelay        = 5 * time.Second
 	ConnectionTimeout = 30 * time.Second
@@ -161,7 +161,7 @@ func ReadGoLog() string {
 
 func New() *Engine {
 	ctx, cancel := context.WithCancel(context.Background())
-	log.Println("[Engine] New engine instance created")
+	log.Println("[Engine] New engine instance created (v1.0.2)")
 	return &Engine{
 		ctx:          ctx,
 		cancel:       cancel,
@@ -677,7 +677,7 @@ func (e *Engine) connectGuarch(cfg *config.ServerConfig, coverMgr *cover.Manager
 		log.Printf("[Engine] Dial failed: %v", err)
 		return fmt.Errorf("connector dial failed: %w", err)
 	}
-	log.Println("[Engine] TCP connection established")
+	log.Println("[Engine] TCP connection established ✅")
 
 	maxPadding := 0
 	paddingEnabled := false
@@ -707,7 +707,7 @@ func (e *Engine) connectGuarch(cfg *config.ServerConfig, coverMgr *cover.Manager
 		log.Printf("[Engine] Handshake failed: %v", err)
 		return fmt.Errorf("handshake failed: %w", err)
 	}
-	log.Println("[Engine] Handshake complete")
+	log.Println("[Engine] Handshake complete ✅")
 
 	if coverMgr != nil {
 		coverMgr.SendOne()
@@ -723,9 +723,17 @@ func (e *Engine) connectGuarch(cfg *config.ServerConfig, coverMgr *cover.Manager
 	e.mu.Unlock()
 
 	log.Println("[Engine] Starting SOCKS5 server...")
-	return e.startSOCKS5(func() (io.ReadWriteCloser, error) {
+	err = e.startSOCKS5(func() (io.ReadWriteCloser, error) {
 		return m.OpenStream()
 	})
+	if err != nil {
+		return err
+	}
+
+	log.Println("[Engine] Starting heartbeat monitor...")
+	e.startHeartbeat()
+
+	return nil
 }
 
 func (e *Engine) mergeTimeoutSettings(cfg *config.ServerConfig, userSettings *UserSettings) *config.ServerConfig {
@@ -826,7 +834,7 @@ func (e *Engine) connectGrouk(cfg *config.ServerConfig, coverMgr *cover.Manager)
 		log.Printf("[Engine] Grouk handshake failed: %v", err)
 		return fmt.Errorf("Grouk handshake failed: %w", err)
 	}
-	log.Printf("[Engine] Grouk handshake complete (session ID: %d)", session.ID)
+	log.Printf("[Engine] Grouk handshake complete ✅ (session ID: %d)", session.ID)
 
 	e.mu.Lock()
 	e.groukSession = session
@@ -837,9 +845,17 @@ func (e *Engine) connectGrouk(cfg *config.ServerConfig, coverMgr *cover.Manager)
 	log.Println("[Engine] Starting Grouk read loop...")
 	go e.groukReadLoop(session, udpConn, udpAddr)
 
-	return e.startSOCKS5(func() (io.ReadWriteCloser, error) {
+	err = e.startSOCKS5(func() (io.ReadWriteCloser, error) {
 		return session.OpenStream()
 	})
+	if err != nil {
+		return err
+	}
+
+	log.Println("[Engine] Starting heartbeat monitor...")
+	e.startHeartbeat()
+
+	return nil
 }
 
 func (e *Engine) groukReadLoop(session *transport.GroukSession, udpConn *net.UDPConn, serverAddr *net.UDPAddr) {
@@ -930,7 +946,7 @@ func (e *Engine) connectZhip(cfg *config.ServerConfig, coverMgr *cover.Manager) 
 		log.Printf("[Engine] QUIC dial failed: %v", err)
 		return fmt.Errorf("QUIC dial failed: %w", err)
 	}
-	log.Println("[Engine] QUIC connection established")
+	log.Println("[Engine] QUIC connection established ✅")
 
 	authTimeout := 15 * time.Second
 	if userSettings.HandshakeTimeout > 0 {
@@ -960,7 +976,7 @@ func (e *Engine) connectZhip(cfg *config.ServerConfig, coverMgr *cover.Manager) 
 	log.Println("[Engine] Starting Zhip connection monitor...")
 	go e.zhipMonitor(conn)
 
-	return e.startSOCKS5(func() (io.ReadWriteCloser, error) {
+	err = e.startSOCKS5(func() (io.ReadWriteCloser, error) {
 		select {
 		case <-conn.Context().Done():
 			return nil, fmt.Errorf("QUIC connection closed")
@@ -981,6 +997,14 @@ func (e *Engine) connectZhip(cfg *config.ServerConfig, coverMgr *cover.Manager) 
 		log.Printf("[Engine] Zhip stream opened (ID: %d)", stream.StreamID())
 		return stream, nil
 	})
+	if err != nil {
+		return err
+	}
+
+	log.Println("[Engine] Starting heartbeat monitor...")
+	e.startHeartbeat()
+
+	return nil
 }
 
 func (e *Engine) zhipMonitor(conn *quic.Conn) {
@@ -1007,6 +1031,117 @@ func (e *Engine) zhipMonitor(conn *quic.Conn) {
 		e.logWarn("Zhip connection lost unexpectedly")
 		e.setStatus("disconnected")
 	}
+}
+
+func (e *Engine) startHeartbeat() {
+	go func() {
+		defer e.recoverPanic("heartbeat")
+
+		ticker := time.NewTicker(3 * time.Second)
+		defer ticker.Stop()
+
+		log.Println("[Engine] 💓 Heartbeat started (interval: 3s)")
+
+		consecutiveFailures := 0
+
+		for {
+			select {
+			case <-e.ctx.Done():
+				log.Println("[Engine] Heartbeat stopped (context done)")
+				return
+			case <-ticker.C:
+				healthy := e.isConnectionHealthy()
+
+				if healthy {
+					consecutiveFailures = 0
+
+					if e.callback != nil {
+						e.callback.OnLog("debug", "heartbeat")
+					}
+
+					log.Println("[Engine] 💚 Heartbeat OK")
+				} else {
+					consecutiveFailures++
+					log.Printf("[Engine] ⚠️  Heartbeat failed (failures: %d/3)", consecutiveFailures)
+
+					if consecutiveFailures >= 3 {
+						log.Println("[Engine] ❌ Connection unhealthy (3 consecutive failures), disconnecting...")
+						e.setStatus("disconnected")
+						e.logError("Connection lost - health check failed")
+						e.Disconnect()
+						return
+					}
+				}
+			}
+		}
+	}()
+}
+
+func (e *Engine) isConnectionHealthy() bool {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+
+	log.Println("[Engine] === Health Check ===")
+
+	select {
+	case <-e.ctx.Done():
+		log.Println("[Engine] Health: context cancelled ❌")
+		return false
+	default:
+	}
+
+	if e.listener == nil {
+		log.Println("[Engine] Health: listener is nil ❌")
+		return false
+	}
+
+	switch e.protocol {
+	case "guarch":
+		if e.muxConn == nil {
+			log.Println("[Engine] Health: mux is nil ❌")
+			return false
+		}
+		log.Println("[Engine] Health: Guarch mux OK ✅")
+
+	case "grouk":
+		if e.groukSession == nil {
+			log.Println("[Engine] Health: grouk session is nil ❌")
+			return false
+		}
+		if e.groukUDP == nil {
+			log.Println("[Engine] Health: grouk UDP is nil ❌")
+			return false
+		}
+		log.Println("[Engine] Health: Grouk session OK ✅")
+
+	case "zhip":
+		if e.zhipConn == nil {
+			log.Println("[Engine] Health: zhip conn is nil ❌")
+			return false
+		}
+
+		zhipConn := *e.zhipConn
+		select {
+		case <-zhipConn.Context().Done():
+			log.Println("[Engine] Health: zhip context done ❌")
+			return false
+		default:
+		}
+
+		log.Println("[Engine] Health: Zhip connection OK ✅")
+
+	default:
+		log.Printf("[Engine] Health: unknown protocol '%s' ❌", e.protocol)
+		return false
+	}
+
+	activeStreams := atomic.LoadInt32(&e.stats.activeStreams)
+	totalConnections := e.stats.totalConnections
+
+	log.Printf("[Engine] Health: listener OK, active_streams=%d, total_connections=%d ✅",
+		activeStreams, totalConnections)
+
+	return true
 }
 
 func (e *Engine) enableDNSFallback() error {
