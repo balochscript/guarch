@@ -51,19 +51,42 @@ class MainActivity : FlutterActivity() {
         super.configureFlutterEngine(flutterEngine)
 
         CrashLogger.init(this)
-        CrashLogger.d(TAG, "====== APP STARTED (v1.0.1) ======")
+        CrashLogger.d(TAG, "====== APP STARTED (v1.0.2) ======")
         CrashLogger.d(TAG, "SDK: ${Build.VERSION.SDK_INT} | Device: ${Build.MANUFACTURER} ${Build.MODEL}")
 
         tryInitGoEngine()
         setupProtectFunc()
         setupBatteryMonitoring()
+        setupEventChannel(flutterEngine)
+        setupMethodChannel(flutterEngine)
+        setupLogChannel(flutterEngine)
+        setupServiceCallback()
 
+        CrashLogger.d(TAG, "configureFlutterEngine done")
+    }
+
+    private fun setupEventChannel(flutterEngine: FlutterEngine) {
+        EventChannel(flutterEngine.dartExecutor.binaryMessenger, EVENT_CHANNEL)
+            .setStreamHandler(object : EventChannel.StreamHandler {
+                override fun onListen(arguments: Any?, events: EventChannel.EventSink?) {
+                    CrashLogger.d(TAG, "EventChannel: onListen")
+                    eventSink = events
+                }
+
+                override fun onCancel(arguments: Any?) {
+                    CrashLogger.d(TAG, "EventChannel: onCancel")
+                    eventSink = null
+                }
+            })
+    }
+
+    private fun setupMethodChannel(flutterEngine: FlutterEngine) {
         methodChannel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, ENGINE_CHANNEL)
         methodChannel?.setMethodCallHandler { call, result ->
             CrashLogger.d(TAG, ">> Method: ${call.method}")
             try {
                 when (call.method) {
-                    "getVersion" -> result.success("Guarch Android v1.0.1")
+                    "getVersion" -> result.success("Guarch Android v1.0.2")
                     "setUserSettings" -> handleSetUserSettings(call.arguments, result)
                     "connect" -> handleConnectLegacy(call.arguments, result)
                     "connectWithConfig" -> handleConnectWithConfig(call.arguments, result)
@@ -93,7 +116,9 @@ class MainActivity : FlutterActivity() {
                 } catch (_: Exception) {}
             }
         }
+    }
 
+    private fun setupLogChannel(flutterEngine: FlutterEngine) {
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, LOG_CHANNEL)
             .setMethodCallHandler { call, result ->
                 when (call.method) {
@@ -122,21 +147,15 @@ class MainActivity : FlutterActivity() {
                     else -> result.notImplemented()
                 }
             }
+    }
 
-        EventChannel(flutterEngine.dartExecutor.binaryMessenger, EVENT_CHANNEL)
-            .setStreamHandler(object : EventChannel.StreamHandler {
-                override fun onListen(arguments: Any?, events: EventChannel.EventSink?) {
-                    CrashLogger.d(TAG, "EventChannel: onListen")
-                    eventSink = events
-                }
-
-                override fun onCancel(arguments: Any?) {
-                    CrashLogger.d(TAG, "EventChannel: onCancel")
-                    eventSink = null
-                }
-            })
-
-        CrashLogger.d(TAG, "configureFlutterEngine done")
+    private fun setupServiceCallback() {
+        GuarchService.setStatusCallback { status ->
+            runOnUiThread {
+                CrashLogger.d(TAG, "Service status callback: $status")
+                sendEvent("vpn_service_event", status)
+            }
+        }
     }
 
     private fun setupProtectFunc() {
@@ -284,7 +303,7 @@ class MainActivity : FlutterActivity() {
     }
 
     private fun handleConnectWithConfig(arguments: Any?, result: MethodChannel.Result) {
-        CrashLogger.d(TAG, "=== handleConnectWithConfig (v1.0.1) ===")
+        CrashLogger.d(TAG, "=== handleConnectWithConfig (v1.0.2) ===")
 
         @Suppress("UNCHECKED_CAST")
         val params = arguments as? Map<String, Any>
@@ -496,7 +515,9 @@ class MainActivity : FlutterActivity() {
 
         if (requestCode == VPN_REQUEST_CODE) {
             if (resultCode == Activity.RESULT_OK) {
+                CrashLogger.d(TAG, "  VPN permission granted")
                 vpnPermissionResult?.let { startVpnService(it) }
+                sendEvent("vpn_permission_granted", true)
             } else {
                 CrashLogger.w(TAG, "  VPN permission DENIED")
                 vpnPermissionResult?.success(false)
@@ -948,15 +969,27 @@ class MainActivity : FlutterActivity() {
 
     private fun handleGetTUNStats(result: MethodChannel.Result) {
         try {
+            val stats = mutableMapOf<String, Any>(
+                "running" to GuarchService.isRunning,
+                "tun_fd" to GuarchService.tunFd
+            )
+
             if (goEngine != null) {
-                val stats = goEngine!!.javaClass.getMethod("getTUNStats")
-                    .invoke(goEngine) as? String
-                result.success(stats ?: "{}")
-            } else {
-                result.success("{}")
+                try {
+                    val tunStats = goEngine!!.javaClass.getMethod("getTUNStats")
+                        .invoke(goEngine) as? String
+                    if (tunStats != null && tunStats != "{}") {
+                        stats["go_stats"] = tunStats
+                    }
+                } catch (_: Throwable) {}
             }
+
+            result.success(stats)
         } catch (_: Throwable) {
-            result.success("{}")
+            result.success(mapOf(
+                "running" to false,
+                "tun_fd" to -1
+            ))
         }
     }
 
@@ -1150,8 +1183,12 @@ class MainActivity : FlutterActivity() {
                             val level = args?.get(0) as? String
                             val msg = args?.get(1) as? String
                             if (level != null && msg != null) {
-                                CrashLogger.d("GoEngine", "[$level] $msg")
-                                runOnUiThread { sendEvent("log", msg) }
+                                if (level == "debug" && msg == "heartbeat") {
+                                    runOnUiThread { sendEvent("heartbeat", null) }
+                                } else {
+                                    CrashLogger.d("GoEngine", "[$level] $msg")
+                                    runOnUiThread { sendEvent("log", msg) }
+                                }
                             }
                         }
                         "onError" -> {
@@ -1250,6 +1287,8 @@ class MainActivity : FlutterActivity() {
 
     override fun onDestroy() {
         CrashLogger.d(TAG, "=== Activity onDestroy ===")
+
+        GuarchService.clearStatusCallback()
 
         try {
             batteryReceiver?.let {
