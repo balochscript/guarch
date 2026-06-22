@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/services.dart';
+import 'package:http/http.dart' as http;
 import 'package:guarch/models/server_config.dart';
 import 'package:guarch/models/app_settings.dart';
 
@@ -536,6 +537,33 @@ class GuarchEngine {
     }
   }
 
+  Future<int> testRealDelayViaHTTP(ServerConfig server) async {
+    FlutterLog.d('Engine', '=== testRealDelayViaHTTP ===');
+    
+    final startTime = DateTime.now();
+    
+    try {
+      final response = await http.get(
+        Uri.parse('https://www.google.com/gen_204'),
+      ).timeout(const Duration(seconds: 5));
+      
+      if (response.statusCode == 204) {
+        final delay = DateTime.now().difference(startTime).inMilliseconds;
+        FlutterLog.d('Engine', 'HTTP 204 OK: ${delay}ms');
+        return delay;
+      } else {
+        FlutterLog.w('Engine', 'Unexpected status: ${response.statusCode}');
+        return -1;
+      }
+    } on TimeoutException {
+      FlutterLog.w('Engine', 'HTTP timeout');
+      return -1;
+    } catch (e) {
+      FlutterLog.e('Engine', 'HTTP test failed', e);
+      return -1;
+    }
+  }
+
   Future<int> testRealDelay(ServerConfig server) async {
     FlutterLog.d('Engine', '=== testRealDelay ${server.address}:${server.port} ===');
     
@@ -588,7 +616,7 @@ class GuarchEngine {
       
       if (result == true) {
         final delay = DateTime.now().difference(startTime).inMilliseconds;
-        FlutterLog.d('Engine', 'Real delay: ${delay}ms ✅');
+        FlutterLog.d('Engine', 'Real delay: ${delay}ms');
         return delay;
       } else {
         FlutterLog.w('Engine', 'Real delay test failed (handshake failed)');
