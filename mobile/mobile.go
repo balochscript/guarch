@@ -89,6 +89,10 @@ type Engine struct {
 
 	listener net.Listener
 
+	wg              sync.WaitGroup
+	activeConns     atomic.Int32
+	shutdownTimeout time.Duration
+
 	status           string
 	stats            *engineStats
 	protocol         string
@@ -163,11 +167,12 @@ func New() *Engine {
 	ctx, cancel := context.WithCancel(context.Background())
 	log.Println("[Engine] New engine instance created (v1.0.2)")
 	return &Engine{
-		ctx:          ctx,
-		cancel:       cancel,
-		status:       "disconnected",
-		stats:        &engineStats{startTime: time.Now()},
-		batteryLevel: 100,
+		ctx:             ctx,
+		cancel:          cancel,
+		status:          "disconnected",
+		stats:           &engineStats{startTime: time.Now()},
+		batteryLevel:    100,
+		shutdownTimeout: 8 * time.Second,
 		userSettings: &UserSettings{
 			SocksPort:        7070,
 			DialTimeout:      30,
@@ -450,7 +455,12 @@ func (e *Engine) Connect() bool {
 	e.proxyOnlyMode = false
 	e.mu.Unlock()
 
-	go e.connectWithRetry()
+	e.wg.Add(1)
+	go func() {
+		defer e.wg.Done()
+		e.connectWithRetry()
+	}()
+	
 	return true
 }
 
@@ -843,7 +853,11 @@ func (e *Engine) connectGrouk(cfg *config.ServerConfig, coverMgr *cover.Manager)
 	e.mu.Unlock()
 
 	log.Println("[Engine] Starting Grouk read loop...")
-	go e.groukReadLoop(session, udpConn, udpAddr)
+	e.wg.Add(1)
+	go func() {
+		defer e.wg.Done()
+		e.groukReadLoop(session, udpConn, udpAddr)
+	}()
 
 	err = e.startSOCKS5(func() (io.ReadWriteCloser, error) {
 		return session.OpenStream()
@@ -866,7 +880,7 @@ func (e *Engine) groukReadLoop(session *transport.GroukSession, udpConn *net.UDP
 	for {
 		select {
 		case <-e.ctx.Done():
-			log.Println("[Engine] Grouk read loop stopped")
+			log.Println("[Engine] Grouk read loop stopped (context done)")
 			return
 		default:
 		}
@@ -974,7 +988,11 @@ func (e *Engine) connectZhip(cfg *config.ServerConfig, coverMgr *cover.Manager) 
 	e.mu.Unlock()
 
 	log.Println("[Engine] Starting Zhip connection monitor...")
-	go e.zhipMonitor(conn)
+	e.wg.Add(1)
+	go func() {
+		defer e.wg.Done()
+		e.zhipMonitor(conn)
+	}()
 
 	err = e.startSOCKS5(func() (io.ReadWriteCloser, error) {
 		select {
@@ -1034,7 +1052,9 @@ func (e *Engine) zhipMonitor(conn *quic.Conn) {
 }
 
 func (e *Engine) startHeartbeat() {
+	e.wg.Add(1)
 	go func() {
+		defer e.wg.Done()
 		defer e.recoverPanic("heartbeat")
 
 		ticker := time.NewTicker(3 * time.Second)
@@ -1147,11 +1167,11 @@ func (e *Engine) isConnectionHealthy() bool {
 		return false
 	}
 
-	activeStreams := atomic.LoadInt32(&e.stats.activeStreams)
+	activeConns := e.activeConns.Load()
 	totalConnections := e.stats.totalConnections
 
-	log.Printf("[Engine] Health: listener OK, active_streams=%d, total_connections=%d ✅",
-		activeStreams, totalConnections)
+	log.Printf("[Engine] Health: listener OK, active_conns=%d, total_connections=%d ✅",
+		activeConns, totalConnections)
 
 	return true
 }
@@ -1243,11 +1263,15 @@ func (e *Engine) startSOCKS5(openStream func() (io.ReadWriteCloser, error)) erro
 	e.mu.RUnlock()
 
 	listenAddr := fmt.Sprintf("127.0.0.1:%d", socksPort)
-	log.Printf("[Engine] Listening on %s...", listenAddr)
+	log.Printf("[Engine] Attempting to listen on %s...", listenAddr)
 
 	ln, err := net.Listen("tcp", listenAddr)
 	if err != nil {
-		log.Printf("[Engine] SOCKS5 listen failed: %v", err)
+		log.Printf("[Engine] ❌ SOCKS5 listen FAILED: %v", err)
+		if strings.Contains(err.Error(), "address already in use") {
+			log.Printf("[Engine] ⚠️  Port %d is already in use!", socksPort)
+			e.logError(fmt.Sprintf("Port %d already in use - previous connection may not have closed properly", socksPort))
+		}
 		return fmt.Errorf("SOCKS5 listen failed: %w", err)
 	}
 
@@ -1255,41 +1279,67 @@ func (e *Engine) startSOCKS5(openStream func() (io.ReadWriteCloser, error)) erro
 	e.listener = ln
 	e.mu.Unlock()
 
-	log.Printf("[Engine] SOCKS5 server listening on %s", listenAddr)
+	log.Printf("[Engine] ✅ SOCKS5 server listening on %s", listenAddr)
 	e.logInfo(fmt.Sprintf("SOCKS5 server listening on %s", listenAddr))
 
+	e.wg.Add(1)
 	go e.statsReporter()
+	
+	e.wg.Add(1)
 	go e.sniRotator()
 
+	e.wg.Add(1)
 	go func() {
+		defer e.wg.Done()
 		defer e.recoverPanic("SOCKS5 accept loop")
+		
+		log.Printf("[Engine] 🔄 SOCKS5 accept loop started on port %d", socksPort)
 
 		for {
+			ln.SetDeadline(time.Now().Add(1 * time.Second))
+			
 			conn, err := ln.Accept()
+			
 			if err != nil {
 				select {
 				case <-e.ctx.Done():
-					log.Println("[Engine] SOCKS5 accept loop stopped")
+					log.Printf("[Engine] ✅ SOCKS5 accept loop stopped (context done) - port %d", socksPort)
 					return
 				default:
+				}
+				
+				if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
 					continue
 				}
+				
+				if strings.Contains(err.Error(), "use of closed network connection") {
+					log.Printf("[Engine] ✅ SOCKS5 accept loop stopped (listener closed) - port %d", socksPort)
+					return
+				}
+				
+				log.Printf("[Engine] ⚠️  Accept error: %v", err)
+				continue
 			}
 
 			atomic.AddInt64(&e.stats.totalConnections, 1)
-			go e.handleSOCKS5(conn, openStream)
+			e.activeConns.Add(1)
+			
+			e.wg.Add(1)
+			go func(c net.Conn) {
+				defer e.wg.Done()
+				defer e.activeConns.Add(-1)
+				e.handleSOCKS5(c, openStream)
+			}(conn)
 		}
 	}()
 
+	log.Printf("[Engine] ✅ SOCKS5 started with %d background goroutines", 3)
 	return nil
 }
 
 func (e *Engine) handleSOCKS5(socksConn net.Conn, openStream func() (io.ReadWriteCloser, error)) {
 	defer e.recoverPanic("handleSOCKS5")
 	defer socksConn.Close()
-
-	atomic.AddInt32(&e.stats.activeStreams, 1)
-	defer atomic.AddInt32(&e.stats.activeStreams, -1)
 
 	target, err := socks5.Handshake(socksConn)
 	if err != nil {
@@ -1361,7 +1411,9 @@ func (e *Engine) sendConnectRequest(stream io.ReadWriter, target string) error {
 func (e *Engine) relayWithStats(stream io.ReadWriteCloser, conn net.Conn) {
 	done := make(chan struct{}, 2)
 
+	e.wg.Add(1)
 	go func() {
+		defer e.wg.Done()
 		defer e.recoverPanic("relay upload")
 		
 		buf := relayBufferPool.Get().([]byte)
@@ -1395,7 +1447,9 @@ func (e *Engine) relayWithStats(stream io.ReadWriteCloser, conn net.Conn) {
 		done <- struct{}{}
 	}()
 
+	e.wg.Add(1)
 	go func() {
+		defer e.wg.Done()
 		defer e.recoverPanic("relay download")
 		
 		buf := relayBufferPool.Get().([]byte)
@@ -1437,6 +1491,7 @@ func (e *Engine) relayWithStats(stream io.ReadWriteCloser, conn net.Conn) {
 }
 
 func (e *Engine) statsReporter() {
+	defer e.wg.Done()
 	defer e.recoverPanic("statsReporter")
 
 	ticker := time.NewTicker(1 * time.Second)
@@ -1445,9 +1500,12 @@ func (e *Engine) statsReporter() {
 	var lastUp, lastDown int64
 	var lastNotificationUpdate time.Time
 
+	log.Println("[Engine] 📊 Stats reporter started")
+
 	for {
 		select {
 		case <-e.ctx.Done():
+			log.Println("[Engine] ✅ Stats reporter stopped")
 			return
 		case <-ticker.C:
 			e.stats.mu.Lock()
@@ -1489,7 +1547,7 @@ func (e *Engine) statsReporter() {
 				"download_speed":    downSpeed,
 				"total_upload":      e.stats.totalUpload,
 				"total_download":    e.stats.totalDownload,
-				"active_streams":    atomic.LoadInt32(&e.stats.activeStreams),
+				"active_streams":    e.activeConns.Load(),
 				"total_connections": e.stats.totalConnections,
 				"duration_seconds":  int(time.Since(e.stats.startTime).Seconds()),
 				"current_sni":       e.stats.currentSNI,
@@ -1531,9 +1589,11 @@ func (e *Engine) statsReporter() {
 }
 
 func (e *Engine) sniRotator() {
+	defer e.wg.Done()
 	defer e.recoverPanic("sniRotator")
 
 	if e.sniManager == nil {
+		log.Println("[Engine] ℹ️  SNI rotator: no SNI manager")
 		return
 	}
 
@@ -1548,7 +1608,7 @@ func (e *Engine) sniRotator() {
 		interval = 5 * time.Minute
 	}
 
-	log.Printf("[Engine] SNI rotator started (interval: %v)", interval)
+	log.Printf("[Engine] 🔄 SNI rotator started (interval: %v)", interval)
 
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
@@ -1556,7 +1616,7 @@ func (e *Engine) sniRotator() {
 	for {
 		select {
 		case <-e.ctx.Done():
-			log.Println("[Engine] SNI rotator stopped")
+			log.Println("[Engine] ✅ SNI rotator stopped")
 			return
 		case <-ticker.C:
 			newSNI := e.sniManager.Get()
@@ -1584,70 +1644,127 @@ func (e *Engine) sniRotator() {
 func (e *Engine) Disconnect() bool {
 	defer e.recoverPanic("Disconnect")
 
-	log.Println("[Engine] === Disconnect ===")
-
-	e.mu.Lock()
-	defer e.mu.Unlock()
+	log.Println("[Engine] ========================================")
+	log.Println("[Engine] 🛑 DISCONNECT INITIATED (Graceful Shutdown)")
+	log.Println("[Engine] ========================================")
 
 	e.setStatus("disconnecting")
 
 	if e.cancel != nil {
+		log.Println("[Engine] 1️⃣  Cancelling context...")
 		e.cancel()
 	}
 
+	e.mu.Lock()
+	currentPort := e.userSettings.SocksPort
 	if e.listener != nil {
-		e.listener.Close()
+		log.Printf("[Engine] 2️⃣  Closing SOCKS5 listener on port %d...", currentPort)
+		if err := e.listener.Close(); err != nil {
+			log.Printf("[Engine] ⚠️  Listener close error: %v", err)
+		} else {
+			log.Printf("[Engine] ✅ Listener closed successfully (port %d)", currentPort)
+		}
 		e.listener = nil
-		log.Println("[Engine] SOCKS5 listener closed")
+	} else {
+		log.Println("[Engine] ℹ️  Listener already nil")
+	}
+	e.mu.Unlock()
+
+	activeCount := e.activeConns.Load()
+	log.Printf("[Engine] 3️⃣  Waiting for %d active connections to close...", activeCount)
+	
+	gracefulDone := make(chan struct{})
+	go func() {
+		e.wg.Wait()
+		close(gracefulDone)
+	}()
+
+	timeout := e.shutdownTimeout
+	select {
+	case <-gracefulDone:
+		log.Printf("[Engine] ✅ All goroutines stopped gracefully (waited for %d connections)", activeCount)
+	case <-time.After(timeout):
+		remaining := e.activeConns.Load()
+		log.Printf("[Engine] ⏱️  Shutdown timeout (%v) - %d connections still active, forcing close", timeout, remaining)
 	}
 
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
+	log.Println("[Engine] 4️⃣  Closing backend connections...")
+
 	if e.muxConn != nil {
+		log.Println("[Engine]   - Closing mux connection...")
 		e.muxConn.Close()
 		e.muxConn = nil
-		log.Println("[Engine] Mux closed")
 	}
 
 	if e.groukSession != nil {
+		log.Println("[Engine]   - Closing Grouk session...")
 		e.groukSession.Close()
 		e.groukSession = nil
-		log.Println("[Engine] Grouk session closed")
 	}
 
 	if e.groukUDP != nil {
+		log.Println("[Engine]   - Closing Grouk UDP...")
 		e.groukUDP.Close()
 		e.groukUDP = nil
-		log.Println("[Engine] Grouk UDP closed")
 	}
 
 	if e.zhipConn != nil {
-		e.zhipConn.CloseWithError(0, "client disconnect")
+		log.Println("[Engine]   - Closing Zhip connection...")
+		(*e.zhipConn).CloseWithError(0, "client disconnect")
 		e.zhipConn = nil
-		log.Println("[Engine] Zhip connection closed")
 	}
 
+	log.Println("[Engine] 5️⃣  Stopping managers...")
+
 	if e.sniManager != nil {
+		log.Println("[Engine]   - Stopping SNI manager...")
 		e.sniManager.Stop()
 		e.sniManager = nil
-		log.Println("[Engine] SNI manager stopped")
 	}
 
 	if e.coverManager != nil {
+		log.Println("[Engine]   - Stopping cover manager...")
 		e.coverManager.Stop()
 		e.coverManager = nil
-		log.Println("[Engine] Cover manager stopped")
 	}
 
 	if e.dnsClient != nil {
+		log.Println("[Engine]   - Closing DNS client...")
 		e.dnsClient.Close()
 		e.dnsClient = nil
-		log.Println("[Engine] DNS client closed")
 	}
+
+	log.Println("[Engine] 6️⃣  Resetting state...")
 
 	e.usingDNSFallback.Store(false)
 	e.proxyOnlyMode = false
+	e.activeConns.Store(0)
+	
+	e.ctx, e.cancel = context.WithCancel(context.Background())
+
+	log.Printf("[Engine] 7️⃣  Verifying port %d is released...", currentPort)
+	time.Sleep(100 * time.Millisecond)
+	
+	testListener, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", currentPort))
+	if err != nil {
+		log.Printf("[Engine] ⚠️  Port %d still in use: %v", currentPort, err)
+		log.Printf("[Engine] 🔄 Waiting additional 500ms for OS to release port...")
+		time.Sleep(500 * time.Millisecond)
+	} else {
+		testListener.Close()
+		log.Printf("[Engine] ✅ Port %d confirmed released", currentPort)
+	}
+
 	e.setStatus("disconnected")
-	log.Println("[Engine] Disconnected")
-	e.logInfo("Disconnected")
+	
+	log.Println("[Engine] ========================================")
+	log.Printf("[Engine] ✅ DISCONNECT COMPLETE (port %d free)", currentPort)
+	log.Println("[Engine] ========================================")
+	
+	e.logInfo("Disconnected successfully")
 
 	return true
 }
@@ -1677,7 +1794,7 @@ func (e *Engine) GetStats() string {
 		"total_download":    e.stats.totalDownload,
 		"upload_speed":      e.stats.lastSpeedUp,
 		"download_speed":    e.stats.lastSpeedDown,
-		"active_streams":    atomic.LoadInt32(&e.stats.activeStreams),
+		"active_streams":    e.activeConns.Load(),
 		"total_connections": e.stats.totalConnections,
 		"duration_seconds":  int(time.Since(e.stats.startTime).Seconds()),
 		"current_sni":       e.stats.currentSNI,
