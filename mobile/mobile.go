@@ -1065,7 +1065,19 @@ func (e *Engine) startHeartbeat() {
 					log.Printf("[Engine] ⚠️  Heartbeat failed (failures: %d/3)", consecutiveFailures)
 
 					if consecutiveFailures >= 3 {
-						log.Println("[Engine] ❌ Connection unhealthy (3 consecutive failures), disconnecting...")
+						log.Println("[Engine] ❌ Connection unhealthy (3 consecutive failures)")
+
+						e.mu.RLock()
+						vpnMode := !e.proxyOnlyMode
+						e.mu.RUnlock()
+
+						if vpnMode {
+							log.Println("[Engine] Requesting VPN service stop via callback...")
+							if e.callback != nil {
+								e.callback.OnError("connection_lost_stop_vpn")
+							}
+						}
+
 						e.setStatus("disconnected")
 						e.logError("Connection lost - health check failed")
 						e.Disconnect()
@@ -1431,6 +1443,7 @@ func (e *Engine) statsReporter() {
 	defer ticker.Stop()
 
 	var lastUp, lastDown int64
+	var lastNotificationUpdate time.Time
 
 	for {
 		select {
@@ -1490,11 +1503,28 @@ func (e *Engine) statsReporter() {
 				"zhip_healthy":      zhipHealthy,
 			}
 
+			totalUpload := e.stats.totalUpload
+			totalDownload := e.stats.totalDownload
+
 			e.stats.mu.Unlock()
 
 			jsonData, _ := json.Marshal(data)
 			if e.callback != nil {
 				e.callback.OnStatsUpdate(string(jsonData))
+			}
+
+			if time.Since(lastNotificationUpdate) >= 2*time.Second {
+				lastNotificationUpdate = time.Now()
+				if e.callback != nil && !e.proxyOnlyMode {
+					notifData := map[string]interface{}{
+						"upload":    totalUpload,
+						"download":  totalDownload,
+						"upSpeed":   upSpeed,
+						"downSpeed": downSpeed,
+					}
+					notifJson, _ := json.Marshal(notifData)
+					e.callback.OnLog("notification_update", string(notifJson))
+				}
 			}
 		}
 	}
