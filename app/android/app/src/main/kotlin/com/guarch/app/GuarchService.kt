@@ -1,4 +1,3 @@
-
 package com.guarch.app
 
 import android.app.Notification
@@ -62,10 +61,12 @@ class GuarchService : VpnService() {
     private var bytesUploaded = 0L
     private var bytesDownloaded = 0L
     private var connectedTime = 0L
+    private var lastUploadSpeed = 0L
+    private var lastDownloadSpeed = 0L
 
     override fun onCreate() {
         super.onCreate()
-        CrashLogger.d("Service", "=== onCreate (v1.0.2) ===")
+        CrashLogger.d("Service", "=== onCreate (v1.1.1) ===")
 
         _instance = this
         MainActivity.setVpnServiceReference(this)
@@ -133,7 +134,7 @@ class GuarchService : VpnService() {
             CrashLogger.d("Service", "  S2: Building VPN interface...")
 
             val builder = Builder()
-                .setSession("Guarch VPN v1.0.2")
+                .setSession("Guarch VPN v1.1.1")
                 .addAddress("10.10.10.2", 32)
                 .setMtu(1500)
                 .setBlocking(false)
@@ -318,12 +319,17 @@ class GuarchService : VpnService() {
         }
     }
 
-    fun updateStats(upload: Long, download: Long) {
+    fun updateStatsFromGo(upload: Long, download: Long, upSpeed: Long, downSpeed: Long) {
         bytesUploaded = upload
         bytesDownloaded = download
+        lastUploadSpeed = upSpeed
+        lastDownloadSpeed = downSpeed
 
         val uploadMB = upload / (1024.0 * 1024.0)
         val downloadMB = download / (1024.0 * 1024.0)
+
+        val upSpeedKB = upSpeed / 1024.0
+        val downSpeedKB = downSpeed / 1024.0
 
         val uptime = if (connectedTime > 0) {
             (System.currentTimeMillis() - connectedTime) / 1000
@@ -331,15 +337,29 @@ class GuarchService : VpnService() {
             0
         }
 
-        val statsText = String.format(
-            "↑ %.2f MB ↓ %.2f MB • %dm%ds",
-            uploadMB,
-            downloadMB,
-            uptime / 60,
-            uptime % 60
-        )
+        val statsText = if (upSpeedKB > 0 || downSpeedKB > 0) {
+            String.format(
+                "↑ %.1f KB/s ↓ %.1f KB/s • %.2f/%.2f MB",
+                upSpeedKB,
+                downSpeedKB,
+                uploadMB,
+                downloadMB
+            )
+        } else {
+            String.format(
+                "↑ %.2f MB ↓ %.2f MB • %dm%ds",
+                uploadMB,
+                downloadMB,
+                uptime / 60,
+                uptime % 60
+            )
+        }
 
         updateNotificationText(statsText)
+    }
+
+    fun updateStats(upload: Long, download: Long) {
+        updateStatsFromGo(upload, download, 0, 0)
     }
 
     private fun notifyStatus(status: String) {
