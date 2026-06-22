@@ -1,3 +1,4 @@
+
 package com.guarch.app
 
 import android.app.Notification
@@ -47,10 +48,12 @@ class GuarchService : VpnService() {
 
         fun setStatusCallback(callback: (String) -> Unit) {
             statusCallback = callback
+            CrashLogger.d("Service", "Status callback registered")
         }
 
         fun clearStatusCallback() {
             statusCallback = null
+            CrashLogger.d("Service", "Status callback cleared")
         }
     }
 
@@ -62,7 +65,7 @@ class GuarchService : VpnService() {
 
     override fun onCreate() {
         super.onCreate()
-        CrashLogger.d("Service", "=== onCreate (v1.0.1) ===")
+        CrashLogger.d("Service", "=== onCreate (v1.0.2) ===")
 
         _instance = this
         MainActivity.setVpnServiceReference(this)
@@ -118,7 +121,7 @@ class GuarchService : VpnService() {
         try {
             CrashLogger.d("Service", "  S1: Starting foreground service...")
             startForeground(NOTIFICATION_ID, createNotification("Connecting..."))
-            CrashLogger.d("Service", "  S1: Foreground started")
+            CrashLogger.d("Service", "  S1: Foreground started ✅")
         } catch (e: Throwable) {
             CrashLogger.e("Service", "  S1: Foreground FAILED", e)
             notifyStatus("vpn_establish_failed")
@@ -130,7 +133,7 @@ class GuarchService : VpnService() {
             CrashLogger.d("Service", "  S2: Building VPN interface...")
 
             val builder = Builder()
-                .setSession("Guarch VPN")
+                .setSession("Guarch VPN v1.0.2")
                 .addAddress("10.10.10.2", 32)
                 .setMtu(1500)
                 .setBlocking(false)
@@ -140,20 +143,20 @@ class GuarchService : VpnService() {
 
             try {
                 builder.addDisallowedApplication(packageName)
-                CrashLogger.d("Service", "  S2: Excluded self from VPN")
+                CrashLogger.d("Service", "  S2: Excluded self from VPN ✅")
             } catch (e: Throwable) {
                 CrashLogger.w("Service", "  S2: Could not exclude self (OK on older Android)")
             }
 
             CrashLogger.d("Service", "  S2: Configuring full tunnel...")
             builder.addRoute("0.0.0.0", 0)
-            CrashLogger.d("Service", "  S2: Full tunneling configured (0.0.0.0/0)")
+            CrashLogger.d("Service", "  S2: ✅ Full tunneling configured (0.0.0.0/0)")
 
             if (enableIPv6) {
                 try {
                     builder.addAddress("fd00::2", 64)
                     builder.addRoute("::", 0)
-                    CrashLogger.d("Service", "  S2: IPv6 enabled")
+                    CrashLogger.d("Service", "  S2: IPv6 enabled ✅")
                 } catch (e: Throwable) {
                     CrashLogger.w("Service", "  S2: IPv6 setup failed: ${e.message}")
                 }
@@ -182,10 +185,15 @@ class GuarchService : VpnService() {
             _isRunning.set(true)
             connectedTime = System.currentTimeMillis()
 
-            CrashLogger.d("Service", "  S2: VPN interface established")
+            CrashLogger.d("Service", "  S2: VPN interface established ✅")
             CrashLogger.d("Service", "  S2: TUN fd = $fd")
+            CrashLogger.d("Service", "  S2: Address = 10.10.10.2/32")
+            CrashLogger.d("Service", "  S2: Route = 0.0.0.0/0 (full tunnel)")
+            CrashLogger.d("Service", "  S2: DNS = 8.8.8.8, 1.1.1.1")
+            CrashLogger.d("Service", "  S2: MTU = 1500")
+            CrashLogger.d("Service", "  S2: IPv6 = ${if (enableIPv6) "preferred" else "not preferred (IPv4 first)"}")
 
-            updateNotificationText("Connected")
+            updateNotificationText("Connected ✅")
             notifyStatus("vpn_started")
 
             CrashLogger.d("Service", "=== VPN STARTED ===")
@@ -233,7 +241,7 @@ class GuarchService : VpnService() {
         }
 
         stopSelf()
-        CrashLogger.d("Service", "  VPN stopped")
+        CrashLogger.d("Service", "  VPN stopped ✅")
     }
 
     private fun createNotificationChannel() {
@@ -282,7 +290,7 @@ class GuarchService : VpnService() {
         )
 
         return NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle("Guarch VPN")
+            .setContentTitle("🏹 Guarch VPN")
             .setContentText(text)
             .setSmallIcon(android.R.drawable.ic_lock_lock)
             .setContentIntent(pendingIntent)
@@ -338,8 +346,15 @@ class GuarchService : VpnService() {
         CrashLogger.d("Service", "Notify status: $status")
         statusCallback?.let { callback ->
             Handler(Looper.getMainLooper()).post {
-                callback(status)
+                try {
+                    callback(status)
+                    CrashLogger.d("Service", "Status callback executed: $status")
+                } catch (e: Throwable) {
+                    CrashLogger.e("Service", "Status callback failed", e)
+                }
             }
+        } ?: run {
+            CrashLogger.w("Service", "Status callback is null, cannot notify: $status")
         }
     }
 
