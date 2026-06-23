@@ -38,6 +38,15 @@ extension VpnStatusExtension on VpnStatus {
   }
 }
 
+extension IntFormatting on int {
+  String toCompactString() {
+    if (this < 1000) return '$this';
+    if (this < 1000000) return '${(this / 1000).toStringAsFixed(1)}K';
+    if (this < 1000000000) return '${(this / 1000000).toStringAsFixed(1)}M';
+    return '${(this / 1000000000).toStringAsFixed(1)}B';
+  }
+}
+
 class ConnectionStats {
   final int uploadSpeed;
   final int downloadSpeed;
@@ -79,10 +88,10 @@ class ConnectionStats {
     this.fecRecoveryRate = 0.0,
   });
 
-  String get uploadSpeedText => _formatSpeed(uploadSpeed);
-  String get downloadSpeedText => _formatSpeed(downloadSpeed);
-  String get totalUploadText => _formatBytes(totalUpload);
-  String get totalDownloadText => _formatBytes(totalDownload);
+  String get uploadSpeedText => _formatSpeedBits(uploadSpeed);
+  String get downloadSpeedText => _formatSpeedBits(downloadSpeed);
+  String get totalUploadText => _formatBits(totalUpload);
+  String get totalDownloadText => _formatBits(totalDownload);
   String get durationText => _formatDuration(duration);
 
   String get activityEmoji {
@@ -115,23 +124,33 @@ class ConnectionStats {
     }
   }
 
-  String _formatSpeed(int bytesPerSecond) {
-    if (bytesPerSecond < 1024) return '$bytesPerSecond B/s';
-    if (bytesPerSecond < 1024 * 1024) {
-      return '${(bytesPerSecond / 1024).toStringAsFixed(1)} KB/s';
+  String _formatSpeedBits(int bytesPerSecond) {
+    final bits = bytesPerSecond * 8;
+    
+    if (bits < 1000) return '$bits bps';
+    if (bits < 1000000) {
+      return '${(bits / 1000).toStringAsFixed(1)} Kbps';
     }
-    return '${(bytesPerSecond / 1024 / 1024).toStringAsFixed(2)} MB/s';
+    if (bits < 1000000000) {
+      return '${(bits / 1000000).toStringAsFixed(2)} Mbps';
+    }
+    return '${(bits / 1000000000).toStringAsFixed(2)} Gbps';
   }
 
-  String _formatBytes(int bytes) {
-    if (bytes < 1024) return '$bytes B';
-    if (bytes < 1024 * 1024) {
-      return '${(bytes / 1024).toStringAsFixed(1)} KB';
+  String _formatBits(int bytes) {
+    final bits = bytes * 8;
+    
+    if (bits < 1000) return '$bits b';
+    if (bits < 1000000) {
+      return '${(bits / 1000).toStringAsFixed(1)} Kb';
     }
-    if (bytes < 1024 * 1024 * 1024) {
-      return '${(bytes / 1024 / 1024).toStringAsFixed(2)} MB';
+    if (bits < 1000000000) {
+      return '${(bits / 1000000).toStringAsFixed(2)} Mb';
     }
-    return '${(bytes / 1024 / 1024 / 1024).toStringAsFixed(2)} GB';
+    if (bits < 1000000000000) {
+      return '${(bits / 1000000000).toStringAsFixed(2)} Gb';
+    }
+    return '${(bits / 1000000000000).toStringAsFixed(2)} Tb';
   }
 
   String _formatDuration(Duration d) {
