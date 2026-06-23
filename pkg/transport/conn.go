@@ -85,8 +85,8 @@ type HandshakeConfig struct {
 	ReadTimeout      time.Duration
 	WriteTimeout     time.Duration
 	ReplayWindowSize uint32
-	MaxPadding     int
-	PaddingEnabled bool
+	MaxPadding       int
+	PaddingEnabled   bool
 }
 
 func Handshake(raw net.Conn, isServer bool, cfg *HandshakeConfig) (*SecureConn, error) {
@@ -213,6 +213,8 @@ func Handshake(raw net.Conn, isServer bool, cfg *HandshakeConfig) (*SecureConn, 
 	}
 
 	replayWindow := protocol.NewReplayWindow(cfg.ReplayWindowSize)
+
+	log.Printf("[handshake:%s] timeout config: read=%v, write=%v", role, cfg.ReadTimeout, cfg.WriteTimeout)
 
 	sc := &SecureConn{
 		raw:          raw,
