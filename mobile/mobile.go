@@ -519,6 +519,26 @@ func (e *Engine) connectWithRetry() {
 func (e *Engine) connectInternal() error {
 	log.Println("[Engine] === connectInternal ===")
 	
+	log.Println("[Engine] Resetting stats for new connection...")
+	e.stats.mu.Lock()
+	e.stats.totalUpload = 0
+	e.stats.totalDownload = 0
+	e.stats.coverRequests = 0
+	e.stats.activeStreams = 0
+	e.stats.totalConnections = 0
+	e.stats.currentSNI = ""
+	e.stats.sniSwitches = 0
+	e.stats.dnsQueriesSent = 0
+	e.stats.activityLevel = "idle"
+	e.stats.lastSpeedUp = 0
+	e.stats.lastSpeedDown = 0
+	e.stats.fecSent = 0
+	e.stats.fecRecv = 0
+	e.stats.fecRecovered = 0
+	e.stats.fecRecoveryRate = 0.0
+	e.stats.connectTime = time.Now()
+	e.stats.mu.Unlock()
+	
 	e.mu.RLock()
 	cfg := e.config
 	protocol := e.protocol
@@ -1742,6 +1762,11 @@ func (e *Engine) Disconnect() bool {
 	e.usingDNSFallback.Store(false)
 	e.proxyOnlyMode = false
 	e.activeConns.Store(0)
+	
+	log.Println("[Engine]   - Resetting stats counters...")
+	e.stats = &engineStats{
+		startTime: time.Now(),
+	}
 	
 	e.ctx, e.cancel = context.WithCancel(context.Background())
 
