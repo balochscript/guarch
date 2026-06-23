@@ -7,6 +7,8 @@ class AppSettings {
   static const String _keyDialTimeout = 'dial_timeout';
   static const String _keyHandshakeTimeout = 'handshake_timeout';
   static const String _keyPreferIPv6 = 'prefer_ipv6';
+  static const String _keyReadTimeout = 'read_timeout';
+  static const String _keyWriteTimeout = 'write_timeout';
 
   static const String _keyGlobalSniEnabled = 'global_sni_enabled';
   static const String _keyGlobalSniMode = 'global_sni_mode';
@@ -45,11 +47,15 @@ class AppSettings {
   static const int _defaultSocksPort = 7070;
   static const int _defaultDialTimeout = 30;
   static const int _defaultHandshakeTimeout = 15;
+  static const int _defaultReadTimeout = 90;
+  static const int _defaultWriteTimeout = 180;
 
   final int socksPort;
   final int dialTimeout;
   final int handshakeTimeout;
   final bool preferIPv6;
+  final int readTimeout;
+  final int writeTimeout;
 
   final bool globalSniEnabled;
   final String globalSniMode;
@@ -90,6 +96,8 @@ class AppSettings {
     this.dialTimeout = _defaultDialTimeout,
     this.handshakeTimeout = _defaultHandshakeTimeout,
     this.preferIPv6 = false,
+    this.readTimeout = _defaultReadTimeout,
+    this.writeTimeout = _defaultWriteTimeout,
     this.globalSniEnabled = false,
     this.globalSniMode = 'weighted',
     this.globalSniRotationMinutes = 5,
@@ -141,6 +149,8 @@ class AppSettings {
       dialTimeout: _defaultDialTimeout,
       handshakeTimeout: _defaultHandshakeTimeout,
       preferIPv6: false,
+      readTimeout: _defaultReadTimeout,
+      writeTimeout: _defaultWriteTimeout,
       globalSniEnabled: false,
       globalSniMode: 'weighted',
       globalSniRotationMinutes: 5,
@@ -206,6 +216,8 @@ class AppSettings {
       dialTimeout: prefs.getInt(_keyDialTimeout) ?? _defaultDialTimeout,
       handshakeTimeout: prefs.getInt(_keyHandshakeTimeout) ?? _defaultHandshakeTimeout,
       preferIPv6: prefs.getBool(_keyPreferIPv6) ?? false,
+      readTimeout: prefs.getInt(_keyReadTimeout) ?? _defaultReadTimeout,
+      writeTimeout: prefs.getInt(_keyWriteTimeout) ?? _defaultWriteTimeout,
       globalSniEnabled: prefs.getBool(_keyGlobalSniEnabled) ?? false,
       globalSniMode: prefs.getString(_keyGlobalSniMode) ?? 'weighted',
       globalSniRotationMinutes: prefs.getInt(_keyGlobalSniRotationMinutes) ?? 5,
@@ -243,6 +255,8 @@ class AppSettings {
     await prefs.setInt(_keyDialTimeout, dialTimeout);
     await prefs.setInt(_keyHandshakeTimeout, handshakeTimeout);
     await prefs.setBool(_keyPreferIPv6, preferIPv6);
+    await prefs.setInt(_keyReadTimeout, readTimeout);
+    await prefs.setInt(_keyWriteTimeout, writeTimeout);
 
     await prefs.setBool(_keyGlobalSniEnabled, globalSniEnabled);
     await prefs.setString(_keyGlobalSniMode, globalSniMode);
@@ -315,7 +329,7 @@ class AppSettings {
     final prefs = await SharedPreferences.getInstance();
     final keys = [
       _keySocksPort, _keyDialTimeout, _keyHandshakeTimeout,
-      _keyPreferIPv6,
+      _keyPreferIPv6, _keyReadTimeout, _keyWriteTimeout,
       _keyGlobalSniEnabled, _keyGlobalSniMode, _keyGlobalSniRotationMinutes, _keyGlobalSniDomains,
       _keyGlobalCoverEnabled, _keyGlobalCoverMode, _keyGlobalBatteryAware, _keyGlobalDataSaver, _keyGlobalCoverDomains,
       _keyGlobalDnsEnabled, _keyGlobalDnsDomain, _keyGlobalDnsServers, _keyGlobalDnsSwitchThreshold,
@@ -340,6 +354,8 @@ class AppSettings {
     int? dialTimeout,
     int? handshakeTimeout,
     bool? preferIPv6,
+    int? readTimeout,
+    int? writeTimeout,
     bool? globalSniEnabled,
     String? globalSniMode,
     int? globalSniRotationMinutes,
@@ -374,6 +390,8 @@ class AppSettings {
       dialTimeout: dialTimeout ?? this.dialTimeout,
       handshakeTimeout: handshakeTimeout ?? this.handshakeTimeout,
       preferIPv6: preferIPv6 ?? this.preferIPv6,
+      readTimeout: readTimeout ?? this.readTimeout,
+      writeTimeout: writeTimeout ?? this.writeTimeout,
       globalSniEnabled: globalSniEnabled ?? this.globalSniEnabled,
       globalSniMode: globalSniMode ?? this.globalSniMode,
       globalSniRotationMinutes: globalSniRotationMinutes ?? this.globalSniRotationMinutes,
