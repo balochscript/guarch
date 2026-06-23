@@ -88,7 +88,7 @@ class StatsCard extends StatelessWidget {
                   _buildStatItem(
                     context,
                     'Connections',
-                    '${stats.totalConnections}',
+                    stats.totalConnections.toCompactString(),
                     Icons.link,
                     Colors.orange,
                   ),
@@ -124,21 +124,21 @@ class StatsCard extends StatelessWidget {
                   _buildStatItem(
                     context,
                     'Sent',
-                    '${stats.fecSent}',
+                    stats.fecSent.toCompactString(),
                     Icons.send,
                     Colors.blue,
                   ),
                   _buildStatItem(
                     context,
                     'Received',
-                    '${stats.fecRecv}',
+                    stats.fecRecv.toCompactString(),
                     Icons.call_received,
                     Colors.green,
                   ),
                   _buildStatItem(
                     context,
                     'Recovered',
-                    '${stats.fecRecovered}',
+                    stats.fecRecovered.toCompactString(),
                     Icons.healing,
                     Colors.orange,
                   ),
