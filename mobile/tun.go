@@ -702,6 +702,9 @@ func (e *Engine) StopTun() {
 	tunStack = nil
 	globalDialer = nil
 
+	log.Println("[TUN] Resetting TUN stats...")
+	tunStats = nil
+
 	log.Println("[TUN] StopTun: done ✅")
 	e.logInfo("TUN stopped ✅")
 }
