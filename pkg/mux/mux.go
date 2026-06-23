@@ -75,6 +75,22 @@ func NewMux(sc *transport.SecureConn, isServer bool) *Mux {
 	return NewMuxWithConfig(sc, isServer, DefaultMuxConfig())
 }
 
+func NewMuxWithTimeouts(sc *transport.SecureConn, isServer bool, readTimeout, writeTimeout time.Duration) *Mux {
+	cfg := DefaultMuxConfig()
+	
+	if readTimeout > 0 {
+		cfg.ReadTimeout = readTimeout
+		log.Printf("[mux] custom read_timeout: %v", readTimeout)
+	}
+	
+	if writeTimeout > 0 {
+		cfg.WriteTimeout = writeTimeout
+		log.Printf("[mux] custom write_timeout: %v", writeTimeout)
+	}
+	
+	return NewMuxWithConfig(sc, isServer, cfg)
+}
+
 func NewMuxWithConfig(sc *transport.SecureConn, isServer bool, cfg *MuxConfig) *Mux {
 	if cfg == nil {
 		cfg = DefaultMuxConfig()
@@ -175,8 +191,6 @@ func (m *Mux) handleMuxFrame(data []byte) {
 				case <-s.doneCh:
 				case <-m.closeCh:
 					return
-				case <-time.After(2 * time.Second):
-					log.Printf("[mux] stream %d read buffer full, dropping packet", streamID)
 				}
 			}
 		}
@@ -408,30 +422,22 @@ func (s *Stream) Write(p []byte) (int, error) {
 	sent := 0
 
 	for sent < len(p) {
+		select {
+		case <-s.doneCh:
+			return sent, io.ErrClosedPipe
+		default:
+		}
+
 		end := sent + maxChunk
 		if end > len(p) {
 			end = len(p)
 		}
 		
-		chunk := p[sent:end]
-		
-		errCh := make(chan error, 1)
-		go func() {
-			errCh <- s.mux.sendFrame(cmdData, s.id, chunk)
-		}()
-		
-		select {
-		case err := <-errCh:
-			if err != nil {
-				return sent, err
-			}
-		case <-time.After(s.writeTimeout):
-			return sent, fmt.Errorf("stream: write timeout")
-		case <-s.doneCh:
-			return sent, io.ErrClosedPipe
+		if err := s.mux.sendFrame(cmdData, s.id, p[sent:end]); err != nil {
+			return sent, err
 		}
 		
-		s.bytesSent.Add(uint64(len(chunk)))
+		s.bytesSent.Add(uint64(end - sent))
 		sent = end
 	}
 
