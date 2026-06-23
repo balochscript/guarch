@@ -60,6 +60,8 @@ type UserSettings struct {
 	SocksPort        int `json:"socks_port"`
 	DialTimeout      int `json:"dial_timeout"`
 	HandshakeTimeout int `json:"handshake_timeout"`
+	ReadTimeout      int `json:"read_timeout"`
+	WriteTimeout     int `json:"write_timeout"`
 }
 
 func SetProtectFunc(protectFd func(fd int) error) {
@@ -177,6 +179,8 @@ func New() *Engine {
 			SocksPort:        7070,
 			DialTimeout:      30,
 			HandshakeTimeout: 15,
+			ReadTimeout:      90,
+			WriteTimeout:     180,
 		},
 		proxyOnlyMode: false,
 	}
@@ -206,11 +210,15 @@ func (e *Engine) SetUserSettings(jsonStr string) bool {
 	e.userSettings = &settings
 	e.mu.Unlock()
 
-	log.Printf("[Engine] Settings applied: socks=%d, dial=%ds, handshake=%ds", 
-		settings.SocksPort, settings.DialTimeout, settings.HandshakeTimeout)
+	log.Printf("[Engine] Settings applied:")
+	log.Printf("  socks_port: %d", settings.SocksPort)
+	log.Printf("  dial_timeout: %ds", settings.DialTimeout)
+	log.Printf("  handshake_timeout: %ds", settings.HandshakeTimeout)
+	log.Printf("  read_timeout: %ds", settings.ReadTimeout)
+	log.Printf("  write_timeout: %ds", settings.WriteTimeout)
 
-	e.logDebug(fmt.Sprintf("User settings updated: dial_timeout=%d, handshake_timeout=%d",
-		settings.DialTimeout, settings.HandshakeTimeout))
+	e.logDebug(fmt.Sprintf("User settings: dial=%ds, handshake=%ds, read=%ds, write=%ds",
+		settings.DialTimeout, settings.HandshakeTimeout, settings.ReadTimeout, settings.WriteTimeout))
 	
 	log.Println("[Engine] SetUserSettings SUCCESS")
 	return true
@@ -684,6 +692,18 @@ func (e *Engine) connectGuarch(cfg *config.ServerConfig, coverMgr *cover.Manager
 	userSettings := e.userSettings
 	e.mu.RUnlock()
 
+	readTimeout := time.Duration(userSettings.ReadTimeout) * time.Second
+	if readTimeout == 0 {
+		readTimeout = 90 * time.Second
+	}
+	
+	writeTimeout := time.Duration(userSettings.WriteTimeout) * time.Second
+	if writeTimeout == 0 {
+		writeTimeout = 180 * time.Second
+	}
+	
+	log.Printf("[Engine] Timeout settings from user: read=%v, write=%v", readTimeout, writeTimeout)
+
 	configWithTimeouts := e.mergeTimeoutSettings(cfg, userSettings)
 
 	log.Printf("[Engine] Creating connector for %s...", cfg.Server.Address)
@@ -728,9 +748,12 @@ func (e *Engine) connectGuarch(cfg *config.ServerConfig, coverMgr *cover.Manager
 		PSK:            []byte(cfg.Server.PSK),
 		MaxPadding:     maxPadding,
 		PaddingEnabled: paddingEnabled,
+		ReadTimeout:    readTimeout,
+		WriteTimeout:   writeTimeout,
 	}
 
-	log.Printf("[Engine] Performing handshake (padding: %v, max: %d)...", paddingEnabled, maxPadding)
+	log.Printf("[Engine] Performing handshake (padding: %v, max: %d, read_timeout: %v, write_timeout: %v)...", 
+		paddingEnabled, maxPadding, readTimeout, writeTimeout)
 	sc, err := transport.Handshake(rawConn, false, handshakeCfg)
 	if err != nil {
 		rawConn.Close()
@@ -743,8 +766,8 @@ func (e *Engine) connectGuarch(cfg *config.ServerConfig, coverMgr *cover.Manager
 		coverMgr.SendOne()
 	}
 
-	log.Println("[Engine] Creating multiplexer...")
-	m := mux.NewMux(sc, true)
+	log.Println("[Engine] Creating multiplexer with custom timeouts...")
+	m := mux.NewMuxWithTimeouts(sc, false, readTimeout, writeTimeout)
 
 	e.mu.Lock()
 	e.stats.connectTime = time.Now()
