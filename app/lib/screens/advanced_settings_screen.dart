@@ -16,6 +16,8 @@ class _AdvancedSettingsScreenState extends State<AdvancedSettingsScreen> {
   int _socksPort = 7070;
   int _dialTimeout = 30;
   int _handshakeTimeout = 15;
+  int _readTimeout = 90;
+  int _writeTimeout = 180;
   bool _loading = true;
 
   @override
@@ -30,6 +32,8 @@ class _AdvancedSettingsScreenState extends State<AdvancedSettingsScreen> {
       _socksPort = settings.socksPort;
       _dialTimeout = settings.dialTimeout;
       _handshakeTimeout = settings.handshakeTimeout;
+      _readTimeout = settings.readTimeout;
+      _writeTimeout = settings.writeTimeout;
       _loading = false;
     });
   }
@@ -110,6 +114,46 @@ class _AdvancedSettingsScreenState extends State<AdvancedSettingsScreen> {
                       onChanged: (v) async {
                         setState(() => _handshakeTimeout = v.toInt());
                         await AppSettings.setHandshakeTimeout(_handshakeTimeout);
+                      },
+                    ),
+                    Divider(
+                      height: 1,
+                      color: accentColor(context).withOpacity(0.1),
+                    ),
+                    _buildSliderTile(
+                      context,
+                      icon: Icons.download,
+                      title: 'Read Timeout',
+                      subtitle: 'Max time for receiving data (downloads)',
+                      value: _readTimeout.toDouble(),
+                      min: 30,
+                      max: 300,
+                      divisions: 9,
+                      label: '${_readTimeout}s',
+                      onChanged: (v) async {
+                        setState(() => _readTimeout = v.toInt());
+                        final settings = await AppSettings.load();
+                        await settings.copyWith(readTimeout: _readTimeout).save();
+                      },
+                    ),
+                    Divider(
+                      height: 1,
+                      color: accentColor(context).withOpacity(0.1),
+                    ),
+                    _buildSliderTile(
+                      context,
+                      icon: Icons.upload,
+                      title: 'Write Timeout',
+                      subtitle: 'Max time for sending data (uploads)',
+                      value: _writeTimeout.toDouble(),
+                      min: 60,
+                      max: 600,
+                      divisions: 9,
+                      label: '${_writeTimeout}s',
+                      onChanged: (v) async {
+                        setState(() => _writeTimeout = v.toInt());
+                        final settings = await AppSettings.load();
+                        await settings.copyWith(writeTimeout: _writeTimeout).save();
                       },
                     ),
                   ],
@@ -449,6 +493,8 @@ class _AdvancedSettingsScreenState extends State<AdvancedSettingsScreen> {
                       '• SOCKS port: Change if port 7070 conflicts\n'
                       '• Dial timeout: TCP connection establishment\n'
                       '• Handshake timeout: TLS/protocol handshake\n'
+                      '• Read timeout: Max time for downloads (higher = safer for large files)\n'
+                      '• Write timeout: Max time for uploads (higher = safer for large files)\n'
                       '• Connection timeout: Overall attempt (engine-level)\n'
                       '• Lower timeouts = faster failure detection\n'
                       '• Higher timeouts = better on slow networks\n'
@@ -487,6 +533,10 @@ class _AdvancedSettingsScreenState extends State<AdvancedSettingsScreen> {
                       _buildInfoRow('Dial Timeout', '${_dialTimeout}s'),
                       const SizedBox(height: 8),
                       _buildInfoRow('Handshake Timeout', '${_handshakeTimeout}s'),
+                      const SizedBox(height: 8),
+                      _buildInfoRow('Read Timeout', '${_readTimeout}s'),
+                      const SizedBox(height: 8),
+                      _buildInfoRow('Write Timeout', '${_writeTimeout}s'),
                       const SizedBox(height: 16),
                       Divider(color: accentColor(context).withOpacity(0.1)),
                       const SizedBox(height: 16),
@@ -845,6 +895,8 @@ class _AdvancedSettingsScreenState extends State<AdvancedSettingsScreen> {
                 _socksPort = settings.socksPort;
                 _dialTimeout = settings.dialTimeout;
                 _handshakeTimeout = settings.handshakeTimeout;
+                _readTimeout = settings.readTimeout;
+                _writeTimeout = settings.writeTimeout;
               });
               
               if (context.mounted) {
