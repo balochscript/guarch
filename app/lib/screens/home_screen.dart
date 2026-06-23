@@ -556,7 +556,7 @@ class _HomeTab extends StatelessWidget {
                         ),
                       ),
                       Text(
-                        '${stats.coverRequests} requests • ${stats.activityEmoji} ${stats.activityText}',
+                        '${stats.coverRequests.toCompactString()} requests • ${stats.activityEmoji} ${stats.activityText}',
                         style: TextStyle(
                           color: textMuted(context),
                           fontSize: 12,
@@ -596,7 +596,7 @@ class _HomeTab extends StatelessWidget {
                           ),
                         ),
                         Text(
-                          '${stats.currentSNI} • ${stats.sniSwitches} switches',
+                          '${stats.currentSNI} • ${stats.sniSwitches.toCompactString()} switches',
                           style: TextStyle(
                             color: textMuted(context),
                             fontSize: 12,
@@ -662,7 +662,7 @@ class _HomeTab extends StatelessWidget {
                           ),
                         ),
                         Text(
-                          'Recovered ${stats.fecRecovered}/${stats.fecRecv} packets (${stats.fecRecoveryRate.toStringAsFixed(1)}%)',
+                          'Recovered ${stats.fecRecovered.toCompactString()}/${stats.fecRecv.toCompactString()} packets (${stats.fecRecoveryRate.toStringAsFixed(1)}%)',
                           style: TextStyle(
                             color: textMuted(context),
                             fontSize: 12,
