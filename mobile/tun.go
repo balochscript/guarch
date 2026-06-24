@@ -2,6 +2,7 @@ package mobile
 
 import (
 	"context"
+	"encoding/binary"
 	"fmt"
 	"io"
 	"net"
@@ -470,13 +471,6 @@ func handleDNSQuery(r *udp.ForwarderRequest, e *Engine) {
 	tunConn := gonet.NewUDPConn(&wq, ep)
 	defer tunConn.Close()
 
-	dnsConn, dialErr := net.DialTimeout("udp", dnsServer, 5*time.Second)
-	if dialErr != nil {
-		log.Printf("[TUN] DNS dial failed: %v", dialErr)
-		return
-	}
-	defer dnsConn.Close()
-
 	queryBuf := make([]byte, 512)
 	n, readErr := tunConn.Read(queryBuf)
 	if readErr != nil {
@@ -494,7 +488,62 @@ func handleDNSQuery(r *udp.ForwarderRequest, e *Engine) {
 		return
 	}
 
-	log.Printf("[TUN] ✅ Forwarding DNS query")
+	// Try to send DNS query over the VPN tunnel (DNS-over-TCP via SOCKS5)
+	if globalDialer != nil {
+		log.Printf("[TUN] ✅ Forwarding DNS query over VPN (DNS-over-TCP)")
+		
+		// Attempt Google DNS (8.8.8.8) or Cloudflare DNS (1.1.1.1)
+		dnsConn, dialErr := globalDialer.Dial("tcp", "8.8.8.8:53")
+		if dialErr != nil {
+			log.Printf("[TUN] DNS over VPN TCP dial failed (trying fallback 1.1.1.1): %v", dialErr)
+			dnsConn, dialErr = globalDialer.Dial("tcp", "1.1.1.1:53")
+		}
+		
+		if dialErr == nil {
+			defer dnsConn.Close()
+			
+			// Prep query for DNS over TCP (2-byte big-endian length prefix)
+			queryLen := uint16(len(query))
+			tcpQuery := make([]byte, 2+int(queryLen))
+			binary.BigEndian.PutUint16(tcpQuery[0:2], queryLen)
+			copy(tcpQuery[2:], query)
+			
+			dnsConn.SetWriteDeadline(time.Now().Add(5 * time.Second))
+			if _, writeErr := dnsConn.Write(tcpQuery); writeErr == nil {
+				dnsConn.SetReadDeadline(time.Now().Add(5 * time.Second))
+				
+				// Read 2-byte response length
+				lenBuf := make([]byte, 2)
+				if _, err := io.ReadFull(dnsConn, lenBuf); err == nil {
+					respLen := binary.BigEndian.Uint16(lenBuf)
+					if respLen <= 1024 {
+						respBuf := make([]byte, respLen)
+						if _, err := io.ReadFull(dnsConn, respBuf); err == nil {
+							tunConn.Write(respBuf)
+							return // Successfully routed over VPN!
+						} else {
+							log.Printf("[TUN] DNS over VPN TCP body read failed: %v", err)
+						}
+					} else {
+						log.Printf("[TUN] DNS over VPN TCP response too large: %d", respLen)
+					}
+				} else {
+					log.Printf("[TUN] DNS over VPN TCP length read failed: %v", err)
+				}
+			} else {
+				log.Printf("[TUN] DNS over VPN TCP write failed: %v", writeErr)
+			}
+		}
+	}
+
+	// Fallback to local network (direct query) in case VPN dialer is not ready or fails
+	log.Printf("[TUN] ⚠️ Falling back to local DNS query: %s", dnsServer)
+	dnsConn, dialErr := net.DialTimeout("udp", dnsServer, 5*time.Second)
+	if dialErr != nil {
+		log.Printf("[TUN] Local DNS dial failed: %v", dialErr)
+		return
+	}
+	defer dnsConn.Close()
 
 	_, writeErr := dnsConn.Write(query)
 	if writeErr != nil {
@@ -503,12 +552,12 @@ func handleDNSQuery(r *udp.ForwarderRequest, e *Engine) {
 
 	dnsConn.SetReadDeadline(time.Now().Add(5 * time.Second))
 	responseBuf := make([]byte, 512)
-	n, responseErr := dnsConn.Read(responseBuf)
+	respN, responseErr := dnsConn.Read(responseBuf)
 	if responseErr != nil {
 		return
 	}
 
-	tunConn.Write(responseBuf[:n])
+	tunConn.Write(responseBuf[:respN])
 }
 
 func isDNSQueryAAAA(query []byte) bool {
