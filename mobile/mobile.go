@@ -1339,7 +1339,9 @@ func (e *Engine) startSOCKS5(openStream func() (io.ReadWriteCloser, error)) erro
 		log.Printf("[Engine] 🔄 SOCKS5 accept loop started on port %d", socksPort)
 
 		for {
-			ln.SetDeadline(time.Now().Add(1 * time.Second))
+			if tcpLn, ok := ln.(*net.TCPListener); ok {
+				tcpLn.SetDeadline(time.Now().Add(1 * time.Second))
+			}
 			
 			conn, err := ln.Accept()
 			
