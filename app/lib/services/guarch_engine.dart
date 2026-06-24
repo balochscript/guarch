@@ -1,4 +1,3 @@
-
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
@@ -383,7 +382,7 @@ class GuarchEngine {
             FlutterLog.w('Engine', 'TUN stats empty, possible VPN issue');
           }
         } catch (e) {
-          FlutterLog.w('Engine', 'TUN stats check failed', e);
+          FlutterLog.w('Engine', 'TUN stats check failed: $e');
         }
       }
 
