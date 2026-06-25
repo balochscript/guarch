@@ -1310,14 +1310,28 @@ func (e *Engine) startSOCKS5(openStream func() (io.ReadWriteCloser, error)) erro
 	listenAddr := fmt.Sprintf("127.0.0.1:%d", socksPort)
 	log.Printf("[Engine] Attempting to listen on %s...", listenAddr)
 
-	ln, err := net.Listen("tcp", listenAddr)
-	if err != nil {
-		log.Printf("[Engine] ❌ SOCKS5 listen FAILED: %v", err)
-		if strings.Contains(err.Error(), "address already in use") {
-			log.Printf("[Engine] ⚠️  Port %d is already in use!", socksPort)
+	var ln net.Listener
+	var listenErr error
+	for attempt := 1; attempt <= 10; attempt++ {
+		ln, listenErr = net.Listen("tcp", listenAddr)
+		if listenErr == nil {
+			break
+		}
+		if strings.Contains(listenErr.Error(), "address already in use") {
+			log.Printf("[Engine] ⚠️ Port %d is already in use, retrying in 200ms (attempt %d/10)...", socksPort, attempt)
+			time.Sleep(200 * time.Millisecond)
+			continue
+		}
+		break
+	}
+
+	if listenErr != nil {
+		log.Printf("[Engine] ❌ SOCKS5 listen FAILED: %v", listenErr)
+		if strings.Contains(listenErr.Error(), "address already in use") {
+			log.Printf("[Engine] ⚠️  Port %d is already in use after retries!", socksPort)
 			e.logError(fmt.Sprintf("Port %d already in use - previous connection may not have closed properly", socksPort))
 		}
-		return fmt.Errorf("SOCKS5 listen failed: %w", err)
+		return fmt.Errorf("SOCKS5 listen failed: %w", listenErr)
 	}
 
 	e.mu.Lock()
