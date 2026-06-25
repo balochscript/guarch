@@ -517,6 +517,49 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
 
               const SizedBox(height: 24),
+              _sectionTitle(context, 'App Split Tunneling'),
+              Card(
+                child: Column(
+                  children: [
+                    ListTile(
+                      leading: Icon(Icons.apps, color: accentColor(context)),
+                      title: Text(
+                        'Allowed Apps (Whitelist)',
+                        style: TextStyle(color: textSecondary(context)),
+                      ),
+                      subtitle: Text(
+                        provider.allowedApps.isEmpty
+                            ? 'All apps are allowed (default)'
+                            : '${provider.allowedApps.length} apps selected: ${provider.allowedApps.join(", ")}',
+                        style: TextStyle(color: textMuted(context), fontSize: 12),
+                      ),
+                      trailing: Icon(Icons.edit, size: 20, color: accentColor(context)),
+                      onTap: () => _showAppListDialog(context, provider, true),
+                    ),
+                    Divider(
+                      height: 1,
+                      color: accentColor(context).withOpacity(0.1),
+                    ),
+                    ListTile(
+                      leading: Icon(Icons.block, color: accentColor(context)),
+                      title: Text(
+                        'Disallowed Apps (Blacklist)',
+                        style: TextStyle(color: textSecondary(context)),
+                      ),
+                      subtitle: Text(
+                        provider.disallowedApps.isEmpty
+                            ? 'No apps excluded'
+                            : '${provider.disallowedApps.length} apps excluded: ${provider.disallowedApps.join(", ")}',
+                        style: TextStyle(color: textMuted(context), fontSize: 12),
+                      ),
+                      trailing: Icon(Icons.edit, size: 20, color: accentColor(context)),
+                      onTap: () => _showAppListDialog(context, provider, false),
+                    ),
+                  ],
+                ),
+              ),
+
+              const SizedBox(height: 24),
               _sectionTitle(context, 'Protocols'),
               Card(
                 child: Column(
@@ -725,5 +768,69 @@ class _SettingsScreenState extends State<SettingsScreen> {
     if (level < 30) return 'Low (cover reduced)';
     if (level < 50) return 'Medium';
     return 'Good';
+  }
+
+  void _showAppListDialog(BuildContext context, AppProvider provider, bool isWhitelist) {
+    final title = isWhitelist ? 'Allowed Apps (Whitelist)' : 'Disallowed Apps (Blacklist)';
+    final currentList = isWhitelist ? provider.allowedApps : provider.disallowedApps;
+    final controller = TextEditingController(text: currentList.join(', '));
+
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(title),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Enter package names separated by commas (e.g., com.google.android.youtube, com.zhiliaoapp.musically):',
+              style: TextStyle(fontSize: 12),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: controller,
+              decoration: const InputDecoration(
+                border: OutlineInputBorder(),
+                hintText: 'com.example.app1, com.example.app2',
+              ),
+              maxLines: 3,
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              if (isWhitelist) {
+                provider.setAllowedApps([]);
+              } else {
+                provider.setDisallowedApps([]);
+              }
+              Navigator.pop(ctx);
+            },
+            child: const Text('Clear All', style: TextStyle(color: Colors.red)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () {
+              final text = controller.text.trim();
+              final apps = text.isEmpty
+                  ? <String>[]
+                  : text.split(',').map((s) => s.trim()).where((s) => s.isNotEmpty).toList();
+              if (isWhitelist) {
+                provider.setAllowedApps(apps);
+              } else {
+                provider.setDisallowedApps(apps);
+              }
+              Navigator.pop(ctx);
+            },
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
   }
 }
