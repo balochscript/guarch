@@ -82,6 +82,7 @@ class GuarchEngine {
   String _currentStatus = 'disconnected';
   bool _autoRecoveryEnabled = true;
   int _recoveryAttempts = 0;
+  bool _wasConnected = false;
   Map<String, dynamic>? _lastConnectionConfig;
 
   bool get isNativeAvailable => _nativeAvailable;
@@ -139,6 +140,11 @@ class GuarchEngine {
       case 'onStatusChanged':
         final status = call.arguments as String;
         _currentStatus = status;
+        if (status == 'connected') {
+          _wasConnected = true;
+        } else if (status == 'disconnected') {
+          _wasConnected = false;
+        }
         _statusController.add(status);
         break;
 
@@ -192,6 +198,11 @@ class GuarchEngine {
       case 'status':
         if (data is String) {
           _currentStatus = data;
+          if (data == 'connected') {
+            _wasConnected = true;
+          } else if (data == 'disconnected') {
+            _wasConnected = false;
+          }
           _statusController.add(data);
         }
         break;
@@ -258,6 +269,8 @@ class GuarchEngine {
         _statusController.add('disconnected');
         _errorController.add('VPN permission revoked by user');
         _stopHealthMonitoring();
+        _lastConnectionConfig = null; // Clear so auto-recovery cannot run
+        _wasConnected = false;
         break;
 
       case 'vpn_destroyed':
@@ -273,7 +286,8 @@ class GuarchEngine {
         _statusController.add('disconnected');
         _errorController.add('VPN interface establishment failed');
         _stopHealthMonitoring();
-        _attemptAutoRecovery();
+        _lastConnectionConfig = null; // Clear so auto-recovery cannot run
+        _wasConnected = false;
         break;
 
       case 'vpn_started':
@@ -282,6 +296,10 @@ class GuarchEngine {
 
       case 'vpn_stopping':
         FlutterLog.d('Engine', 'VPN stopping...');
+        _lastConnectionConfig = null; // Clear config to prevent auto-recovery on graceful notification disconnect
+        _wasConnected = false;
+        _currentStatus = 'disconnected';
+        _statusController.add('disconnected');
         break;
     }
   }
@@ -289,6 +307,11 @@ class GuarchEngine {
   void _attemptAutoRecovery() {
     if (!_autoRecoveryEnabled) {
       FlutterLog.d('Engine', 'Auto-recovery disabled');
+      return;
+    }
+
+    if (!_wasConnected) {
+      FlutterLog.d('Engine', 'Skipping auto-recovery: VPN was not successfully established before disconnection');
       return;
     }
 
@@ -317,6 +340,8 @@ class GuarchEngine {
           config['configJson'] as String,
           config['vpnModeEnabled'] as bool,
           preferIPv6: config['preferIPv6'] as bool? ?? false,
+          allowedApps: List<String>.from(config['allowedApps'] ?? []),
+          disallowedApps: List<String>.from(config['disallowedApps'] ?? []),
         );
       }
     });
@@ -455,7 +480,13 @@ class GuarchEngine {
     }
   }
 
-  Future<bool> connectWithConfig(String configJson, bool vpnModeEnabled, {bool preferIPv6 = false}) async {
+  Future<bool> connectWithConfig(
+    String configJson, 
+    bool vpnModeEnabled, {
+    bool preferIPv6 = false,
+    List<String> allowedApps = const [],
+    List<String> disallowedApps = const [],
+  }) async {
     FlutterLog.d('Engine', '=== connectWithConfig() (v1.0.1) ===');
     FlutterLog.d('Engine', '  VPN Mode: $vpnModeEnabled, Prefer IPv6: $preferIPv6');
 
@@ -469,6 +500,8 @@ class GuarchEngine {
       'configJson': configJson,
       'vpnModeEnabled': vpnModeEnabled,
       'preferIPv6': preferIPv6,
+      'allowedApps': allowedApps,
+      'disallowedApps': disallowedApps,
     };
 
     try {
@@ -499,6 +532,8 @@ class GuarchEngine {
         'config': updatedConfigJson,
         'vpnMode': vpnModeEnabled,
         'preferIPv6': preferIPv6,
+        'allowedApps': allowedApps,
+        'disallowedApps': disallowedApps,
       };
 
       final result = await _channel.invokeMethod('connectWithConfig', params);
@@ -535,6 +570,7 @@ class GuarchEngine {
     _stopHealthMonitoring();
     _lastConnectionConfig = null;
     _recoveryAttempts = 0;
+    _wasConnected = false;
 
     if (!_nativeAvailable) {
       _statusController.add('disconnected');
