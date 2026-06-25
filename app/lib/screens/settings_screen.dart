@@ -773,64 +773,182 @@ class _SettingsScreenState extends State<SettingsScreen> {
   void _showAppListDialog(BuildContext context, AppProvider provider, bool isWhitelist) {
     final title = isWhitelist ? 'Allowed Apps (Whitelist)' : 'Disallowed Apps (Blacklist)';
     final currentList = isWhitelist ? provider.allowedApps : provider.disallowedApps;
-    final controller = TextEditingController(text: currentList.join(', '));
-
+    
     showDialog(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(title),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
+      builder: (ctx) {
+        return FutureBuilder<List<Map<String, String>>>(
+          future: provider.getInstalledApps(),
+          builder: (context, snapshot) {
+            if (snapshot.connectionState == ConnectionState.waiting) {
+              return const AlertDialog(
+                content: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    CircularProgressIndicator(),
+                    SizedBox(height: 16),
+                    Text('Loading installed apps...'),
+                  ],
+                ),
+              );
+            }
+
+            if (snapshot.hasError || !snapshot.hasData) {
+              return AlertDialog(
+                title: Text(title),
+                content: const Text('Failed to load installed apps on this device.'),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(context),
+                    child: const Text('OK'),
+                  ),
+                ],
+              );
+            }
+
+            final allApps = snapshot.data!;
+            return _AppSelectionDialog(
+              title: title,
+              allApps: allApps,
+              initialSelected: currentList,
+              onSave: (selected) {
+                if (isWhitelist) {
+                  provider.setAllowedApps(selected);
+                } else {
+                  provider.setDisallowedApps(selected);
+                }
+              },
+            );
+          },
+        );
+      },
+    );
+  }
+}
+
+class _AppSelectionDialog extends StatefulWidget {
+  final String title;
+  final List<Map<String, String>> allApps;
+  final List<String> initialSelected;
+  final ValueChanged<List<String>> onSave;
+
+  const _AppSelectionDialog({
+    required this.title,
+    required this.allApps,
+    required this.initialSelected,
+    required this.onSave,
+  });
+
+  @override
+  State<_AppSelectionDialog> createState() => _AppSelectionDialogState();
+}
+
+class _AppSelectionDialogState extends State<_AppSelectionDialog> {
+  late List<String> _selected;
+  String _searchQuery = '';
+  late List<Map<String, String>> _filteredApps;
+
+  @override
+  void initState() {
+    super.initState();
+    _selected = List<String>.from(widget.initialSelected);
+    _filteredApps = widget.allApps;
+  }
+
+  void _filter(String query) {
+    setState(() {
+      _searchQuery = query.trim().toLowerCase();
+      if (_searchQuery.isEmpty) {
+        _filteredApps = widget.allApps;
+      } else {
+        _filteredApps = widget.allApps.where((app) {
+          final name = app['name']?.toLowerCase() ?? '';
+          final pkg = app['packageName']?.toLowerCase() ?? '';
+          return name.contains(_searchQuery) || pkg.contains(_searchQuery);
+        }).toList();
+      }
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Text(widget.title),
+      content: SizedBox(
+        width: double.maxFinite,
+        height: 400,
+        child: Column(
           children: [
-            const Text(
-              'Enter package names separated by commas (e.g., com.google.android.youtube, com.zhiliaoapp.musically):',
-              style: TextStyle(fontSize: 12),
+            TextField(
+              decoration: const InputDecoration(
+                hintText: 'Search apps...',
+                prefixIcon: Icon(Icons.search),
+                border: OutlineInputBorder(),
+                isDense: true,
+              ),
+              onChanged: _filter,
             ),
             const SizedBox(height: 12),
-            TextField(
-              controller: controller,
-              decoration: const InputDecoration(
-                border: OutlineInputBorder(),
-                hintText: 'com.example.app1, com.example.app2',
-              ),
-              maxLines: 3,
+            Expanded(
+              child: _filteredApps.isEmpty
+                  ? const Center(child: Text('No apps found'))
+                  : ListView.builder(
+                      itemCount: _filteredApps.length,
+                      itemBuilder: (context, index) {
+                        final app = _filteredApps[index];
+                        final name = app['name'] ?? '';
+                        final pkg = app['packageName'] ?? '';
+                        final isChecked = _selected.contains(pkg);
+
+                        return CheckboxListTile(
+                          title: Text(
+                            name,
+                            style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+                          ),
+                          subtitle: Text(
+                            pkg,
+                            style: const TextStyle(fontSize: 11),
+                          ),
+                          value: isChecked,
+                          contentPadding: EdgeInsets.zero,
+                          dense: true,
+                          onChanged: (val) {
+                            setState(() {
+                              if (val == true) {
+                                _selected.add(pkg);
+                              } else {
+                                _selected.remove(pkg);
+                              }
+                            });
+                          },
+                        );
+                      },
+                    ),
             ),
           ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () {
-              if (isWhitelist) {
-                provider.setAllowedApps([]);
-              } else {
-                provider.setDisallowedApps([]);
-              }
-              Navigator.pop(ctx);
-            },
-            child: const Text('Clear All', style: TextStyle(color: Colors.red)),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () {
-              final text = controller.text.trim();
-              final apps = text.isEmpty
-                  ? <String>[]
-                  : text.split(',').map((s) => s.trim()).where((s) => s.isNotEmpty).toList();
-              if (isWhitelist) {
-                provider.setAllowedApps(apps);
-              } else {
-                provider.setDisallowedApps(apps);
-              }
-              Navigator.pop(ctx);
-            },
-            child: const Text('Save'),
-          ),
-        ],
       ),
+      actions: [
+        TextButton(
+          onPressed: () {
+            setState(() {
+              _selected.clear();
+            });
+          },
+          child: const Text('Clear All', style: TextStyle(color: Colors.red)),
+        ),
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
+        TextButton(
+          onPressed: () {
+            widget.onSave(_selected);
+            Navigator.pop(context);
+          },
+          child: const Text('Save'),
+        ),
+      ],
     );
   }
 }
