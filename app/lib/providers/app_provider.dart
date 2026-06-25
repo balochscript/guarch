@@ -1153,6 +1153,10 @@ class AppProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<List<Map<String, String>>> getInstalledApps() async {
+    return await _engine.getInstalledApps();
+  }
+
   @override
   void dispose() {
     _stopStatsTimer();
