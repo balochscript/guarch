@@ -208,11 +208,6 @@ class AppProvider extends ChangeNotifier {
     _errorSub = _engine.errorStream.listen((error) {
       FlutterLog.e('Engine', 'Error event: $error');
       _addLog('Error: $error');
-
-      if (_status == VpnStatus.connecting) {
-        _status = VpnStatus.error;
-        notifyListeners();
-      }
     });
 
     _sniSub = _engine.sniStream.listen((newSNI) {
