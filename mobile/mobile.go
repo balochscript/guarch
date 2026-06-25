@@ -64,7 +64,9 @@ type UserSettings struct {
 	WriteTimeout     int `json:"write_timeout"`
 }
 
-func SetProtectFunc(protectFd func(fd int) error) {
+type ProtectFunc func(fd int) error
+
+func SetProtectFunc(protectFd ProtectFunc) {
 	transport.ProtectSocket = protectFd
 	log.Println("[mobile] ✅ Protect function registered in transport layer")
 }
