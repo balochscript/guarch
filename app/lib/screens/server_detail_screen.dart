@@ -26,7 +26,11 @@ class _ServerDetailScreenState extends State<ServerDetailScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final server = widget.server;
+    final provider = context.watch<AppProvider>();
+    final server = provider.servers.firstWhere(
+      (s) => s.id == widget.server.id,
+      orElse: () => widget.server,
+    );
 
     return Scaffold(
       appBar: AppBar(
