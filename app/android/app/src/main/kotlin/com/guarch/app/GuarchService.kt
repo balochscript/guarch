@@ -89,6 +89,8 @@ class GuarchService : VpnService() {
                 ACTION_START -> {
                     val socksPort = intent?.getIntExtra("socks_port", 7070) ?: 7070
                     val enableIPv6 = intent?.getBooleanExtra("enable_ipv6", false) ?: false
+                    val allowedApps = intent?.getStringArrayListExtra("allowed_apps") ?: ArrayList()
+                    val disallowedApps = intent?.getStringArrayListExtra("disallowed_apps") ?: ArrayList()
                     CrashLogger.d("Service", "  socksPort=$socksPort preferIPv6=$enableIPv6 isRunning=$isRunning")
 
                     if (isRunning) {
@@ -96,7 +98,7 @@ class GuarchService : VpnService() {
                         cleanupTun()
                     }
 
-                    startVpn(socksPort, enableIPv6)
+                    startVpn(socksPort, enableIPv6, allowedApps, disallowedApps)
                 }
 
                 ACTION_UPDATE_NOTIFICATION -> {
@@ -116,7 +118,7 @@ class GuarchService : VpnService() {
         return START_STICKY
     }
 
-    private fun startVpn(socksPort: Int, enableIPv6: Boolean) {
+    private fun startVpn(socksPort: Int, enableIPv6: Boolean, allowedApps: List<String>, disallowedApps: List<String>) {
         CrashLogger.d("Service", "--- startVpn ---")
 
         try {
@@ -142,11 +144,33 @@ class GuarchService : VpnService() {
             builder.addDnsServer("8.8.8.8")
             builder.addDnsServer("1.1.1.1")
 
-            try {
-                builder.addDisallowedApplication(packageName)
-                CrashLogger.d("Service", "  S2: Excluded self from VPN ✅")
-            } catch (e: Throwable) {
-                CrashLogger.w("Service", "  S2: Could not exclude self (OK on older Android)")
+            if (allowedApps.isNotEmpty()) {
+                for (app in allowedApps) {
+                    try {
+                        builder.addAllowedApplication(app)
+                        CrashLogger.d("Service", "  S2: Added allowed app: $app")
+                    } catch (e: Exception) {
+                        CrashLogger.w("Service", "  S2: Failed to add allowed app $app: ${e.message}")
+                    }
+                }
+            } else {
+                if (disallowedApps.isNotEmpty()) {
+                    for (app in disallowedApps) {
+                        try {
+                            builder.addDisallowedApplication(app)
+                            CrashLogger.d("Service", "  S2: Excluded app: $app")
+                        } catch (e: Exception) {
+                            CrashLogger.w("Service", "  S2: Failed to exclude app $app: ${e.message}")
+                        }
+                    }
+                }
+
+                try {
+                    builder.addDisallowedApplication(packageName)
+                    CrashLogger.d("Service", "  S2: Excluded self from VPN ✅")
+                } catch (e: Throwable) {
+                    CrashLogger.w("Service", "  S2: Could not exclude self (OK on older Android)")
+                }
             }
 
             CrashLogger.d("Service", "  S2: Configuring full tunnel...")
