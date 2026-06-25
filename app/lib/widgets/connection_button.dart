@@ -91,7 +91,7 @@ class _ConnectionButtonState extends State<ConnectionButton>
     }
 
     return GestureDetector(
-      onTap: (isConnecting || isDisconnecting) ? null : widget.onTap,
+      onTap: isDisconnecting ? null : widget.onTap,
       child: AnimatedBuilder(
         animation: _controller,
         builder: (context, child) {
