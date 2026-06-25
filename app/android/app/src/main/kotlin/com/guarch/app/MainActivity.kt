@@ -43,6 +43,9 @@ class MainActivity : FlutterActivity() {
     private var goEngine: Any? = null
     private var batteryReceiver: BroadcastReceiver? = null
 
+    private var pendingAllowedApps: List<String> = emptyList()
+    private var pendingDisallowedApps: List<String> = emptyList()
+
     private var vpnAndTunStarted = false
     private var proxyOnlyStarted = false
     private var currentBatteryLevel = 100
@@ -315,6 +318,8 @@ class MainActivity : FlutterActivity() {
         val configJson = params["config"] as? String
         val vpnMode = params["vpnMode"] as? Boolean ?: true
         val preferIPv6 = params["preferIPv6"] as? Boolean ?: false
+        pendingAllowedApps = params["allowedApps"] as? List<String> ?: emptyList()
+        pendingDisallowedApps = params["disallowedApps"] as? List<String> ?: emptyList()
 
         if (configJson == null) {
             result.error("NULL_CONFIG", "Config JSON is null", null)
@@ -535,6 +540,8 @@ class MainActivity : FlutterActivity() {
                 action = GuarchService.ACTION_START
                 putExtra("socks_port", pendingSocksPort)
                 putExtra("enable_ipv6", pendingIPv6Enabled)
+                putStringArrayListExtra("allowed_apps", ArrayList(pendingAllowedApps))
+                putStringArrayListExtra("disallowed_apps", ArrayList(pendingDisallowedApps))
             }
 
             CrashLogger.d(TAG, "  Starting service with SOCKS port: $pendingSocksPort, Prefer IPv6: $pendingIPv6Enabled")
