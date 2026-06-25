@@ -106,6 +106,7 @@ class MainActivity : FlutterActivity() {
                     "setSplitTunnelMode" -> handleSetSplitTunnelMode(call.arguments, result)
                     "addSplitTunnelDomain" -> handleAddSplitTunnelDomain(call.arguments, result)
                     "getTUNStats" -> handleGetTUNStats(result)
+                    "getInstalledApps" -> getInstalledApps(result)
                     "requestVpnPermission" -> requestVpnPermission(result)
                     "testRealDelay" -> handleTestRealDelay(call.arguments, result)
                     "testConnection" -> handleTestConnection(call.arguments, result)
@@ -650,7 +651,6 @@ class MainActivity : FlutterActivity() {
                                 CrashLogger.e(TAG, "  Connection timeout (30s)")
                                 runOnUiThread {
                                     sendEvent("error", "Connection timeout")
-                                    stopVpnServiceDueToFailure()
                                 }
 
                                 try {
@@ -677,7 +677,6 @@ class MainActivity : FlutterActivity() {
                                     CrashLogger.e(TAG, "  TUN start failed", unwrapException(e))
                                     runOnUiThread {
                                         sendEvent("error", "TUN start failed: ${e.message}")
-                                        stopVpnServiceDueToFailure()
                                     }
 
                                     try {
@@ -1338,6 +1337,38 @@ class MainActivity : FlutterActivity() {
         } catch (e: Exception) {
             CrashLogger.e(TAG, "Share logs failed", e)
         }
+    }
+
+    private fun getInstalledApps(result: MethodChannel.Result) {
+        Thread {
+            try {
+                val pm = packageManager
+                val apps = pm.getInstalledPackages(0)
+                val appList = ArrayList<Map<String, Any>>()
+
+                for (pkg in apps) {
+                    val intent = pm.getLaunchIntentForPackage(pkg.packageName)
+                    if (intent != null) {
+                        val name = pkg.applicationInfo.loadLabel(pm).toString()
+                        val map = mapOf(
+                            "name" to name,
+                            "packageName" to pkg.packageName
+                        )
+                        appList.add(map)
+                    }
+                }
+
+                appList.sortBy { (it["name"] as String).lowercase() }
+
+                runOnUiThread {
+                    result.success(appList)
+                }
+            } catch (e: Throwable) {
+                runOnUiThread {
+                    result.error("ERROR", e.message ?: "Failed to get apps", null)
+                }
+            }
+        }.start()
     }
 
     override fun onDestroy() {
