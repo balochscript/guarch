@@ -17,6 +17,8 @@ class AppProvider extends ChangeNotifier {
   bool _isDarkMode = true;
   String? _activeServerId;
   List<String> _logs = [];
+  List<String> _allowedApps = [];
+  List<String> _disallowedApps = [];
   Timer? _statsTimer;
   DateTime? _connectTime;
 
@@ -97,6 +99,21 @@ class AppProvider extends ChangeNotifier {
   int get batteryLevel => _batteryLevel;
   bool get dataSaverEnabled => _dataSaverEnabled;
 
+  List<String> get allowedApps => _allowedApps;
+  List<String> get disallowedApps => _disallowedApps;
+
+  Future<void> setAllowedApps(List<String> apps) async {
+    _allowedApps = apps;
+    await _prefs.setStringList('allowed_apps', apps);
+    notifyListeners();
+  }
+
+  Future<void> setDisallowedApps(List<String> apps) async {
+    _disallowedApps = apps;
+    await _prefs.setStringList('disallowed_apps', apps);
+    notifyListeners();
+  }
+
   ServerConfig? get activeServer {
     if (_activeServerId == null) return null;
     try {
@@ -116,6 +133,9 @@ class AppProvider extends ChangeNotifier {
       _batteryLevel = _prefs.getInt('battery_level') ?? 100;
       _dataSaverEnabled = _prefs.getBool('data_saver') ?? false;
       _vpnModeEnabled = _prefs.getBool('vpn_mode_enabled') ?? true;
+
+      _allowedApps = _prefs.getStringList('allowed_apps') ?? [];
+      _disallowedApps = _prefs.getStringList('disallowed_apps') ?? [];
 
       _debugModeEnabled = _prefs.getBool('debug_mode') ?? false;
       _connectionTimeout = _prefs.getInt('connection_timeout') ?? 15;
@@ -413,6 +433,8 @@ class AppProvider extends ChangeNotifier {
         jsonEncode(configJson),
         _vpnModeEnabled,
         preferIPv6: _appSettings?.preferIPv6 ?? false,
+        allowedApps: _allowedApps,
+        disallowedApps: _disallowedApps,
       ).timeout(
         Duration(seconds: _connectionTimeout),
         onTimeout: () {
@@ -477,7 +499,7 @@ class AppProvider extends ChangeNotifier {
   void toggleConnection() {
     FlutterLog.d('Provider', 'toggleConnection (${_status.name})');
 
-    if (_status == VpnStatus.connected) {
+    if (_status == VpnStatus.connected || _status == VpnStatus.connecting) {
       disconnect();
     } else if (_status == VpnStatus.disconnected || _status == VpnStatus.error) {
       connect();
