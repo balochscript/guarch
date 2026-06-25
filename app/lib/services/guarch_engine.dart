@@ -922,6 +922,24 @@ class GuarchEngine {
     } catch (_) {}
   }
 
+  Future<List<Map<String, String>>> getInstalledApps() async {
+    if (!_nativeAvailable) return [];
+    try {
+      final List? result = await _channel.invokeMethod('getInstalledApps');
+      if (result == null) return [];
+      return result.map((item) {
+        final map = Map<String, dynamic>.from(item as Map);
+        return {
+          'name': map['name'] as String,
+          'packageName': map['packageName'] as String,
+        };
+      }).toList();
+    } catch (e) {
+      FlutterLog.e('Engine', 'getInstalledApps failed', e);
+      return [];
+    }
+  }
+
   void setAutoRecovery(bool enabled) {
     _autoRecoveryEnabled = enabled;
     FlutterLog.d('Engine', 'Auto-recovery: $enabled');
