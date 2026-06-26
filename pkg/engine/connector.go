@@ -241,6 +241,7 @@ func (c *Connector) getTransportConfig() *transport.Config {
 		FallbackOrder:    tc.FallbackOrder,
 		DialTimeout:      dialTimeout,
 		HandshakeTimeout: handshakeTimeout,
+		ServerAddress:    host,
 	}
 }
 
