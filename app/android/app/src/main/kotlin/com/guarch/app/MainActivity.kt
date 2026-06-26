@@ -651,6 +651,7 @@ class MainActivity : FlutterActivity() {
                                 CrashLogger.e(TAG, "  Connection timeout (30s)")
                                 runOnUiThread {
                                     sendEvent("error", "Connection timeout")
+                                    stopVpnServiceDueToFailure()
                                 }
 
                                 try {
@@ -677,6 +678,7 @@ class MainActivity : FlutterActivity() {
                                     CrashLogger.e(TAG, "  TUN start failed", unwrapException(e))
                                     runOnUiThread {
                                         sendEvent("error", "TUN start failed: ${e.message}")
+                                        stopVpnServiceDueToFailure()
                                     }
 
                                     try {
