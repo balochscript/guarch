@@ -85,9 +85,15 @@ func (w *WebSocketTransport) Dial(ctx context.Context) (net.Conn, error) {
 	dialer := &websocket.Dialer{
 		Proxy:            http.ProxyFromEnvironment,
 		HandshakeTimeout: handshakeTimeout,
-		NetDialContext: (&net.Dialer{
-			Timeout: dialTimeout,
-		}).DialContext,
+		NetDialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+			destAddr := addr
+			if w.config.ServerAddress != "" {
+				destAddr = net.JoinHostPort(w.config.ServerAddress, fmt.Sprintf("%d", w.config.Port))
+			}
+			return (&net.Dialer{
+				Timeout: dialTimeout,
+			}).DialContext(ctx, network, destAddr)
+		},
 	}
 	
 	if w.config.UseTLS {
