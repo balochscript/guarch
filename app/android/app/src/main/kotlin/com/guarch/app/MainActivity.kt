@@ -1351,7 +1351,7 @@ class MainActivity : FlutterActivity() {
                 for (pkg in apps) {
                     val intent = pm.getLaunchIntentForPackage(pkg.packageName)
                     if (intent != null) {
-                        val name = pkg.applicationInfo.loadLabel(pm).toString()
+                        val name = pkg.applicationInfo?.loadLabel(pm)?.toString() ?: pkg.packageName
                         val map = mapOf(
                             "name" to name,
                             "packageName" to pkg.packageName
