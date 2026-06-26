@@ -10,10 +10,13 @@ class CoverSettingsScreen extends StatelessWidget {
 
   void _onToggleCover(bool value, AppProvider provider, BuildContext context) {
     if (value && provider.globalCoverDomains.isEmpty) {
-      _showNoDomainsDialog(context, provider);
-    } else {
-      provider.toggleGlobalCover();
+      provider.setGlobalCoverDomains([
+        CoverDomain(domain: 'www.google.com', weight: 30, paths: ['/', '/search']),
+        CoverDomain(domain: 'www.microsoft.com', weight: 20, paths: ['/', '/windows']),
+        CoverDomain(domain: 'github.com', weight: 15, paths: ['/', '/explore']),
+      ]);
     }
+    provider.toggleGlobalCover();
   }
 
   void _showNoDomainsDialog(BuildContext context, AppProvider provider) {
@@ -92,22 +95,22 @@ class CoverSettingsScreen extends StatelessWidget {
                 onChanged: (value) => _onToggleCover(value, provider, context),
               ),
 
-              if (!provider.globalCoverEnabled && provider.globalCoverDomains.isEmpty) ...[
+              if (provider.globalCoverEnabled && provider.globalCoverDomains.isEmpty) ...[
                 const SizedBox(height: 16),
                 Container(
                   padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(
-                    color: Colors.orange.withOpacity(0.1),
+                    color: Colors.red.withOpacity(0.1),
                     borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: Colors.orange.withOpacity(0.3)),
+                    border: Border.all(color: Colors.red.withOpacity(0.3)),
                   ),
                   child: Row(
                     children: [
-                      const Icon(Icons.info_outline, color: Colors.orange, size: 24),
+                      const Icon(Icons.warning, color: Colors.red, size: 24),
                       const SizedBox(width: 16),
                       Expanded(
                         child: Text(
-                          'Cover Traffic is disabled because no domains are configured. Add at least one domain below to enable.',
+                          'Warning: Default hard-coded websites (Google, Microsoft, GitHub) will be used because no custom domains are configured.',
                           style: TextStyle(
                             color: textSecondary(context),
                             fontSize: 13,
@@ -241,6 +244,7 @@ class CoverSettingsScreen extends StatelessWidget {
                     ],
                   ),
                 ),
+                _buildModeInfoBox(context, provider.globalCoverMode),
 
                 const SizedBox(height: 24),
                 _sectionTitle(context, 'Traffic Obfuscation'),
@@ -918,6 +922,88 @@ class CoverSettingsScreen extends StatelessWidget {
               );
             },
             child: const Text('Reset'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildModeInfoBox(BuildContext context, String mode) {
+    String text;
+    IconData icon;
+    Color color;
+
+    switch (mode) {
+      case 'stealth':
+        text = '• High-intensity Cover Traffic (6 domains)\n'
+            '• Large random packet padding (up to 1024 bytes)\n'
+            '• High-frequency heartbeat (every 2 seconds) to mask idle times\n'
+            '• Highly effective against severe DPI, ML models, and national firewall checks, but has higher bandwidth overhead.';
+        icon = Icons.security;
+        color = Colors.blue;
+        break;
+      case 'balanced':
+        text = '• Moderate Cover Traffic (3 domains)\n'
+            '• Medium packet padding (up to 256 bytes)\n'
+            '• Medium heartbeat frequency (every 10 seconds)\n'
+            '• Recommended for general daily use. Provides excellent DPI protection with minimal impact on latency and bandwidth.';
+        icon = Icons.verified_user;
+        color = Colors.green;
+        break;
+      case 'fast':
+        text = '• Cover traffic is completely disabled\n'
+            '• Packet padding is set to zero\n'
+            '• Standard traffic shaping and heartbeat\n'
+            '• Perfect for maximum raw speed, online gaming, and downloading when severe censorship is not actively present on the network.';
+        icon = Icons.flash_on;
+        color = Colors.amber;
+        break;
+      default:
+        text = '• Adaptive mode adjusts cover traffic on the fly\n'
+            '• Matches your real data usage dynamically\n'
+            '• Saves battery when idle, increases obfuscation when actively browsing.';
+        icon = Icons.autorenew;
+        color = Colors.purple;
+        break;
+    }
+
+    return Container(
+      margin: const EdgeInsets.only(top: 12),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: color.withOpacity(0.3)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, color: color, size: 24),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '${mode.toUpperCase()} MODE DETAILS',
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 12,
+                    color: color,
+                    letterSpacing: 1.1,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  text,
+                  style: TextStyle(
+                    fontSize: 12,
+                    height: 1.4,
+                    color: textSecondary(context),
+                  ),
+                ),
+              ],
+            ),
           ),
         ],
       ),
