@@ -17,6 +17,7 @@ type Config struct {
 	DialTimeout      time.Duration
 	HandshakeTimeout time.Duration
 	DNSServers       []string
+	ServerAddress    string
 }
 
 type Transport interface {
