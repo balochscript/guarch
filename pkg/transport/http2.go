@@ -47,7 +47,11 @@ func NewHTTP2Transport(cfg *Config) *HTTP2Transport {
 				Timeout:   dialTimeout,
 				KeepAlive: 30 * time.Second,
 			}
-			conn, err := dialer.Dial(network, addr)
+			destAddr := addr
+			if cfg.ServerAddress != "" {
+				destAddr = net.JoinHostPort(cfg.ServerAddress, fmt.Sprintf("%d", cfg.Port))
+			}
+			conn, err := dialer.Dial(network, destAddr)
 			if err != nil {
 				return nil, err
 			}
