@@ -94,21 +94,41 @@ func (kp *KeyPair) SharedSecret(peerPubKey []byte) ([]byte, error) {
 	return shared, nil
 }
 
-// 🆕 NEW FUNCTION: بررسی معتبر بودن کلید عمومی
-// جلوگیری از حملات با کلیدهای all-zero یا invalid
+var lowOrderPublicKeys = [][]byte{
+	{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
+	{1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
+	{0xe0, 0xeb, 0x7a, 0x7c, 0x3b, 0x41, 0xb8, 0xae, 0x16, 0x56, 0xe3, 0xfa, 0xf1, 0x9f, 0xcb, 0x0c, 0x9a, 0xcd, 0xc7, 0xe7, 0x6b, 0xe5, 0xf6, 0xfb, 0xff, 0xed, 0x80, 0x3b, 0xff, 0xed, 0x8a, 0x00},
+	{0x5f, 0x9c, 0x95, 0xbc, 0xa3, 0x50, 0x8c, 0x24, 0xb1, 0xd0, 0xb1, 0x55, 0x9c, 0x83, 0xef, 0x5b, 0x04, 0x44, 0x5c, 0xc4, 0xbe, 0xd3, 0x9a, 0x5e, 0x8c, 0xe1, 0xd7, 0x38, 0xaf, 0xc7, 0xde, 0x00},
+	{0xec, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x7f},
+}
+
+func isKnownLowOrderPublicKey(pubKey []byte) bool {
+	for _, lo := range lowOrderPublicKeys {
+		if subtle.ConstantTimeCompare(pubKey, lo) == 1 {
+			return true
+		}
+	}
+	return false
+}
+
 func isValidPublicKey(pubKey []byte) bool {
-	// استفاده از bitwise OR برای چک all-zero (سریع‌تر از loop)
 	var accumulator byte
 	for _, b := range pubKey {
 		accumulator |= b
 	}
-	// اگه accumulator == 0 یعنی همه بایت‌ها صفر بودن
-	return accumulator != 0
+	if accumulator == 0 {
+		return false
+	}
+	if isKnownLowOrderPublicKey(pubKey) {
+		return false
+	}
+	return true
 }
 
-// 🆕 NEW FUNCTION: تشخیص low-order point
-// اگه shared secret all-zero باشه، نشانه حمله small subgroup است
 func isLowOrderPoint(point []byte) bool {
+	if len(point) == 0 {
+		return true
+	}
 	var accumulator byte
 	for _, b := range point {
 		accumulator |= b
@@ -116,22 +136,16 @@ func isLowOrderPoint(point []byte) bool {
 	return accumulator == 0
 }
 
-// DeriveKey استخراج کلید نهایی از shared secret با استفاده از HKDF - فیکس امنیتی
 func DeriveKey(sharedSecret, psk, info []byte) ([]byte, error) {
-	// فیکس 1: shared secret باید سایز درست داشته باشه
 	if len(sharedSecret) != PrivateKeySize {
 		return nil, fmt.Errorf("guarch/crypto: bad shared secret size: %d", len(sharedSecret))
 	}
-	// فیکس 2: PSK اجباری - قبلاً اگر خالی بود salt ثابت می‌ذاشت که باعث دور زدن احراز هویت می‌شد
 	if len(psk) == 0 {
 		return nil, fmt.Errorf("guarch/crypto: PSK is required, empty salt not allowed")
 	}
-	// فیکس 3: PSK خیلی کوتاه ضعیفه
 	if len(psk) < 16 {
 		return nil, fmt.Errorf("guarch/crypto: PSK too short, min 16 bytes, got %d", len(psk))
 	}
-
-	// فیکس 4: جلوگیری از weak shared secret all-zero
 	var acc byte
 	for _, b := range sharedSecret {
 		acc |= b
@@ -139,14 +153,11 @@ func DeriveKey(sharedSecret, psk, info []byte) ([]byte, error) {
 	if acc == 0 {
 		return nil, fmt.Errorf("guarch/crypto: weak shared secret (all-zero)")
 	}
-
 	hkdfReader := hkdf.New(sha256.New, sharedSecret, psk, info)
 	key := make([]byte, KeySize)
 	if _, err := io.ReadFull(hkdfReader, key); err != nil {
 		return nil, fmt.Errorf("guarch/crypto: hkdf: %w", err)
 	}
-
-	// فیکس 5: چک کلید مشتق شده ضعیف نباشه (v1.0.1 hardening)
 	var keyAcc byte
 	var allFF = true
 	for _, b := range key {
@@ -161,7 +172,6 @@ func DeriveKey(sharedSecret, psk, info []byte) ([]byte, error) {
 	if allFF {
 		return nil, fmt.Errorf("guarch/crypto: derived key is all-ones (weak)")
 	}
-
 	return key, nil
 }
 
