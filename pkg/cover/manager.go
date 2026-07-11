@@ -29,6 +29,9 @@ func cryptoRandDuration(min, max time.Duration) time.Duration {
 		return min
 	}
 	diff := int64(max - min)
+	if diff <= 0 {
+		return min
+	}
 	val, err := crand.Int(crand.Reader, big.NewInt(diff))
 	if err != nil {
 		return min
@@ -50,7 +53,6 @@ func NewManager(cfg *Config, adaptive *AdaptiveCover) *Manager {
 	if cfg == nil {
 		cfg = NewConfig()
 	}
-
 	return &Manager{
 		config:   cfg,
 		stats:    NewStats(100),
@@ -83,30 +85,27 @@ func NewManagerWithClient(cfg *Config, client *http.Client, adaptive *AdaptiveCo
 
 func (m *Manager) Start(ctx context.Context) {
 	m.mu.Lock()
-	
 	if !m.config.Enabled {
 		m.mu.Unlock()
 		log.Println("[cover] disabled in config, not starting")
 		return
 	}
-	
 	if m.running {
 		m.mu.Unlock()
 		log.Println("[cover] already running")
 		return
 	}
-	
 	m.running = true
 	m.mu.Unlock()
 
 	log.Printf("[cover] starting cover traffic with %d domains", len(m.config.Domains))
-	
+
 	if m.config.TransportHost != "" {
 		log.Printf("[cover] transport host detected: %s", m.config.TransportHost)
 		log.Println("[cover] warm-up: sending initial requests to transport host...")
 		m.warmUpTransportHost(ctx)
 	}
-	
+
 	for i, domain := range m.config.Domains {
 		m.wg.Add(1)
 		go m.domainWorker(ctx, domain, i)
@@ -117,44 +116,34 @@ func (m *Manager) warmUpTransportHost(ctx context.Context) {
 	if m.config.TransportHost == "" {
 		return
 	}
-	
 	warmupCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
-	
 	for i := 0; i < 3; i++ {
 		url := fmt.Sprintf("https://%s/", m.config.TransportHost)
-		
 		req, err := http.NewRequestWithContext(warmupCtx, "GET", url, nil)
 		if err != nil {
 			continue
 		}
-		
 		req.Header.Set("User-Agent", randomUserAgent())
 		req.Header.Set("Accept", randomAcceptHeader())
 		req.Header.Set("Accept-Language", randomAcceptLanguage())
-		
 		resp, err := m.client.Do(req)
 		if err != nil {
 			log.Printf("[cover] warm-up request %d failed: %v", i+1, err)
 			continue
 		}
-		
 		io.Copy(io.Discard, io.LimitReader(resp.Body, 4096))
 		resp.Body.Close()
-		
 		log.Printf("[cover] warm-up request %d/3 completed", i+1)
-		
 		if i < 2 {
 			time.Sleep(time.Duration(500+cryptoRandIntn(1000)) * time.Millisecond)
 		}
 	}
-	
 	log.Println("[cover] warm-up complete")
 }
 
 func (m *Manager) domainWorker(ctx context.Context, dc DomainConfig, index int) {
 	defer m.wg.Done()
-	
 	initDelay := cryptoRandDuration(0, 5*time.Second)
 	initTimer := time.NewTimer(initDelay)
 	select {
@@ -163,9 +152,7 @@ func (m *Manager) domainWorker(ctx context.Context, dc DomainConfig, index int) 
 		return
 	case <-initTimer.C:
 	}
-
 	log.Printf("[cover] worker started for %s (delayed %v)", dc.Domain, initDelay)
-
 	for {
 		select {
 		case <-ctx.Done():
@@ -173,7 +160,13 @@ func (m *Manager) domainWorker(ctx context.Context, dc DomainConfig, index int) 
 			return
 		default:
 		}
-
+		m.mu.RLock()
+		enabled := m.config.Enabled
+		running := m.running
+		m.mu.RUnlock()
+		if !enabled || !running {
+			return
+		}
 		if m.adaptive != nil {
 			activeDomains := m.adaptive.GetActiveDomains()
 			if index >= activeDomains {
@@ -187,7 +180,6 @@ func (m *Manager) domainWorker(ctx context.Context, dc DomainConfig, index int) 
 				continue
 			}
 		}
-
 		if cryptoRandIntn(100) < 5 {
 			skipTimer := time.NewTimer(cryptoRandDuration(2*time.Second, 10*time.Second))
 			select {
@@ -198,11 +190,8 @@ func (m *Manager) domainWorker(ctx context.Context, dc DomainConfig, index int) 
 			}
 			continue
 		}
-
 		m.sendRequest(ctx, dc)
-
 		interval := m.coverInterval(dc)
-
 		intervalTimer := time.NewTimer(interval)
 		select {
 		case <-ctx.Done():
@@ -215,14 +204,18 @@ func (m *Manager) domainWorker(ctx context.Context, dc DomainConfig, index int) 
 
 func (m *Manager) coverInterval(dc DomainConfig) time.Duration {
 	var min, max time.Duration
-	
 	if m.adaptive != nil {
 		min, max = m.adaptive.GetCoverInterval()
 	} else {
 		min = dc.MinInterval
 		max = dc.MaxInterval
 	}
-
+	if min <= 0 {
+		min = 2 * time.Second
+	}
+	if max <= min {
+		max = min + 5*time.Second
+	}
 	r := cryptoRandIntn(100)
 	switch {
 	case r < 15:
@@ -231,14 +224,12 @@ func (m *Manager) coverInterval(dc DomainConfig) time.Duration {
 			short = 200 * time.Millisecond
 		}
 		return cryptoRandDuration(short, min)
-		
 	case r < 25:
 		long := max * 3
 		if long > 2*time.Minute {
 			long = 2 * time.Minute
 		}
 		return cryptoRandDuration(max, long)
-		
 	default:
 		return cryptoRandDuration(min, max)
 	}
@@ -249,62 +240,73 @@ func (m *Manager) sendRequest(ctx context.Context, dc DomainConfig) {
 		m.stats.RecordError()
 		return
 	}
-
+	m.mu.RLock()
+	enabled := m.config.Enabled
+	m.mu.RUnlock()
+	if !enabled {
+		return
+	}
 	path := dc.Paths[cryptoRandIntn(len(dc.Paths))]
 	url := fmt.Sprintf("https://%s%s", dc.Domain, path)
-
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
 		m.stats.RecordError()
 		return
 	}
-
 	req.Header.Set("User-Agent", randomUserAgent())
 	req.Header.Set("Accept", randomAcceptHeader())
 	req.Header.Set("Accept-Language", randomAcceptLanguage())
 	req.Header.Set("Accept-Encoding", "gzip, deflate, br")
 	req.Header.Set("Connection", "keep-alive")
-
 	if cryptoRandIntn(100) < 20 {
 		req.Header.Set("Referer", randomReferer(dc.Domain))
 	}
-
 	if cryptoRandIntn(100) < 30 {
 		req.Header.Set("Cache-Control", "no-cache")
 	}
-
 	if cryptoRandIntn(100) < 70 {
 		req.Header.Set("Upgrade-Insecure-Requests", "1")
 	}
-
 	if cryptoRandIntn(100) < 60 {
 		req.Header.Set("Sec-Fetch-Dest", "document")
 		req.Header.Set("Sec-Fetch-Mode", "navigate")
 		req.Header.Set("Sec-Fetch-Site", "none")
 		req.Header.Set("Sec-Fetch-User", "?1")
 	}
-
 	resp, err := m.client.Do(req)
 	if err != nil {
 		m.stats.RecordError()
 		return
 	}
 	defer resp.Body.Close()
-
 	readLimit := int64(10*1024 + cryptoRandIntn(90*1024))
 	written, err := io.Copy(io.Discard, io.LimitReader(resp.Body, readLimit))
 	if err != nil {
 		m.stats.RecordError()
 		return
 	}
-
 	size := int(written)
 	m.stats.Record(size)
 	m.stats.RecordRecv(size)
 }
 
 func (m *Manager) SendOne() {
-	if len(m.config.Domains) == 0 {
+	m.mu.RLock()
+	enabled := m.config.Enabled
+	running := m.running
+	domainsLen := len(m.config.Domains)
+	m.mu.RUnlock()
+
+	if !enabled {
+		return
+	}
+	if !running {
+		return
+	}
+	if domainsLen == 0 {
+		return
+	}
+	if m.config == nil {
 		return
 	}
 	dc := m.pickDomain()
@@ -315,30 +317,29 @@ func (m *Manager) SendOne() {
 }
 
 func (m *Manager) pickDomain() *DomainConfig {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
 	if len(m.config.Domains) == 0 {
 		return nil
 	}
-
 	totalWeight := 0
 	for _, dc := range m.config.Domains {
 		totalWeight += dc.Weight
 	}
-
 	if totalWeight <= 0 {
-		dc := m.config.Domains[0]
-		return &dc
+		d := m.config.Domains[0]
+		return &d
 	}
-
 	r := cryptoRandIntn(totalWeight)
-	for _, dc := range m.config.Domains {
-		r -= dc.Weight
+	for i := range m.config.Domains {
+		r -= m.config.Domains[i].Weight
 		if r < 0 {
-			return &dc
+			d := m.config.Domains[i]
+			return &d
 		}
 	}
-
-	dc := m.config.Domains[0]
-	return &dc
+	d := m.config.Domains[0]
+	return &d
 }
 
 func (m *Manager) Stats() *Stats {
@@ -350,12 +351,14 @@ func (m *Manager) Adaptive() *AdaptiveCover {
 }
 
 func (m *Manager) Stop() {
-	m.wg.Wait()
-	
 	m.mu.Lock()
+	if !m.running {
+		m.mu.Unlock()
+		return
+	}
 	m.running = false
 	m.mu.Unlock()
-	
+	m.wg.Wait()
 	log.Println("[cover] stopped")
 }
 
