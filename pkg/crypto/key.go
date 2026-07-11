@@ -23,74 +23,55 @@ type KeyPair struct {
 	PublicKey  [PublicKeySize]byte
 }
 
-// GenerateKeyPair تولید یک جفت کلید X25519 جدید
 func GenerateKeyPair() (*KeyPair, error) {
 	kp := &KeyPair{}
-
 	if _, err := rand.Read(kp.PrivateKey[:]); err != nil {
 		return nil, fmt.Errorf("guarch/crypto: keygen: %w", err)
 	}
-
 	clampPrivateKey(&kp.PrivateKey)
-
 	pub, err := curve25519.X25519(kp.PrivateKey[:], curve25519.Basepoint)
 	if err != nil {
 		return nil, fmt.Errorf("guarch/crypto: pubkey: %w", err)
 	}
 	copy(kp.PublicKey[:], pub)
-
 	return kp, nil
 }
 
-// KeyPairFromPrivate ساخت KeyPair از کلید خصوصی موجود
 func KeyPairFromPrivate(privKey []byte) (*KeyPair, error) {
 	if len(privKey) != PrivateKeySize {
 		return nil, fmt.Errorf("guarch/crypto: bad private key size: %d", len(privKey))
 	}
-
 	kp := &KeyPair{}
 	copy(kp.PrivateKey[:], privKey)
-
 	clampPrivateKey(&kp.PrivateKey)
-
 	pub, err := curve25519.X25519(kp.PrivateKey[:], curve25519.Basepoint)
 	if err != nil {
 		return nil, fmt.Errorf("guarch/crypto: pubkey: %w", err)
 	}
 	copy(kp.PublicKey[:], pub)
-
 	return kp, nil
 }
 
-// clampPrivateKey اعمال clamping استاندارد X25519
 func clampPrivateKey(key *[PrivateKeySize]byte) {
 	key[0] &= 248
 	key[31] &= 127
 	key[31] |= 64
 }
 
-// SharedSecret محاسبه shared secret با کلید عمومی طرف مقابل
-// 🆕 بهبود یافته: اضافه شده validation برای جلوگیری از حملات low-order point
 func (kp *KeyPair) SharedSecret(peerPubKey []byte) ([]byte, error) {
 	if len(peerPubKey) != PublicKeySize {
 		return nil, fmt.Errorf("guarch/crypto: bad peer key size: %d", len(peerPubKey))
 	}
-
-	// 🆕 ADDED: بررسی معتبر بودن کلید عمومی طرف مقابل
 	if !isValidPublicKey(peerPubKey) {
 		return nil, fmt.Errorf("guarch/crypto: invalid peer public key")
 	}
-
 	shared, err := curve25519.X25519(kp.PrivateKey[:], peerPubKey)
 	if err != nil {
 		return nil, fmt.Errorf("guarch/crypto: x25519: %w", err)
 	}
-
-	// 🆕 IMPROVED: بررسی low-order point با روش بهینه‌تر
 	if isLowOrderPoint(shared) {
 		return nil, fmt.Errorf("guarch/crypto: low-order shared secret detected")
 	}
-
 	return shared, nil
 }
 
@@ -175,33 +156,35 @@ func DeriveKey(sharedSecret, psk, info []byte) ([]byte, error) {
 	return key, nil
 }
 
-// PublicKeyHex برگرداندن کلید عمومی به صورت hex
 func (kp *KeyPair) PublicKeyHex() string {
 	return hex.EncodeToString(kp.PublicKey[:])
 }
 
-// PrivateKeyHex برگرداندن کلید خصوصی به صورت hex
 func (kp *KeyPair) PrivateKeyHex() string {
 	return hex.EncodeToString(kp.PrivateKey[:])
 }
 
-// Zeroize پاک کردن امن کلید خصوصی از حافظه
-// 🆕 بهبود یافته: استفاده از subtle و runtime.KeepAlive
 func (kp *KeyPair) Zeroize() {
-	// استفاده از subtle.ConstantTimeCopy برای جلوگیری از timing attacks
+	for i := range kp.PrivateKey {
+		kp.PrivateKey[i] = 0
+	}
+	for i := range kp.PublicKey {
+		kp.PublicKey[i] = 0
+	}
+	runtime.KeepAlive(&kp.PrivateKey[0])
+	runtime.KeepAlive(&kp.PublicKey[0])
 	subtle.ConstantTimeCopy(1, kp.PrivateKey[:], make([]byte, PrivateKeySize))
-	
-	// 🆕 ADDED: اطمینان از اینکه کامپایلر این کد رو optimize out نمی‌کنه
-	runtime.KeepAlive(kp.PrivateKey)
+	subtle.ConstantTimeCopy(1, kp.PublicKey[:], make([]byte, PublicKeySize))
 }
 
-// ZeroizeBytes پاک کردن امن آرایه بایت از حافظه
-// 🆕 بهبود یافته: استفاده از subtle.ConstantTimeCopy
 func ZeroizeBytes(b []byte) {
 	if len(b) == 0 {
 		return
 	}
-	// استفاده از subtle برای جلوگیری از compiler optimization
-	subtle.ConstantTimeCopy(1, b, make([]byte, len(b)))
-	runtime.KeepAlive(b)
+	for i := range b {
+		b[i] = 0
+	}
+	zero := make([]byte, len(b))
+	subtle.ConstantTimeCopy(1, b, zero)
+	runtime.KeepAlive(&b[0])
 }
