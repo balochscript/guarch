@@ -615,10 +615,26 @@ func (e *Engine) connectInternal() error {
 			hysteresisDelay = 30 * time.Second
 		}
 		
+		idleThresh := cover.ParseBytesPerMin(resolvedCfg.Cover.Adaptive.IdleThreshold)
+		lightThresh := cover.ParseBytesPerMin(resolvedCfg.Cover.Adaptive.LightThreshold)
+		mediumThresh := cover.ParseBytesPerMin(resolvedCfg.Cover.Adaptive.MediumThreshold)
+		if idleThresh == 0 {
+			idleThresh = 0
+		}
+		if lightThresh == 0 {
+			lightThresh = 50_000
+		}
+		if mediumThresh == 0 {
+			mediumThresh = 500_000
+		}
 		modeCfg := &cover.ModeConfig{
 			MaxPadding:       maxPadding,
 			BatteryThreshold: batteryThreshold,
 			HysteresisDelay:  hysteresisDelay,
+			IdleThreshold:    idleThresh,
+			LightThreshold:   lightThresh,
+			MediumThreshold:  mediumThresh,
+			HeavyThreshold:   5_000_000,
 		}
 		
 		log.Printf("[Engine] ModeConfig: MaxPadding=%d, BatteryThreshold=%d%%, HysteresisDelay=%v", 
@@ -718,7 +734,7 @@ func (e *Engine) connectGuarch(cfg *config.ServerConfig, coverMgr *cover.Manager
 		e.logInfo(fmt.Sprintf("Using SNI: %s", currentSNI))
 	}
 
-	if coverMgr != nil {
+	if coverMgr != nil && coverMgr.IsRunning() {
 		log.Println("[Engine] Sending initial cover request...")
 		coverMgr.SendOne()
 	}
@@ -764,7 +780,7 @@ func (e *Engine) connectGuarch(cfg *config.ServerConfig, coverMgr *cover.Manager
 	}
 	log.Println("[Engine] Handshake complete ✅")
 
-	if coverMgr != nil {
+	if coverMgr != nil && coverMgr.IsRunning() {
 		coverMgr.SendOne()
 	}
 
@@ -849,7 +865,7 @@ func (e *Engine) connectGrouk(cfg *config.ServerConfig, coverMgr *cover.Manager)
 	udpConn.SetWriteBuffer(4 * 1024 * 1024)
 	log.Println("[Engine] UDP buffers set (4MB each)")
 
-	if coverMgr != nil {
+	if coverMgr != nil && coverMgr.IsRunning() {
 		coverMgr.SendOne()
 	}
 
@@ -960,7 +976,7 @@ func (e *Engine) connectZhip(cfg *config.ServerConfig, coverMgr *cover.Manager) 
 	serverAddr := cfg.Server.Address
 	log.Printf("[Engine] Dialing QUIC server: %s", serverAddr)
 
-	if coverMgr != nil {
+	if coverMgr != nil && coverMgr.IsRunning() {
 		coverMgr.SendOne()
 	}
 
@@ -1023,7 +1039,7 @@ func (e *Engine) connectZhip(cfg *config.ServerConfig, coverMgr *cover.Manager) 
 	}
 	log.Println("[Engine] Zhip auth complete ✅")
 
-	if coverMgr != nil {
+	if coverMgr != nil && coverMgr.IsRunning() {
 		coverMgr.SendOne()
 	}
 
