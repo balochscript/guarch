@@ -424,7 +424,7 @@ class AppSettings {
   }
 
   ServerConfig applyToServer(ServerConfig server) {
-    if (server.sniDomains.isEmpty && globalSniEnabled && globalSniDomains.isNotEmpty) {
+    if (server.sniEnabled && server.sniDomains.isEmpty && globalSniEnabled && globalSniDomains.isNotEmpty) {
       server = server.copyWith(
         sniEnabled: true,
         sniMode: globalSniMode,
@@ -432,7 +432,7 @@ class AppSettings {
       );
     }
 
-    if (server.coverDomains.isEmpty && globalCoverEnabled && globalCoverDomains.isNotEmpty) {
+    if (server.coverEnabled && server.coverDomains.isEmpty && globalCoverEnabled && globalCoverDomains.isNotEmpty) {
       server = server.copyWith(
         coverEnabled: true,
         coverDomains: globalCoverDomains,
