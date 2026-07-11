@@ -15,8 +15,7 @@ const (
 	MaxPayloadSize       = 65535
 	MaxPaddingSize       = 1024
 	HeaderSize           = 18
-
-	TimestampJitterSeconds = 30 // ±30s for privacy
+	TimestampJitterSeconds = 30
 )
 
 type PacketType byte
@@ -67,17 +66,17 @@ type Packet struct {
 	Padding    []byte
 }
 
-// coarsenedTimestamp returns Unix timestamp with cryptographically secure ±30s jitter for privacy
 func coarsenedTimestamp() int64 {
 	now := time.Now().Unix()
-	
-	maxJitter := int64(2*TimestampJitterSeconds + 1) // 0-60 range
+	maxJitter := int64(2*TimestampJitterSeconds + 1)
 	jitterBig, err := rand.Int(rand.Reader, big.NewInt(maxJitter))
 	if err != nil {
-		return now // fallback to no jitter if crypto/rand fails
+		fallback := make([]byte, 8)
+		_, _ = rand.Read(fallback)
+		jitter := int64(binary.BigEndian.Uint64(fallback)%uint64(maxJitter)) - TimestampJitterSeconds
+		return now + jitter
 	}
-	
-	jitter := jitterBig.Int64() - TimestampJitterSeconds // shift to [-30, +30]
+	jitter := jitterBig.Int64() - TimestampJitterSeconds
 	return now + jitter
 }
 
@@ -99,7 +98,6 @@ func NewPaddedDataPacket(payload []byte, seqNum uint32, totalSize int) (*Packet,
 	if len(payload) > MaxPayloadSize {
 		return nil, ErrPacketTooLarge
 	}
-	
 	pkt := &Packet{
 		Version:    ProtocolVersion,
 		Type:       PacketTypeData,
@@ -108,21 +106,18 @@ func NewPaddedDataPacket(payload []byte, seqNum uint32, totalSize int) (*Packet,
 		PayloadLen: uint16(len(payload)),
 		Payload:    payload,
 	}
-	
 	currentSize := HeaderSize + len(payload)
 	if totalSize > currentSize {
 		padSize := totalSize - currentSize
 		if padSize > MaxPaddingSize {
 			padSize = MaxPaddingSize
 		}
-		
 		pkt.Padding = make([]byte, padSize)
 		if _, err := rand.Read(pkt.Padding); err != nil {
 			return nil, fmt.Errorf("guarch: generate padding: %w", err)
 		}
 		pkt.PaddingLen = uint16(padSize)
 	}
-	
 	return pkt, nil
 }
 
@@ -131,14 +126,12 @@ func NewPaddingPacket(size int, seqNum uint32) (*Packet, error) {
 		size = MaxPaddingSize
 	}
 	if size <= 0 {
-		size = 1
+		return nil, fmt.Errorf("guarch: invalid padding size: %d", size)
 	}
-	
 	padding := make([]byte, size)
 	if _, err := rand.Read(padding); err != nil {
 		return nil, fmt.Errorf("guarch: generate padding: %w", err)
 	}
-	
 	return &Packet{
 		Version:    ProtocolVersion,
 		Type:       PacketTypePadding,
@@ -180,24 +173,20 @@ func (p *Packet) Marshal() ([]byte, error) {
 	if err := p.Validate(); err != nil {
 		return nil, err
 	}
-	
 	totalSize := HeaderSize + int(p.PayloadLen) + int(p.PaddingLen)
 	buf := make([]byte, totalSize)
-	
 	buf[0] = p.Version
 	buf[1] = byte(p.Type)
 	binary.BigEndian.PutUint32(buf[2:6], p.SeqNum)
 	binary.BigEndian.PutUint64(buf[6:14], uint64(p.Timestamp))
 	binary.BigEndian.PutUint16(buf[14:16], p.PayloadLen)
 	binary.BigEndian.PutUint16(buf[16:18], p.PaddingLen)
-	
 	if p.PayloadLen > 0 {
 		copy(buf[HeaderSize:], p.Payload)
 	}
 	if p.PaddingLen > 0 {
 		copy(buf[HeaderSize+int(p.PayloadLen):], p.Padding)
 	}
-	
 	return buf, nil
 }
 
@@ -205,7 +194,6 @@ func Unmarshal(data []byte) (*Packet, error) {
 	if len(data) < HeaderSize {
 		return nil, ErrPacketTooShort
 	}
-	
 	p := &Packet{
 		Version:    data[0],
 		Type:       PacketType(data[1]),
@@ -214,19 +202,16 @@ func Unmarshal(data []byte) (*Packet, error) {
 		PayloadLen: binary.BigEndian.Uint16(data[14:16]),
 		PaddingLen: binary.BigEndian.Uint16(data[16:18]),
 	}
-
 	if p.PayloadLen > MaxPayloadSize {
 		return nil, fmt.Errorf("%w: payload %d exceeds max %d", ErrPacketTooLarge, p.PayloadLen, MaxPayloadSize)
 	}
 	if p.PaddingLen > MaxPaddingSize {
 		return nil, fmt.Errorf("%w: padding %d exceeds max %d", ErrPacketTooLarge, p.PaddingLen, MaxPaddingSize)
 	}
-
 	expectedSize := HeaderSize + int(p.PayloadLen) + int(p.PaddingLen)
 	if len(data) < expectedSize {
 		return nil, fmt.Errorf("%w: need %d got %d", ErrPacketTooShort, expectedSize, len(data))
 	}
-	
 	if p.PayloadLen > 0 {
 		p.Payload = make([]byte, p.PayloadLen)
 		copy(p.Payload, data[HeaderSize:HeaderSize+int(p.PayloadLen)])
@@ -235,11 +220,9 @@ func Unmarshal(data []byte) (*Packet, error) {
 		p.Padding = make([]byte, p.PaddingLen)
 		copy(p.Padding, data[HeaderSize+int(p.PayloadLen):expectedSize])
 	}
-	
 	if err := p.Validate(); err != nil {
 		return nil, err
 	}
-	
 	return p, nil
 }
 
@@ -248,27 +231,22 @@ func ReadPacket(r io.Reader) (*Packet, error) {
 	if _, err := io.ReadFull(r, header); err != nil {
 		return nil, fmt.Errorf("guarch: reading header: %w", err)
 	}
-	
 	payloadLen := binary.BigEndian.Uint16(header[14:16])
 	paddingLen := binary.BigEndian.Uint16(header[16:18])
-
 	if payloadLen > MaxPayloadSize {
 		return nil, fmt.Errorf("%w: payload %d exceeds max %d", ErrPacketTooLarge, payloadLen, MaxPayloadSize)
 	}
 	if paddingLen > MaxPaddingSize {
 		return nil, fmt.Errorf("%w: padding %d exceeds max %d", ErrPacketTooLarge, paddingLen, MaxPaddingSize)
 	}
-
 	bodyLen := int(payloadLen) + int(paddingLen)
 	fullPacket := make([]byte, HeaderSize+bodyLen)
 	copy(fullPacket, header)
-	
 	if bodyLen > 0 {
 		if _, err := io.ReadFull(r, fullPacket[HeaderSize:]); err != nil {
 			return nil, fmt.Errorf("guarch: reading body: %w", err)
 		}
 	}
-	
 	return Unmarshal(fullPacket)
 }
 
@@ -325,8 +303,12 @@ func (rw *ReplayWindow) Check(seqNum uint32) error {
 	rw.mu.Lock()
 	defer rw.mu.Unlock()
 
-	if rw.lastSeqNum >= rw.windowSize && seqNum < rw.lastSeqNum-rw.windowSize {
-		return fmt.Errorf("packet too old: seq=%d (current=%d)", seqNum, rw.lastSeqNum)
+	diff := int32(seqNum - rw.lastSeqNum)
+
+	if diff < 0 {
+		if int32(rw.windowSize) < -diff {
+			return fmt.Errorf("packet too old: seq=%d (current=%d)", seqNum, rw.lastSeqNum)
+		}
 	}
 
 	if rw.window[seqNum] {
@@ -335,13 +317,16 @@ func (rw *ReplayWindow) Check(seqNum uint32) error {
 
 	rw.window[seqNum] = true
 
-	if seqNum > rw.lastSeqNum {
+	if diff > 0 {
 		rw.lastSeqNum = seqNum
-
-		threshold := rw.lastSeqNum - rw.windowSize
-		for oldSeq := range rw.window {
-			if oldSeq < threshold {
-				delete(rw.window, oldSeq)
+		if uint32(len(rw.window)) > rw.windowSize*2 {
+			threshold := int32(rw.lastSeqNum - rw.windowSize)
+			if int32(rw.lastSeqNum) >= int32(rw.windowSize) {
+				for oldSeq := range rw.window {
+					if int32(oldSeq) < threshold {
+						delete(rw.window, oldSeq)
+					}
+				}
 			}
 		}
 	}
@@ -352,7 +337,6 @@ func (rw *ReplayWindow) Check(seqNum uint32) error {
 func (rw *ReplayWindow) Reset() {
 	rw.mu.Lock()
 	defer rw.mu.Unlock()
-	
 	rw.window = make(map[uint32]bool, rw.windowSize)
 	rw.lastSeqNum = 0
 }
