@@ -116,17 +116,50 @@ func isLowOrderPoint(point []byte) bool {
 	return accumulator == 0
 }
 
-// DeriveKey استخراج کلید نهایی از shared secret با استفاده از HKDF
+// DeriveKey استخراج کلید نهایی از shared secret با استفاده از HKDF - فیکس امنیتی
 func DeriveKey(sharedSecret, psk, info []byte) ([]byte, error) {
-	salt := psk
-	if len(salt) == 0 {
-		salt = []byte("guarch-default-salt-v1")
+	// فیکس 1: shared secret باید سایز درست داشته باشه
+	if len(sharedSecret) != PrivateKeySize {
+		return nil, fmt.Errorf("guarch/crypto: bad shared secret size: %d", len(sharedSecret))
+	}
+	// فیکس 2: PSK اجباری - قبلاً اگر خالی بود salt ثابت می‌ذاشت که باعث دور زدن احراز هویت می‌شد
+	if len(psk) == 0 {
+		return nil, fmt.Errorf("guarch/crypto: PSK is required, empty salt not allowed")
+	}
+	// فیکس 3: PSK خیلی کوتاه ضعیفه
+	if len(psk) < 16 {
+		return nil, fmt.Errorf("guarch/crypto: PSK too short, min 16 bytes, got %d", len(psk))
 	}
 
-	hkdfReader := hkdf.New(sha256.New, sharedSecret, salt, info)
+	// فیکس 4: جلوگیری از weak shared secret all-zero
+	var acc byte
+	for _, b := range sharedSecret {
+		acc |= b
+	}
+	if acc == 0 {
+		return nil, fmt.Errorf("guarch/crypto: weak shared secret (all-zero)")
+	}
+
+	hkdfReader := hkdf.New(sha256.New, sharedSecret, psk, info)
 	key := make([]byte, KeySize)
 	if _, err := io.ReadFull(hkdfReader, key); err != nil {
 		return nil, fmt.Errorf("guarch/crypto: hkdf: %w", err)
+	}
+
+	// فیکس 5: چک کلید مشتق شده ضعیف نباشه (v1.0.1 hardening)
+	var keyAcc byte
+	var allFF = true
+	for _, b := range key {
+		keyAcc |= b
+		if b != 0xFF {
+			allFF = false
+		}
+	}
+	if keyAcc == 0 {
+		return nil, fmt.Errorf("guarch/crypto: derived key is all-zero")
+	}
+	if allFF {
+		return nil, fmt.Errorf("guarch/crypto: derived key is all-ones (weak)")
 	}
 
 	return key, nil
