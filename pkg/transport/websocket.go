@@ -7,11 +7,12 @@ import (
 	"fmt"
 	"io"
 	"math/big"
+	mrand "math/rand"
 	"net"
 	"net/http"
 	"net/url"
 	"time"
-	
+
 	"github.com/gorilla/websocket"
 )
 
@@ -32,7 +33,8 @@ func randomUserAgent() string {
 	max := big.NewInt(int64(len(userAgents)))
 	n, err := rand.Int(rand.Reader, max)
 	if err != nil {
-		return userAgents[0]
+		mrand.Seed(time.Now().UnixNano())
+		return userAgents[mrand.Intn(len(userAgents))]
 	}
 	return userAgents[n.Int64()]
 }
@@ -53,35 +55,28 @@ func (w *WebSocketTransport) Dial(ctx context.Context) (net.Conn, error) {
 	if w.config.UseTLS {
 		scheme = "wss"
 	}
-	
 	path := w.config.Path
 	if path == "" {
 		path = "/"
 	}
-	
 	u := url.URL{
 		Scheme: scheme,
 		Host:   fmt.Sprintf("%s:%d", w.config.Host, w.config.Port),
 		Path:   path,
 	}
-	
 	headers := http.Header{}
 	headers.Set("User-Agent", randomUserAgent())
-	
 	for k, v := range w.config.Headers {
 		headers.Set(k, v)
 	}
-	
 	dialTimeout := w.config.DialTimeout
 	if dialTimeout <= 0 {
 		dialTimeout = 30 * time.Second
 	}
-	
 	handshakeTimeout := w.config.HandshakeTimeout
 	if handshakeTimeout <= 0 {
 		handshakeTimeout = 15 * time.Second
 	}
-	
 	dialer := &websocket.Dialer{
 		Proxy:            http.ProxyFromEnvironment,
 		HandshakeTimeout: handshakeTimeout,
@@ -95,22 +90,18 @@ func (w *WebSocketTransport) Dial(ctx context.Context) (net.Conn, error) {
 			}).DialContext(ctx, network, destAddr)
 		},
 	}
-	
 	if w.config.UseTLS {
 		dialer.TLSClientConfig = &tls.Config{
 			ServerName:         w.config.Host,
-			InsecureSkipVerify: true,
+			InsecureSkipVerify: false,
 			MinVersion:         tls.VersionTLS12,
 		}
 	}
-	
 	conn, _, err := dialer.DialContext(ctx, u.String(), headers)
 	if err != nil {
 		return nil, fmt.Errorf("websocket dial failed: %w", err)
 	}
-	
 	w.conn = conn
-	
 	return NewWebSocketConn(conn), nil
 }
 
@@ -135,24 +126,23 @@ func NewWebSocketConn(conn *websocket.Conn) *WebSocketConn {
 }
 
 func (wsc *WebSocketConn) Read(b []byte) (n int, err error) {
-	if wsc.reader == nil {
-		_, wsc.reader, err = wsc.conn.NextReader()
-		if err != nil {
-			return 0, err
+	for {
+		if wsc.reader == nil {
+			_, wsc.reader, err = wsc.conn.NextReader()
+			if err != nil {
+				return 0, err
+			}
 		}
-	}
-	
-	n, err = wsc.reader.Read(b)
-	if err != nil && err != io.EOF {
+		n, err = wsc.reader.Read(b)
+		if err == io.EOF {
+			wsc.reader = nil
+			if n > 0 {
+				return n, nil
+			}
+			continue
+		}
 		return n, err
 	}
-	if err == io.EOF {
-		wsc.reader = nil
-		if n == 0 {
-			return wsc.Read(b)
-		}
-	}
-	return n, nil
 }
 
 func (wsc *WebSocketConn) Write(b []byte) (n int, err error) {
