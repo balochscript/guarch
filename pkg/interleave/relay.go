@@ -1,28 +1,33 @@
 package interleave
 
 import (
+	"io"
 	"net"
+	"time"
 )
 
 func Relay(il *Interleaver, conn net.Conn) {
 	ch := make(chan error, 2)
 
-	// conn → interleaver
 	go func() {
 		buf := make([]byte, 32768)
 		for {
+			_ = conn.SetReadDeadline(time.Now().Add(2 * time.Minute))
 			n, err := conn.Read(buf)
 			if n > 0 {
 				il.Send(buf[:n])
 			}
 			if err != nil {
-				ch <- err
+				if err != io.EOF {
+					ch <- err
+				} else {
+					ch <- io.EOF
+				}
 				return
 			}
 		}
 	}()
 
-	// interleaver → conn
 	go func() {
 		for {
 			data, err := il.Recv()
@@ -30,6 +35,10 @@ func Relay(il *Interleaver, conn net.Conn) {
 				ch <- err
 				return
 			}
+			if len(data) == 0 {
+				continue
+			}
+			_ = conn.SetWriteDeadline(time.Now().Add(30 * time.Second))
 			if _, werr := conn.Write(data); werr != nil {
 				ch <- werr
 				return
@@ -37,11 +46,10 @@ func Relay(il *Interleaver, conn net.Conn) {
 		}
 	}()
 
-	err1 := <-ch
-	conn.Close()
-	il.Close()
-	err2 := <-ch
-
-	_ = err1
-	_ = err2
+	<-ch
+	_ = conn.Close()
+	_ = il.Close()
+	go func() {
+		<-ch
+	}()
 }
