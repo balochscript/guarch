@@ -24,7 +24,7 @@ const (
 	cmdPong  byte = 0x05
 
 	muxHeaderSize = 5
-	
+
 	DefaultMaxStreams     = 2000
 	DefaultStreamBuffer   = 1024
 	DefaultAcceptTimeout  = 5 * time.Minute
@@ -63,7 +63,6 @@ type Mux struct {
 	closeOnce sync.Once
 	sendMu    sync.Mutex
 	isServer  bool
-	
 	config       *MuxConfig
 	streamCount  atomic.Int32
 	totalStreams atomic.Uint64
@@ -77,17 +76,14 @@ func NewMux(sc *transport.SecureConn, isServer bool) *Mux {
 
 func NewMuxWithTimeouts(sc *transport.SecureConn, isServer bool, readTimeout, writeTimeout time.Duration) *Mux {
 	cfg := DefaultMuxConfig()
-	
 	if readTimeout > 0 {
 		cfg.ReadTimeout = readTimeout
 		log.Printf("[mux] custom read_timeout: %v", readTimeout)
 	}
-	
 	if writeTimeout > 0 {
 		cfg.WriteTimeout = writeTimeout
 		log.Printf("[mux] custom write_timeout: %v", writeTimeout)
 	}
-	
 	return NewMuxWithConfig(sc, isServer, cfg)
 }
 
@@ -95,19 +91,22 @@ func NewMuxWithConfig(sc *transport.SecureConn, isServer bool, cfg *MuxConfig) *
 	if cfg == nil {
 		cfg = DefaultMuxConfig()
 	}
-	
+	if cfg.StreamBuffer <= 0 {
+		cfg.StreamBuffer = DefaultStreamBuffer
+	}
+	if cfg.MaxStreams <= 0 {
+		cfg.MaxStreams = DefaultMaxStreams
+	}
 	m := &Mux{
 		sc:       sc,
-		acceptCh: make(chan *Stream, 32),
+		acceptCh: make(chan *Stream, 128),
 		closeCh:  make(chan struct{}),
 		isServer: isServer,
 		config:   cfg,
 	}
-
 	if isServer {
 		m.nextID.Store(1_000_000_000)
 	}
-
 	go m.readLoop()
 	go m.keepAlive()
 	return m
@@ -115,20 +114,18 @@ func NewMuxWithConfig(sc *transport.SecureConn, isServer bool, cfg *MuxConfig) *
 
 func (m *Mux) readLoop() {
 	defer m.Close()
-
 	for {
 		pkt, err := m.sc.RecvPacket()
 		if err != nil {
 			log.Printf("[mux] read loop ended: %v", err)
 			return
 		}
-
 		switch pkt.Type {
 		case protocol.PacketTypePadding:
 			continue
 		case protocol.PacketTypePing:
 			pong := protocol.NewPongPacket(pkt.SeqNum)
-			m.sc.SendPacket(pong)
+			_ = m.sc.SendPacket(pong)
 			continue
 		case protocol.PacketTypePong:
 			continue
@@ -147,45 +144,42 @@ func (m *Mux) handleMuxFrame(data []byte) {
 	if len(data) < muxHeaderSize {
 		return
 	}
-
 	cmd := data[0]
 	streamID := binary.BigEndian.Uint32(data[1:5])
 	payload := data[muxHeaderSize:]
-
 	switch cmd {
 	case cmdOpen:
 		if m.streamCount.Load() >= int32(m.config.MaxStreams) {
 			log.Printf("[mux] reject stream %d: max streams reached (%d)", streamID, m.config.MaxStreams)
-			m.sendFrame(cmdClose, streamID, nil)
+			_ = m.sendFrame(cmdClose, streamID, nil)
 			return
 		}
-		
 		s := newStream(streamID, m)
 		m.streams.Store(streamID, s)
 		m.streamCount.Add(1)
 		m.totalStreams.Add(1)
-		
 		log.Printf("[mux] accepted stream %d (total: %d)", streamID, m.streamCount.Load())
-		
 		select {
 		case m.acceptCh <- s:
 		case <-m.closeCh:
+			m.streams.Delete(streamID)
+			m.streamCount.Add(-1)
 			return
-		case <-time.After(5 * time.Second):
-			log.Printf("[mux] accept queue full, dropping stream %d", streamID)
-			s.Close()
+		case <-time.After(30 * time.Second):
+			log.Printf("[mux] accept queue full for 30s, rejecting stream %d (active: %d, queue: %d)", streamID, m.streamCount.Load(), len(m.acceptCh))
+			_ = m.sendFrame(cmdClose, streamID, nil)
+			m.streams.Delete(streamID)
+			m.streamCount.Add(-1)
+			s.markClosed()
 		}
-
 	case cmdData:
 		if val, ok := m.streams.Load(streamID); ok {
 			s := val.(*Stream)
 			if !s.closed.Load() {
 				m.bytesRecv.Add(uint64(len(payload)))
 				s.bytesRecv.Add(uint64(len(payload)))
-				
 				p := make([]byte, len(payload))
 				copy(p, payload)
-				
 				select {
 				case s.readCh <- p:
 				case <-s.doneCh:
@@ -194,7 +188,6 @@ func (m *Mux) handleMuxFrame(data []byte) {
 				}
 			}
 		}
-
 	case cmdClose:
 		if val, ok := m.streams.Load(streamID); ok {
 			s := val.(*Stream)
@@ -203,10 +196,8 @@ func (m *Mux) handleMuxFrame(data []byte) {
 			m.streamCount.Add(-1)
 			log.Printf("[mux] stream %d closed by remote (remaining: %d)", streamID, m.streamCount.Load())
 		}
-
 	case cmdPing:
-		m.sendFrame(cmdPong, streamID, nil)
-
+		_ = m.sendFrame(cmdPong, streamID, nil)
 	case cmdPong:
 	}
 }
@@ -221,6 +212,7 @@ func (m *Mux) keepAlive() {
 			return
 		case <-timer.C:
 			if err := m.sendFrame(cmdPing, 0, nil); err != nil {
+				timer.Stop()
 				return
 			}
 		}
@@ -230,18 +222,15 @@ func (m *Mux) keepAlive() {
 func (m *Mux) sendFrame(cmd byte, streamID uint32, payload []byte) error {
 	m.sendMu.Lock()
 	defer m.sendMu.Unlock()
-
 	frame := make([]byte, muxHeaderSize+len(payload))
 	frame[0] = cmd
 	binary.BigEndian.PutUint32(frame[1:5], streamID)
 	if len(payload) > 0 {
 		copy(frame[muxHeaderSize:], payload)
 	}
-	
 	if cmd == cmdData {
 		m.bytesSent.Add(uint64(len(payload)))
 	}
-
 	return m.sc.Send(frame)
 }
 
@@ -255,23 +244,19 @@ func (m *Mux) OpenStreamWithTimeout(timeout time.Duration) (*Stream, error) {
 		return nil, fmt.Errorf("mux: closed")
 	default:
 	}
-	
 	if m.streamCount.Load() >= int32(m.config.MaxStreams) {
 		return nil, fmt.Errorf("mux: max streams reached (%d)", m.config.MaxStreams)
 	}
-
 	id := m.nextID.Add(1)
 	s := newStreamWithConfig(id, m, m.config)
 	m.streams.Store(id, s)
 	m.streamCount.Add(1)
 	m.totalStreams.Add(1)
-
 	if err := m.sendFrame(cmdOpen, id, nil); err != nil {
 		m.streams.Delete(id)
 		m.streamCount.Add(-1)
 		return nil, fmt.Errorf("mux: open: %w", err)
 	}
-
 	log.Printf("[mux] opened stream %d (total: %d)", id, m.streamCount.Load())
 	return s, nil
 }
@@ -298,16 +283,14 @@ func (m *Mux) Close() error {
 	m.closeOnce.Do(func() {
 		log.Printf("[mux] closing (active streams: %d)", m.streamCount.Load())
 		close(m.closeCh)
-		
 		m.streams.Range(func(key, val any) bool {
 			s := val.(*Stream)
 			s.markClosed()
 			m.streams.Delete(key)
 			return true
 		})
-		
 		m.streamCount.Store(0)
-		m.sc.Close()
+		_ = m.sc.Close()
 	})
 	return nil
 }
@@ -347,16 +330,14 @@ func (m *Mux) ListStreams() []uint32 {
 }
 
 type Stream struct {
-	id     uint32
-	mux    *Mux
-	readCh chan []byte
-	doneCh chan struct{}
-	closed atomic.Bool
-
-	readMu   sync.Mutex
-	readBuf  []byte
-	doneOnce sync.Once
-	
+	id           uint32
+	mux          *Mux
+	readCh       chan []byte
+	doneCh       chan struct{}
+	closed       atomic.Bool
+	readMu       sync.Mutex
+	readBuf      []byte
+	doneOnce     sync.Once
 	bytesSent    atomic.Uint64
 	bytesRecv    atomic.Uint64
 	created      time.Time
@@ -369,10 +350,14 @@ func newStream(id uint32, m *Mux) *Stream {
 }
 
 func newStreamWithConfig(id uint32, m *Mux, cfg *MuxConfig) *Stream {
+	bufSize := cfg.StreamBuffer
+	if bufSize <= 0 {
+		bufSize = DefaultStreamBuffer
+	}
 	return &Stream{
 		id:           id,
 		mux:          m,
-		readCh:       make(chan []byte, cfg.StreamBuffer),
+		readCh:       make(chan []byte, bufSize),
 		doneCh:       make(chan struct{}),
 		created:      time.Now(),
 		readTimeout:  cfg.ReadTimeout,
@@ -389,10 +374,8 @@ func (s *Stream) Read(p []byte) (int, error) {
 		return n, nil
 	}
 	s.readMu.Unlock()
-
 	timeout := time.NewTimer(s.readTimeout)
 	defer timeout.Stop()
-	
 	select {
 	case data, ok := <-s.readCh:
 		if !ok {
@@ -417,30 +400,24 @@ func (s *Stream) Write(p []byte) (int, error) {
 	if s.closed.Load() {
 		return 0, io.ErrClosedPipe
 	}
-
 	const maxChunk = DefaultMaxChunkSize
 	sent := 0
-
 	for sent < len(p) {
 		select {
 		case <-s.doneCh:
 			return sent, io.ErrClosedPipe
 		default:
 		}
-
 		end := sent + maxChunk
 		if end > len(p) {
 			end = len(p)
 		}
-		
 		if err := s.mux.sendFrame(cmdData, s.id, p[sent:end]); err != nil {
 			return sent, err
 		}
-		
 		s.bytesSent.Add(uint64(end - sent))
 		sent = end
 	}
-
 	return sent, nil
 }
 
@@ -448,7 +425,7 @@ func (s *Stream) Close() error {
 	if s.closed.Swap(true) {
 		return nil
 	}
-	s.mux.sendFrame(cmdClose, s.id, nil)
+	_ = s.mux.sendFrame(cmdClose, s.id, nil)
 	s.mux.streams.Delete(s.id)
 	s.mux.streamCount.Add(-1)
 	s.markClosed()
@@ -471,6 +448,9 @@ func (s *Stream) SetReadDeadline(t time.Time) error {
 		s.readTimeout = 0
 	} else {
 		s.readTimeout = time.Until(t)
+		if s.readTimeout <= 0 {
+			s.readTimeout = time.Millisecond
+		}
 	}
 	return nil
 }
@@ -480,13 +460,16 @@ func (s *Stream) SetWriteDeadline(t time.Time) error {
 		s.writeTimeout = 0
 	} else {
 		s.writeTimeout = time.Until(t)
+		if s.writeTimeout <= 0 {
+			s.writeTimeout = time.Millisecond
+		}
 	}
 	return nil
 }
 
 func (s *Stream) SetDeadline(t time.Time) error {
-	s.SetReadDeadline(t)
-	s.SetWriteDeadline(t)
+	_ = s.SetReadDeadline(t)
+	_ = s.SetWriteDeadline(t)
 	return nil
 }
 
@@ -510,7 +493,6 @@ type StreamStats struct {
 
 func RelayStream(stream *Stream, conn net.Conn) {
 	ch := make(chan error, 2)
-
 	go func() {
 		buf := make([]byte, 32768)
 		for {
@@ -527,7 +509,6 @@ func RelayStream(stream *Stream, conn net.Conn) {
 			}
 		}
 	}()
-
 	go func() {
 		buf := make([]byte, 32768)
 		for {
@@ -544,10 +525,9 @@ func RelayStream(stream *Stream, conn net.Conn) {
 			}
 		}
 	}()
-
 	<-ch
-	stream.Close()
-	conn.Close()
+	_ = stream.Close()
+	_ = conn.Close()
 	<-ch
 }
 
