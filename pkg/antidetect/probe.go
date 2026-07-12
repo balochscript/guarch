@@ -12,17 +12,24 @@ type ProbeDetector struct {
 	attempts map[string][]time.Time
 	maxRate  int
 	window   time.Duration
-	// ✅ H31: done channel
+	maxIPs   int
 	doneCh   chan struct{}
 	doneOnce sync.Once
 }
 
 func NewProbeDetector(maxRate int, window time.Duration) *ProbeDetector {
+	if maxRate <= 0 {
+		maxRate = 10
+	}
+	if window <= 0 {
+		window = time.Minute
+	}
 	pd := &ProbeDetector{
 		attempts: make(map[string][]time.Time),
 		maxRate:  maxRate,
 		window:   window,
-		doneCh:   make(chan struct{}), // ✅ H31
+		maxIPs:   10000,
+		doneCh:   make(chan struct{}),
 	}
 	go pd.cleanup()
 	return pd
@@ -33,15 +40,17 @@ func (pd *ProbeDetector) Check(addr string) bool {
 	if err != nil {
 		host = addr
 	}
-
 	pd.mu.Lock()
 	defer pd.mu.Unlock()
-
 	now := time.Now()
 	cutoff := now.Add(-pd.window)
-
-	times := pd.attempts[host]
-	valid := make([]time.Time, 0, len(times))
+	times, exists := pd.attempts[host]
+	if !exists {
+		if len(pd.attempts) >= pd.maxIPs {
+			return true
+		}
+	}
+	valid := times[:0]
 	for _, t := range times {
 		if t.After(cutoff) {
 			valid = append(valid, t)
@@ -49,20 +58,16 @@ func (pd *ProbeDetector) Check(addr string) bool {
 	}
 	valid = append(valid, now)
 	pd.attempts[host] = valid
-
 	if len(valid) > pd.maxRate {
-		log.Printf("[probe] suspicious: %s made %d attempts in %v",
-			host, len(valid), pd.window)
+		log.Printf("[probe] suspicious: %s made %d attempts in %v", host, len(valid), pd.window)
 		return true
 	}
-
 	return false
 }
 
 func (pd *ProbeDetector) cleanup() {
 	ticker := time.NewTicker(5 * time.Minute)
 	defer ticker.Stop()
-
 	for {
 		select {
 		case <-pd.doneCh:
@@ -71,7 +76,7 @@ func (pd *ProbeDetector) cleanup() {
 			pd.mu.Lock()
 			cutoff := time.Now().Add(-pd.window * 2)
 			for ip, times := range pd.attempts {
-				valid := make([]time.Time, 0)
+				valid := times[:0]
 				for _, t := range times {
 					if t.After(cutoff) {
 						valid = append(valid, t)
@@ -99,9 +104,15 @@ func (pd *ProbeDetector) AttemptCount(addr string) int {
 	if err != nil {
 		host = addr
 	}
-
 	pd.mu.Lock()
 	defer pd.mu.Unlock()
-
 	return len(pd.attempts[host])
+}
+
+func (pd *ProbeDetector) SetMaxIPs(max int) {
+	pd.mu.Lock()
+	defer pd.mu.Unlock()
+	if max > 0 {
+		pd.maxIPs = max
+	}
 }
