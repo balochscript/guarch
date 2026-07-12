@@ -79,6 +79,7 @@ type ipRateLimiter struct {
 	counts  map[string][]time.Time
 	maxRate int
 	window  time.Duration
+	maxIPs  int
 }
 
 func newIPRateLimiter(maxRate int, window time.Duration) *ipRateLimiter {
@@ -92,6 +93,7 @@ func newIPRateLimiter(maxRate int, window time.Duration) *ipRateLimiter {
 		counts:  make(map[string][]time.Time),
 		maxRate: maxRate,
 		window:  window,
+		maxIPs:  10000,
 	}
 }
 
@@ -101,6 +103,12 @@ func (rl *ipRateLimiter) Allow(ip string) bool {
 
 	now := time.Now()
 	cutoff := now.Add(-rl.window)
+
+	if _, exists := rl.counts[ip]; !exists {
+		if len(rl.counts) >= rl.maxIPs {
+			return false
+		}
+	}
 
 	times := rl.counts[ip]
 	valid := times[:0]
@@ -1020,7 +1028,10 @@ func groukAuthMAC(key []byte, role string) []byte {
 
 func generateSessionID() uint32 {
 	buf := make([]byte, 4)
-	rand.Read(buf)
+	_, err := rand.Read(buf)
+	if err != nil {
+		return uint32(time.Now().UnixNano() & 0x7fffffff)
+	}
 	id := binary.BigEndian.Uint32(buf)
 	if id == 0 {
 		id = 1
