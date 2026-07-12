@@ -129,14 +129,32 @@ func main() {
 	defer cancel()
 
 	healthCheck = health.New()
-	
-	if *enableProbe {
-		probeDetector = antidetect.NewProbeDetector(10, time.Minute)
-		log.Println("[probe] detector enabled (max: 10 attempts/min)")
+
+	probeEnabled := *enableProbe
+	maxRate := 10
+	windowSec := 60
+	if *configFile != "" {
+		if cfg.ProbeMaxRate > 0 {
+			maxRate = cfg.ProbeMaxRate
+		}
+		if cfg.ProbeWindow > 0 {
+			windowSec = cfg.ProbeWindow
+		}
+		if cfg.ProbeMaxRate > 0 || cfg.ProbeWindow > 0 {
+			probeEnabled = cfg.ProbeDetectionEnabled
+		}
 	}
-	
+	if probeEnabled {
+		probeDetector = antidetect.NewProbeDetector(maxRate, time.Duration(windowSec)*time.Second)
+		log.Printf("[probe] detector enabled (max: %d attempts/%ds)", maxRate, windowSec)
+	} else {
+		log.Println("[probe] detector disabled by config")
+	}
+
 	decoyServer = antidetect.NewDecoyServer()
-	go startDecoy(*decoyAddr)
+	if *decoyAddr != "" {
+		go startDecoy(*decoyAddr)
+	}
 
 	if *healthAddr != "" {
 		_, err := healthCheck.StartServer(*healthAddr)
