@@ -30,7 +30,6 @@ func New() *Checker {
 	}
 }
 
-// SetSNIManager تنظیم SNI manager برای نمایش آمار
 func (c *Checker) SetSNIManager(mgr interface{}) {
 	c.sniMu.Lock()
 	defer c.sniMu.Unlock()
@@ -43,7 +42,6 @@ func (c *Checker) AddBytes(n int64) { c.totalBytes.Add(n) }
 func (c *Checker) AddCoverRequest() { c.coverRequests.Add(1) }
 func (c *Checker) AddError()        { c.errors.Add(1) }
 
-// SNIStats آمار SNI rotation
 type SNIStats struct {
 	Enabled        bool            `json:"enabled"`
 	CurrentDomain  string          `json:"current_domain,omitempty"`
@@ -55,7 +53,6 @@ type SNIStats struct {
 	HealthStatus   map[string]bool `json:"health_status,omitempty"`
 }
 
-// Status ساختار وضعیت سرور (برای JSON API)
 type Status struct {
 	Status        string    `json:"status"`
 	Uptime        string    `json:"uptime"`
@@ -71,13 +68,11 @@ type Status struct {
 	SNI           *SNIStats `json:"sni,omitempty"`
 }
 
-// SNIStatsProvider interface برای type assertion
 type SNIStatsProvider interface {
 	Stats() SNIManagerStats
 	GetHealthStatus() map[string]bool
 }
 
-// SNIManagerStats ساختار آمار SNI manager
 type SNIManagerStats struct {
 	Enabled        bool
 	CurrentSNI     string
@@ -92,9 +87,7 @@ func (c *Checker) GetStatus() Status {
 	var mem runtime.MemStats
 	runtime.ReadMemStats(&mem)
 	uptime := time.Since(c.startTime)
-
 	errCount := c.errors.Load()
-
 	status := Status{
 		Status:        "running",
 		Uptime:        formatDuration(uptime),
@@ -108,18 +101,14 @@ func (c *Checker) GetStatus() Status {
 		GoRoutines:    runtime.NumGoroutine(),
 		MemoryMB:      mem.Alloc / 1024 / 1024,
 	}
-
-	// اضافه کردن SNI stats
 	c.sniMu.RLock()
 	if c.sniManager != nil {
 		if mgr, ok := c.sniManager.(SNIStatsProvider); ok {
 			stats := mgr.Stats()
-
 			lastRotation := ""
 			if !stats.LastSwitch.IsZero() {
 				lastRotation = stats.LastSwitch.Format(time.RFC3339)
 			}
-
 			status.SNI = &SNIStats{
 				Enabled:        stats.Enabled,
 				CurrentDomain:  stats.CurrentSNI,
@@ -133,7 +122,6 @@ func (c *Checker) GetStatus() Status {
 		}
 	}
 	c.sniMu.RUnlock()
-
 	return status
 }
 
@@ -145,17 +133,15 @@ func (c *Checker) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	status := c.GetStatus()
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(200)
-	json.NewEncoder(w).Encode(status)
+	_ = json.NewEncoder(w).Encode(status)
 }
 
 func (c *Checker) StartServer(addr string, authToken ...string) (*http.Server, error) {
 	mux := http.NewServeMux()
-
 	var token string
 	if len(authToken) > 0 {
 		token = authToken[0]
 	}
-
 	authMiddleware := func(next http.HandlerFunc) http.HandlerFunc {
 		return func(w http.ResponseWriter, r *http.Request) {
 			if token != "" {
@@ -168,14 +154,12 @@ func (c *Checker) StartServer(addr string, authToken ...string) (*http.Server, e
 			next(w, r)
 		}
 	}
-
 	mux.HandleFunc("/health", authMiddleware(func(w http.ResponseWriter, r *http.Request) {
 		c.ServeHTTP(w, r)
 	}))
 	mux.HandleFunc("/ping", func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte("pong"))
+		_, _ = w.Write([]byte("pong"))
 	})
-
 	server := &http.Server{
 		Addr:         addr,
 		Handler:      mux,
@@ -183,18 +167,15 @@ func (c *Checker) StartServer(addr string, authToken ...string) (*http.Server, e
 		WriteTimeout: 5 * time.Second,
 		IdleTimeout:  60 * time.Second,
 	}
-
 	ln, err := net.Listen("tcp", addr)
 	if err != nil {
 		return nil, fmt.Errorf("health: listen %s: %w", addr, err)
 	}
-
 	go func() {
 		if err := server.Serve(ln); err != nil && err != http.ErrServerClosed {
 			log.Printf("[health] server error: %v", err)
 		}
 	}()
-
 	log.Printf("[health] server started on %s", addr)
 	return server, nil
 }
