@@ -19,26 +19,28 @@ type PaddedMux struct {
 
 func NewPaddedMux(sc *transport.SecureConn, shaper *cover.Shaper, isServer bool) *PaddedMux {
 	ctx, cancel := context.WithCancel(context.Background())
-
 	pm := &PaddedMux{
 		Mux:    NewMux(sc, isServer),
 		shaper: shaper,
 		ctx:    ctx,
 		cancel: cancel,
 	}
-
 	if shaper != nil {
 		go pm.paddingLoop()
 	}
-
 	return pm
 }
 
 func (pm *PaddedMux) paddingLoop() {
 	for {
 		delay := pm.shaper.IdleDelay()
+		if delay <= 0 {
+			delay = 2 * time.Second
+		}
+		if delay > 30*time.Second {
+			delay = 30 * time.Second
+		}
 		timer := time.NewTimer(delay)
-
 		select {
 		case <-pm.ctx.Done():
 			timer.Stop()
@@ -48,7 +50,9 @@ func (pm *PaddedMux) paddingLoop() {
 			return
 		case <-timer.C:
 		}
-
+		if pm.IsClosed() {
+			return
+		}
 		if pm.shaper.ShouldSendPadding() {
 			pm.sendPaddingPacket()
 		}
@@ -57,6 +61,12 @@ func (pm *PaddedMux) paddingLoop() {
 
 func (pm *PaddedMux) sendPaddingPacket() {
 	size := pm.shaper.FragmentSize()
+	if size <= 0 {
+		size = 64
+	}
+	if size > 1024 {
+		size = 1024
+	}
 	pkt, err := protocol.NewPaddingPacket(size, 0)
 	if err != nil {
 		return
