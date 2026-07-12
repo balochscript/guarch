@@ -45,31 +45,32 @@ func (s *Shaper) getPattern() Pattern {
 }
 
 func (s *Shaper) PaddingSize(dataSize int) int {
+	if dataSize < 0 {
+		dataSize = 0
+	}
 	if s.padder != nil {
 		return s.padder.Calculate(dataSize)
 	}
-
-	targetSize := s.stats.AvgPacketSize()
+	targetSize := 0
+	if s.stats != nil {
+		targetSize = s.stats.AvgPacketSize()
+	}
 	if targetSize <= dataSize {
 		return 0
 	}
-
 	padding := targetSize - dataSize
-
 	jitter := randomInt(0, 64)
 	if randomInt(0, 2) == 0 {
 		padding += jitter
 	} else if padding > jitter {
 		padding -= jitter
 	}
-
 	if padding > 1024 {
 		padding = 1024
 	}
 	if padding < 0 {
 		padding = 0
 	}
-
 	return padding
 }
 
@@ -113,7 +114,10 @@ func (s *Shaper) IdleDelay() time.Duration {
 }
 
 func (s *Shaper) FragmentSize() int {
-	avg := s.stats.AvgPacketSize()
+	avg := 512
+	if s.stats != nil {
+		avg = s.stats.AvgPacketSize()
+	}
 	if avg < 100 {
 		avg = 512
 	}
@@ -148,10 +152,16 @@ func randomInt(min, max int) int {
 	if max <= min {
 		return min
 	}
+	if min < -1000000 || max > 1000000 {
+		return min
+	}
 	diff := max - min
+	if diff <= 0 {
+		return min
+	}
 	n, err := rand.Int(rand.Reader, big.NewInt(int64(diff)))
 	if err != nil {
-		return min
+		return min + diff/2
 	}
 	return min + int(n.Int64())
 }
