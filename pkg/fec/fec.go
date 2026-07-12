@@ -6,74 +6,83 @@ import (
 
 type FECGroup struct {
 	GroupSize int
-	packets  [][]byte
-	maxLen   int
+	packets   [][]byte
+	maxLen    int
 }
 
 func NewFECGroup(groupSize int) *FECGroup {
 	if groupSize < 2 {
 		groupSize = 4
 	}
+	if groupSize > 32 {
+		groupSize = 32
+	}
 	return &FECGroup{
 		GroupSize: groupSize,
-		packets:  make([][]byte, 0, groupSize),
+		packets:   make([][]byte, 0, groupSize),
 	}
 }
 
 func (fg *FECGroup) Add(data []byte) []byte {
+	if len(data) == 0 {
+		return nil
+	}
+	if len(data) > 65500 {
+		return nil
+	}
 	padded := make([]byte, 2+len(data))
 	binary.BigEndian.PutUint16(padded[0:2], uint16(len(data)))
 	copy(padded[2:], data)
-
 	fg.packets = append(fg.packets, padded)
 	if len(padded) > fg.maxLen {
 		fg.maxLen = len(padded)
 	}
-
 	if len(fg.packets) >= fg.GroupSize {
 		fec := fg.generateFEC()
 		fg.Reset()
 		return fec
 	}
-
 	return nil
 }
 
 func (fg *FECGroup) generateFEC() []byte {
+	if len(fg.packets) == 0 || fg.maxLen == 0 {
+		return nil
+	}
 	result := make([]byte, fg.maxLen)
-
 	for _, pkt := range fg.packets {
-		for i := 0; i < len(pkt); i++ {
+		for i := 0; i < len(pkt) && i < len(result); i++ {
 			result[i] ^= pkt[i]
 		}
 	}
-
 	return result
 }
 
 func (fg *FECGroup) Reset() {
+	for i := range fg.packets {
+		fg.packets[i] = nil
+	}
 	fg.packets = fg.packets[:0]
 	fg.maxLen = 0
 }
 
-// ═══════════════════════════════════════
-// FEC Decoder
-// ═══════════════════════════════════════
-
 type FECDecoder struct {
 	GroupSize int
-	packets  [][]byte
-	fecData  []byte
-	received int
+	packets   [][]byte
+	fecData   []byte
+	received  int
 }
 
 func NewFECDecoder(groupSize int) *FECDecoder {
 	if groupSize < 2 {
 		groupSize = 4
 	}
+	if groupSize > 32 {
+		groupSize = 32
+	}
 	return &FECDecoder{
 		GroupSize: groupSize,
-		packets:  make([][]byte, groupSize),
+		packets:   make([][]byte, groupSize),
 	}
 }
 
@@ -81,11 +90,12 @@ func (fd *FECDecoder) AddPacket(index int, data []byte) {
 	if index < 0 || index >= fd.GroupSize {
 		return
 	}
-
+	if len(data) == 0 || len(data) > 65500 {
+		return
+	}
 	padded := make([]byte, 2+len(data))
 	binary.BigEndian.PutUint16(padded[0:2], uint16(len(data)))
 	copy(padded[2:], data)
-
 	if fd.packets[index] == nil {
 		fd.received++
 	}
@@ -93,6 +103,9 @@ func (fd *FECDecoder) AddPacket(index int, data []byte) {
 }
 
 func (fd *FECDecoder) AddFEC(data []byte) {
+	if len(data) == 0 || len(data) > 100*1024 {
+		return
+	}
 	fd.fecData = make([]byte, len(data))
 	copy(fd.fecData, data)
 }
@@ -108,7 +121,6 @@ func (fd *FECDecoder) Recover() (int, []byte) {
 	if !fd.CanRecover() {
 		return -1, nil
 	}
-
 	missingIdx := -1
 	for i, p := range fd.packets {
 		if p == nil {
@@ -119,10 +131,8 @@ func (fd *FECDecoder) Recover() (int, []byte) {
 	if missingIdx < 0 {
 		return -1, nil
 	}
-
 	result := make([]byte, len(fd.fecData))
 	copy(result, fd.fecData)
-
 	for i, pkt := range fd.packets {
 		if i == missingIdx || pkt == nil {
 			continue
@@ -131,13 +141,15 @@ func (fd *FECDecoder) Recover() (int, []byte) {
 			result[j] ^= pkt[j]
 		}
 	}
-
 	if len(result) < 2 {
 		return missingIdx, nil
 	}
 	origLen := int(binary.BigEndian.Uint16(result[0:2]))
-	if origLen+2 > len(result) {
+	if origLen < 0 || origLen+2 > len(result) {
 		return missingIdx, result[2:]
+	}
+	if origLen > 65500 {
+		return -1, nil
 	}
 	return missingIdx, result[2 : 2+origLen]
 }
