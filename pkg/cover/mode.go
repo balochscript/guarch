@@ -69,7 +69,6 @@ func GetModeSettings(mode Mode) *ModeSettings {
 			IdleTraffic:      true,
 			IdleInterval:     2 * time.Second,
 		}
-
 	case ModeBalanced:
 		return &ModeSettings{
 			Mode:             ModeBalanced,
@@ -82,7 +81,6 @@ func GetModeSettings(mode Mode) *ModeSettings {
 			IdleTraffic:      true,
 			IdleInterval:     10 * time.Second,
 		}
-
 	case ModeFast:
 		return &ModeSettings{
 			Mode:             ModeFast,
@@ -93,7 +91,6 @@ func GetModeSettings(mode Mode) *ModeSettings {
 			ShapingEnabled:   false,
 			IdleTraffic:      false,
 		}
-
 	default:
 		return GetModeSettings(ModeBalanced)
 	}
@@ -103,32 +100,29 @@ func ApplyModeToConfig(cfg *Config, mode Mode) error {
 	if cfg == nil {
 		return fmt.Errorf("nil config")
 	}
-	
 	settings := GetModeSettings(mode)
-	
 	if mode == ModeFast {
 		cfg.Enabled = false
 		return nil
 	}
-	
 	if len(cfg.Domains) == 0 {
 		return fmt.Errorf("no domains in config")
 	}
-	
 	cfg.Enabled = settings.CoverEnabled
 	cfg.IdleTraffic = settings.IdleTraffic
-	
-	if settings.CoverDomainCount < len(cfg.Domains) {
+	if settings.CoverDomainCount > 0 && settings.CoverDomainCount < len(cfg.Domains) {
 		cfg.Domains = cfg.Domains[:settings.CoverDomainCount]
 	}
-	
 	if mode == ModeBalanced {
 		for i := range cfg.Domains {
-			cfg.Domains[i].MinInterval = cfg.Domains[i].MinInterval * 2
-			cfg.Domains[i].MaxInterval = cfg.Domains[i].MaxInterval * 2
+			if cfg.Domains[i].MinInterval > 0 {
+				cfg.Domains[i].MinInterval = cfg.Domains[i].MinInterval * 2
+			}
+			if cfg.Domains[i].MaxInterval > 0 {
+				cfg.Domains[i].MaxInterval = cfg.Domains[i].MaxInterval * 2
+			}
 		}
 	}
-	
 	return nil
 }
 
@@ -147,18 +141,24 @@ func GetModeConfig(mode Mode) *ModeConfig {
 
 func ModeConfigFromSettings(maxPadding, batteryThreshold, hysteresisDelay int) *ModeConfig {
 	delay := time.Duration(hysteresisDelay) * time.Second
-	if delay == 0 {
+	if delay <= 0 {
 		delay = 30 * time.Second
 	}
-
-	if maxPadding == 0 {
-		maxPadding = 256
+	if delay > 5*time.Minute {
+		delay = 5 * time.Minute
 	}
-
-	if batteryThreshold == 0 {
+	if maxPadding < 0 {
+		maxPadding = 0
+	}
+	if maxPadding > 4096 {
+		maxPadding = 4096
+	}
+	if batteryThreshold <= 0 {
 		batteryThreshold = 20
 	}
-
+	if batteryThreshold > 100 {
+		batteryThreshold = 100
+	}
 	return &ModeConfig{
 		MaxPadding:       maxPadding,
 		BatteryThreshold: batteryThreshold,
@@ -168,18 +168,14 @@ func ModeConfigFromSettings(maxPadding, batteryThreshold, hysteresisDelay int) *
 
 func ConfigForMode(mode Mode) *Config {
 	settings := GetModeSettings(mode)
-	
 	cfg := NewConfig()
 	cfg.Enabled = settings.CoverEnabled
 	cfg.IdleTraffic = settings.IdleTraffic
 	cfg.MaxConcurrent = 3
-	
 	if mode == ModeFast {
 		return cfg
 	}
-	
 	cfg.Domains = getDefaultDomainsForMode(mode)
-	
 	return cfg
 }
 
@@ -230,7 +226,6 @@ func getDefaultDomainsForMode(mode Mode) []DomainConfig {
 				MaxInterval: 20 * time.Second,
 			},
 		}
-	
 	case ModeBalanced:
 		return []DomainConfig{
 			{
@@ -255,10 +250,8 @@ func getDefaultDomainsForMode(mode Mode) []DomainConfig {
 				MaxInterval: 20 * time.Second,
 			},
 		}
-	
 	case ModeFast:
 		return []DomainConfig{}
-	
 	default:
 		return getDefaultDomainsForMode(ModeBalanced)
 	}
