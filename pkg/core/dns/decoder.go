@@ -1,4 +1,3 @@
-// pkg/core/dns/decoder.go
 package dns
 
 import (
@@ -7,70 +6,64 @@ import (
 	"strings"
 )
 
-// Decoder برای تبدیل DNS format به data
 type Decoder struct {
-	strictMode bool // اگر true باشه، validation سخت‌تر
+	strictMode bool
 }
 
-// NewDecoder ساخت decoder جدید
 func NewDecoder() *Decoder {
 	return &Decoder{
 		strictMode: false,
 	}
 }
 
-// NewStrictDecoder ساخت decoder با strict mode
 func NewStrictDecoder() *Decoder {
 	return &Decoder{
 		strictMode: true,
 	}
 }
 
-// DecodeSubdomain استخراج data از subdomain
-// Format: <session>.<seq>.<data>...
 func (d *Decoder) DecodeSubdomain(subdomain string) (*DecodedPacket, error) {
 	if subdomain == "" {
 		return nil, fmt.Errorf("dns/decoder: empty subdomain")
 	}
-	
-	// تقسیم به labels
+	if len(subdomain) > MaxDNSNameLength {
+		return nil, fmt.Errorf("dns/decoder: subdomain too long")
+	}
 	labels := strings.Split(subdomain, ".")
 	if len(labels) < 3 {
 		return nil, fmt.Errorf("dns/decoder: too few labels: %d", len(labels))
 	}
-	
-	// Label 1: Session ID (8 hex chars)
 	sessionHex := labels[0]
 	if len(sessionHex) != 8 {
 		return nil, fmt.Errorf("dns/decoder: invalid session length: %d", len(sessionHex))
 	}
-	
 	var sessionID uint32
 	if _, err := fmt.Sscanf(sessionHex, "%x", &sessionID); err != nil {
 		return nil, fmt.Errorf("dns/decoder: parse session: %w", err)
 	}
-	
-	// Label 2: Sequence number (4 hex chars)
 	seqHex := labels[1]
 	if len(seqHex) != 4 {
 		return nil, fmt.Errorf("dns/decoder: invalid seq length: %d", len(seqHex))
 	}
-	
 	var seqNum uint32
 	if _, err := fmt.Sscanf(seqHex, "%x", &seqNum); err != nil {
 		return nil, fmt.Errorf("dns/decoder: parse seq: %w", err)
 	}
-	
-	// Labels 3+: Data (base32 encoded)
 	dataLabels := labels[2:]
+	if len(dataLabels) == 0 {
+		return nil, fmt.Errorf("dns/decoder: no data labels")
+	}
 	encoded := strings.Join(dataLabels, "")
-	
-	// Decode base32
+	if len(encoded) > 1000 {
+		return nil, fmt.Errorf("dns/decoder: encoded data too long")
+	}
 	data, err := d.decodeBase32(encoded)
 	if err != nil {
 		return nil, fmt.Errorf("dns/decoder: decode data: %w", err)
 	}
-	
+	if len(data) > 10*1024 {
+		return nil, fmt.Errorf("dns/decoder: decoded data too large")
+	}
 	return &DecodedPacket{
 		SessionID: sessionID,
 		SeqNum:    seqNum,
@@ -79,52 +72,48 @@ func (d *Decoder) DecodeSubdomain(subdomain string) (*DecodedPacket, error) {
 	}, nil
 }
 
-// decodeBase32 رمزگشایی base32
 func (d *Decoder) decodeBase32(encoded string) ([]byte, error) {
-	// تبدیل به uppercase (base32 case-insensitive)
+	if len(encoded) == 0 {
+		return nil, fmt.Errorf("dns/decoder: empty base32")
+	}
+	if len(encoded) > 2000 {
+		return nil, fmt.Errorf("dns/decoder: base32 too long")
+	}
 	encoded = strings.ToUpper(encoded)
-	
-	// Decode
 	data, err := base32.StdEncoding.WithPadding(base32.NoPadding).DecodeString(encoded)
 	if err != nil {
 		return nil, fmt.Errorf("dns/decoder: base32: %w", err)
 	}
-	
 	return data, nil
 }
 
-// DecodeTXT رمزگشایی TXT record
-// Format: <session>-<seq>-<base32data>
 func (d *Decoder) DecodeTXT(txt string) (*DecodedPacket, error) {
 	if txt == "" {
 		return nil, fmt.Errorf("dns/decoder: empty TXT")
 	}
-	
-	// تقسیم با dash
+	if len(txt) > 1000 {
+		return nil, fmt.Errorf("dns/decoder: TXT too long")
+	}
 	parts := strings.Split(txt, "-")
 	if len(parts) < 3 {
 		return nil, fmt.Errorf("dns/decoder: invalid TXT format: %d parts", len(parts))
 	}
-	
-	// Parse session ID
 	var sessionID uint32
 	if _, err := fmt.Sscanf(parts[0], "%x", &sessionID); err != nil {
 		return nil, fmt.Errorf("dns/decoder: parse session: %w", err)
 	}
-	
-	// Parse sequence number
 	var seqNum uint32
 	if _, err := fmt.Sscanf(parts[1], "%x", &seqNum); err != nil {
 		return nil, fmt.Errorf("dns/decoder: parse seq: %w", err)
 	}
-	
-	// Decode data
 	encoded := parts[2]
+	if len(encoded) > 1000 {
+		return nil, fmt.Errorf("dns/decoder: encoded part too long")
+	}
 	data, err := d.decodeBase32(encoded)
 	if err != nil {
 		return nil, fmt.Errorf("dns/decoder: decode data: %w", err)
 	}
-	
 	return &DecodedPacket{
 		SessionID: sessionID,
 		SeqNum:    seqNum,
@@ -133,63 +122,61 @@ func (d *Decoder) DecodeTXT(txt string) (*DecodedPacket, error) {
 	}, nil
 }
 
-// DecodeHandshake رمزگشایی handshake
-// Format: init.<clientID>.<publicKey>...
 func (d *Decoder) DecodeHandshake(subdomain string) (*HandshakePacket, error) {
+	if len(subdomain) > MaxDNSNameLength {
+		return nil, fmt.Errorf("dns/decoder: subdomain too long")
+	}
 	labels := strings.Split(subdomain, ".")
 	if len(labels) < 3 {
 		return nil, fmt.Errorf("dns/decoder: invalid handshake format")
 	}
-	
-	// بررسی prefix
 	if labels[0] != "init" {
 		return nil, fmt.Errorf("dns/decoder: not a handshake packet")
 	}
-	
-	// Parse client ID
 	var clientID uint32
 	if _, err := fmt.Sscanf(labels[1], "%x", &clientID); err != nil {
 		return nil, fmt.Errorf("dns/decoder: parse client ID: %w", err)
 	}
-	
-	// Decode public key
 	keyLabels := labels[2:]
+	if len(keyLabels) == 0 {
+		return nil, fmt.Errorf("dns/decoder: no key labels")
+	}
 	keyEncoded := strings.Join(keyLabels, "")
+	if len(keyEncoded) > 2000 {
+		return nil, fmt.Errorf("dns/decoder: key too long")
+	}
 	publicKey, err := d.decodeBase32(keyEncoded)
 	if err != nil {
 		return nil, fmt.Errorf("dns/decoder: decode public key: %w", err)
 	}
-	
+	if len(publicKey) > 1024 {
+		return nil, fmt.Errorf("dns/decoder: public key too large")
+	}
 	return &HandshakePacket{
 		ClientID:  clientID,
 		PublicKey: publicKey,
 	}, nil
 }
 
-// DecodeACK رمزگشایی ACK packet
-// Format: ack.<session>.<seq>
 func (d *Decoder) DecodeACK(subdomain string) (*DecodedPacket, error) {
+	if len(subdomain) > MaxDNSNameLength {
+		return nil, fmt.Errorf("dns/decoder: subdomain too long")
+	}
 	labels := strings.Split(subdomain, ".")
 	if len(labels) != 3 {
 		return nil, fmt.Errorf("dns/decoder: invalid ACK format")
 	}
-	
 	if labels[0] != "ack" {
 		return nil, fmt.Errorf("dns/decoder: not an ACK packet")
 	}
-	
-	// Parse session
 	var sessionID uint32
 	if _, err := fmt.Sscanf(labels[1], "%x", &sessionID); err != nil {
 		return nil, fmt.Errorf("dns/decoder: parse session: %w", err)
 	}
-	
-	// Parse seq
 	var seqNum uint32
 	if _, err := fmt.Sscanf(labels[2], "%x", &seqNum); err != nil {
 		return nil, fmt.Errorf("dns/decoder: parse seq: %w", err)
 	}
-	
 	return &DecodedPacket{
 		SessionID: sessionID,
 		SeqNum:    seqNum,
@@ -197,13 +184,17 @@ func (d *Decoder) DecodeACK(subdomain string) (*DecodedPacket, error) {
 	}, nil
 }
 
-// DetectPacketType تشخیص نوع packet از subdomain
 func (d *Decoder) DetectPacketType(subdomain string) PacketType {
+	if subdomain == "" {
+		return PacketTypeUnknown
+	}
+	if len(subdomain) > MaxDNSNameLength {
+		return PacketTypeUnknown
+	}
 	labels := strings.Split(subdomain, ".")
 	if len(labels) == 0 {
 		return PacketTypeUnknown
 	}
-	
 	switch labels[0] {
 	case "init":
 		return PacketTypeHandshake
@@ -216,7 +207,6 @@ func (d *Decoder) DetectPacketType(subdomain string) PacketType {
 	case "close":
 		return PacketTypeClose
 	default:
-		// اگه hex باشه، احتمالاً data packet است
 		if len(labels[0]) == 8 {
 			return PacketTypeData
 		}
@@ -224,10 +214,11 @@ func (d *Decoder) DetectPacketType(subdomain string) PacketType {
 	}
 }
 
-// DecodeAuto تشخیص خودکار نوع و decode
 func (d *Decoder) DecodeAuto(subdomain string) (interface{}, error) {
+	if len(subdomain) > MaxDNSNameLength {
+		return nil, fmt.Errorf("dns/decoder: subdomain too long")
+	}
 	pktType := d.DetectPacketType(subdomain)
-	
 	switch pktType {
 	case PacketTypeData:
 		return d.DecodeSubdomain(subdomain)
@@ -236,13 +227,12 @@ func (d *Decoder) DecodeAuto(subdomain string) (interface{}, error) {
 	case PacketTypeACK:
 		return d.DecodeACK(subdomain)
 	case PacketTypePing, PacketTypePong:
-		// ساده: فقط نوع
 		return &DecodedPacket{Type: pktType}, nil
 	case PacketTypeClose:
 		labels := strings.Split(subdomain, ".")
 		if len(labels) >= 2 {
 			var sessionID uint32
-			fmt.Sscanf(labels[1], "%x", &sessionID)
+			_, _ = fmt.Sscanf(labels[1], "%x", &sessionID)
 			return &DecodedPacket{
 				SessionID: sessionID,
 				Type:      PacketTypeClose,
@@ -254,103 +244,107 @@ func (d *Decoder) DecodeAuto(subdomain string) (interface{}, error) {
 	}
 }
 
-// DecodeWithNonce رمزگشایی data که nonce دارد
 func (d *Decoder) DecodeWithNonce(subdomain string) (*DecodedPacket, []byte, error) {
 	pkt, err := d.DecodeSubdomain(subdomain)
 	if err != nil {
 		return nil, nil, err
 	}
-	
 	if len(pkt.Data) < 4 {
 		return nil, nil, fmt.Errorf("dns/decoder: data too short for nonce")
 	}
-	
-	// استخراج nonce (4 بایت اول)
-	nonce := pkt.Data[:4]
-	data := pkt.Data[4:]
-	
+	nonce := make([]byte, 4)
+	copy(nonce, pkt.Data[:4])
+	data := make([]byte, len(pkt.Data)-4)
+	copy(data, pkt.Data[4:])
 	pkt.Data = data
 	return pkt, nonce, nil
 }
 
-// ReassembleChunks ترکیب چند chunk به یک data
 func (d *Decoder) ReassembleChunks(packets []*DecodedPacket) ([]byte, error) {
 	if len(packets) == 0 {
 		return nil, fmt.Errorf("dns/decoder: no packets")
 	}
-	
-	// مرتب‌سازی بر اساس sequence number
-	// (اینجا ساده نگه داشتم، باید با sort.Slice بشه)
-	
-	var result []byte
-	for _, pkt := range packets {
-		result = append(result, pkt.Data...)
+	if len(packets) > 1000 {
+		return nil, fmt.Errorf("dns/decoder: too many packets")
 	}
-	
+	var result []byte
+	totalLen := 0
+	for _, pkt := range packets {
+		if pkt == nil {
+			continue
+		}
+		totalLen += len(pkt.Data)
+		if totalLen > 1024*1024 {
+			return nil, fmt.Errorf("dns/decoder: reassembled too large")
+		}
+	}
+	for _, pkt := range packets {
+		if pkt != nil {
+			result = append(result, pkt.Data...)
+		}
+	}
 	return result, nil
 }
 
-// ValidatePacket بررسی معتبر بودن packet
 func (d *Decoder) ValidatePacket(pkt *DecodedPacket) error {
 	if pkt == nil {
 		return fmt.Errorf("dns/decoder: nil packet")
 	}
-	
 	if pkt.Type == PacketTypeUnknown {
 		return fmt.Errorf("dns/decoder: unknown packet type")
 	}
-	
 	if d.strictMode {
-		// بررسی‌های سخت‌تر
 		if pkt.Type == PacketTypeData && len(pkt.Data) == 0 {
 			return fmt.Errorf("dns/decoder: empty data packet")
 		}
 	}
-	
+	if len(pkt.Data) > 100*1024 {
+		return fmt.Errorf("dns/decoder: packet data too large")
+	}
 	return nil
 }
 
-// DecodeMetadata رمزگشایی metadata
 func (d *Decoder) DecodeMetadata(data []byte) (map[string]string, error) {
+	if len(data) > 10*1024 {
+		return nil, fmt.Errorf("dns/decoder: metadata too large")
+	}
 	meta := make(map[string]string)
 	offset := 0
-	
 	for offset < len(data) {
-		// خواندن key length
 		if offset >= len(data) {
 			break
 		}
 		keyLen := int(data[offset])
 		offset++
-		
-		// خواندن key
+		if keyLen == 0 || keyLen > 100 {
+			return nil, fmt.Errorf("dns/decoder: invalid key length")
+		}
 		if offset+keyLen > len(data) {
 			return nil, fmt.Errorf("dns/decoder: invalid metadata format")
 		}
 		key := string(data[offset : offset+keyLen])
 		offset += keyLen
-		
-		// خواندن value length
 		if offset >= len(data) {
 			return nil, fmt.Errorf("dns/decoder: invalid metadata format")
 		}
 		valLen := int(data[offset])
 		offset++
-		
-		// خواندن value
+		if valLen > 500 {
+			return nil, fmt.Errorf("dns/decoder: value too long")
+		}
 		if offset+valLen > len(data) {
 			return nil, fmt.Errorf("dns/decoder: invalid metadata format")
 		}
 		val := string(data[offset : offset+valLen])
 		offset += valLen
-		
 		meta[key] = val
+		if len(meta) > 100 {
+			return nil, fmt.Errorf("dns/decoder: too many metadata entries")
+		}
 	}
-	
 	return meta, nil
 }
 
-// DecodedPacket نتیجه decode
 type DecodedPacket struct {
 	SessionID uint32
 	SeqNum    uint32
@@ -358,13 +352,11 @@ type DecodedPacket struct {
 	Type      PacketType
 }
 
-// HandshakePacket packet handshake
 type HandshakePacket struct {
 	ClientID  uint32
 	PublicKey []byte
 }
 
-// PacketType نوع packet
 type PacketType int
 
 const (
