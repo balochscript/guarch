@@ -8,19 +8,6 @@ import (
 	"sync/atomic"
 )
 
-// ═══════════════════════════════════════
-// ✅ L4: Logger interface for library code
-//
-// Library packages (transport, mux, cover, ...)
-// should use this instead of standard log.Printf
-//
-// Benefits:
-//   - Callers can silence logs: log.SetOutput(io.Discard)
-//   - Callers can redirect: log.SetOutput(file)
-//   - Callers can set level: log.SetLevel(LevelError)
-//   - Tests can capture logs
-// ═══════════════════════════════════════
-
 type Level int32
 
 const (
@@ -41,46 +28,48 @@ func init() {
 	level.Store(int32(LevelInfo))
 }
 
-// SetOutput
 func SetOutput(w io.Writer) {
+	if w == nil {
+		w = os.Stderr
+	}
 	logger.SetOutput(w)
 }
 
-// SetLevel
 func SetLevel(l Level) {
+	if l < LevelDebug {
+		l = LevelDebug
+	}
+	if l > LevelNone {
+		l = LevelNone
+	}
 	level.Store(int32(l))
 }
 
-// GetLevel
 func GetLevel() Level {
 	return Level(level.Load())
 }
 
-// Silence
 func Silence() {
 	level.Store(int32(LevelNone))
 }
 
 func logf(l Level, format string, v ...any) {
+	if l < LevelDebug || l > LevelError {
+		return
+	}
 	if Level(level.Load()) > l {
+		return
+	}
+	if format == "" {
 		return
 	}
 	tag := levelTags[l]
 	msg := fmt.Sprintf(format, v...)
-	logger.Output(3, tag+" "+msg)
+	_ = logger.Output(3, tag+" "+msg)
 }
 
-// Debugf
 func Debugf(format string, v ...any) { logf(LevelDebug, format, v...) }
-
-// Infof
-func Infof(format string, v ...any) { logf(LevelInfo, format, v...) }
-
-// Warnf
-func Warnf(format string, v ...any) { logf(LevelWarn, format, v...) }
-
-// Errorf
+func Infof(format string, v ...any)  { logf(LevelInfo, format, v...) }
+func Warnf(format string, v ...any)  { logf(LevelWarn, format, v...) }
 func Errorf(format string, v ...any) { logf(LevelError, format, v...) }
-
-// Printf
 func Printf(format string, v ...any) { logf(LevelInfo, format, v...) }
