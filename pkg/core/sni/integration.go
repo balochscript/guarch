@@ -5,26 +5,23 @@ import (
 	"guarch/pkg/config"
 )
 
-// ═══════════════════════════════════════════════════════════
-// Integration با pkg/config
-// ═══════════════════════════════════════════════════════════
-
-// NewManagerFromConfig ساخت SNI manager از config.SNIConfig
 func NewManagerFromConfig(cfg *config.SNIConfig) (*Manager, error) {
 	if cfg == nil {
 		return nil, fmt.Errorf("sni: config is nil")
 	}
-	
 	if !cfg.Enabled {
-		// اگه SNI غیرفعال باشه، یک manager غیرفعال برمی‌گردونیم
 		return &Manager{
 			config: &Config{Enabled: false},
 		}, nil
 	}
-	
-	// تبدیل domains
+	if len(cfg.Domains) == 0 {
+		return nil, fmt.Errorf("sni: no domains in config")
+	}
 	domains := make([]Domain, len(cfg.Domains))
 	for i, d := range cfg.Domains {
+		if d.Domain == "" {
+			return nil, fmt.Errorf("sni: domain %d empty", i)
+		}
 		domains[i] = Domain{
 			Domain:      d.Domain,
 			Weight:      d.Weight,
@@ -33,8 +30,6 @@ func NewManagerFromConfig(cfg *config.SNIConfig) (*Manager, error) {
 			Priority:    d.Priority,
 		}
 	}
-	
-	// ساخت sni.Config
 	sniCfg := &Config{
 		Enabled:             cfg.Enabled,
 		Mode:                SelectionMode(cfg.Mode),
@@ -43,18 +38,13 @@ func NewManagerFromConfig(cfg *config.SNIConfig) (*Manager, error) {
 		HealthCheckInterval: cfg.HealthCheckInterval.Duration,
 		HealthCheckTimeout:  cfg.HealthCheckTimeout.Duration,
 	}
-	
-	// ساخت manager
 	return NewManager(sniCfg)
 }
 
-// ToConfigSNI تبدیل sni.Config به config.SNIConfig (برای export)
 func ToConfigSNI(sniCfg *Config) *config.SNIConfig {
 	if sniCfg == nil || !sniCfg.Enabled {
 		return &config.SNIConfig{Enabled: false}
 	}
-	
-	// تبدیل domains
 	domains := make([]config.SNIDomain, len(sniCfg.Domains))
 	for i, d := range sniCfg.Domains {
 		domains[i] = config.SNIDomain{
@@ -65,7 +55,6 @@ func ToConfigSNI(sniCfg *Config) *config.SNIConfig {
 			Priority:    d.Priority,
 		}
 	}
-	
 	return &config.SNIConfig{
 		Enabled:             sniCfg.Enabled,
 		Mode:                string(sniCfg.Mode),
