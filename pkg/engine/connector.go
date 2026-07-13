@@ -245,6 +245,7 @@ func (c *Connector) createFallbackConfig(transportType string) *transport.Config
 		FallbackOrder:    baseCfg.FallbackOrder,
 		DialTimeout:      baseCfg.DialTimeout,
 		HandshakeTimeout: baseCfg.HandshakeTimeout,
+		ServerAddress:    baseCfg.ServerAddress,
 	}
 }
 
