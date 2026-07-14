@@ -659,16 +659,28 @@ func relayTCP(local, remote io.ReadWriteCloser) {
 	defer local.Close()
 	defer remote.Close()
 
+	if rc, ok := remote.(interface{ SetDeadline(time.Time) error }); ok {
+		_ = rc.SetDeadline(time.Now().Add(2 * time.Minute))
+	}
+	if lc, ok := local.(interface{ SetDeadline(time.Time) error }); ok {
+		_ = lc.SetDeadline(time.Now().Add(2 * time.Minute))
+	}
+
 	done := make(chan struct{}, 2)
 
 	go func() {
 		buf := tunBufferPool.Get().([]byte)
 		defer tunBufferPool.Put(buf)
-
 		for {
+			if rc, ok := local.(interface{ SetReadDeadline(time.Time) error }); ok {
+				_ = rc.SetReadDeadline(time.Now().Add(2 * time.Minute))
+			}
 			n, err := local.Read(buf)
 			if n > 0 {
-				remote.Write(buf[:n])
+				if wc, ok := remote.(interface{ SetWriteDeadline(time.Time) error }); ok {
+					_ = wc.SetWriteDeadline(time.Now().Add(30 * time.Second))
+				}
+				_, _ = remote.Write(buf[:n])
 				tunStats.RecordTX(int64(n))
 			}
 			if err != nil {
@@ -681,11 +693,16 @@ func relayTCP(local, remote io.ReadWriteCloser) {
 	go func() {
 		buf := tunBufferPool.Get().([]byte)
 		defer tunBufferPool.Put(buf)
-
 		for {
+			if rc, ok := remote.(interface{ SetReadDeadline(time.Time) error }); ok {
+				_ = rc.SetReadDeadline(time.Now().Add(2 * time.Minute))
+			}
 			n, err := remote.Read(buf)
 			if n > 0 {
-				local.Write(buf[:n])
+				if wc, ok := local.(interface{ SetWriteDeadline(time.Time) error }); ok {
+					_ = wc.SetWriteDeadline(time.Now().Add(30 * time.Second))
+				}
+				_, _ = local.Write(buf[:n])
 				tunStats.RecordRX(int64(n))
 			}
 			if err != nil {
@@ -708,18 +725,21 @@ func relayUDP(local *gonet.UDPConn, remote net.Conn) {
 	defer local.Close()
 	defer remote.Close()
 
-	remote.SetDeadline(time.Now().Add(2 * time.Minute))
+	_ = remote.SetDeadline(time.Now().Add(2 * time.Minute))
 
 	done := make(chan struct{}, 2)
 
 	go func() {
 		buf := tunBufferPool.Get().([]byte)
 		defer tunBufferPool.Put(buf)
-
 		for {
+			if rc, ok := local.(interface{ SetReadDeadline(time.Time) error }); ok {
+				_ = rc.SetReadDeadline(time.Now().Add(2 * time.Minute))
+			}
 			n, err := local.Read(buf)
 			if n > 0 {
-				remote.Write(buf[:n])
+				_ = remote.SetWriteDeadline(time.Now().Add(30 * time.Second))
+				_, _ = remote.Write(buf[:n])
 				tunStats.RecordTX(int64(n))
 			}
 			if err != nil {
@@ -732,11 +752,14 @@ func relayUDP(local *gonet.UDPConn, remote net.Conn) {
 	go func() {
 		buf := tunBufferPool.Get().([]byte)
 		defer tunBufferPool.Put(buf)
-
 		for {
+			_ = remote.SetReadDeadline(time.Now().Add(2 * time.Minute))
 			n, err := remote.Read(buf)
 			if n > 0 {
-				local.Write(buf[:n])
+				if wc, ok := local.(interface{ SetWriteDeadline(time.Time) error }); ok {
+					_ = wc.SetWriteDeadline(time.Now().Add(30 * time.Second))
+				}
+				_, _ = local.Write(buf[:n])
 				tunStats.RecordRX(int64(n))
 			}
 			if err != nil {
