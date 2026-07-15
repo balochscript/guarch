@@ -152,8 +152,18 @@ func main() {
 	}
 
 	decoyServer = antidetect.NewDecoyServer()
-	if *decoyAddr != "" {
+	decoyEnabled := true
+	if *configFile != "" {
+		decoyEnabled = cfg.DecoyEnabled
+		if !cfg.DecoyEnabled && cfg.ProbeMaxRate == 0 && cfg.ProbeWindow == 0 {
+			decoyEnabled = true
+		}
+	}
+	if decoyEnabled && *decoyAddr != "" {
 		go startDecoy(*decoyAddr)
+		log.Printf("[decoy] server enabled on %s", *decoyAddr)
+	} else {
+		log.Println("[decoy] server disabled by config")
 	}
 
 	if *healthAddr != "" {
