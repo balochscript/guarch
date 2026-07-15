@@ -1,12 +1,8 @@
 package sni
 
 import (
-	"crypto/rand"
 	"fmt"
-	"math/big"
-	mrand "math/rand"
 	"sync/atomic"
-	"time"
 )
 
 type Selector struct {
@@ -105,22 +101,4 @@ func (s *Selector) selectSequential(domains []Domain) (string, error) {
 	}
 	idx := s.currentIndex.Add(1) % uint32(len(domains))
 	return domains[idx].Domain, nil
-}
-
-func cryptoRandInt(max int) int {
-	if max <= 0 {
-		return 0
-	}
-	if max == 1 {
-		return 0
-	}
-	if max > 1000000 {
-		max = 1000000
-	}
-	n, err := rand.Int(rand.Reader, big.NewInt(int64(max)))
-	if err != nil {
-		mrand.Seed(time.Now().UnixNano())
-		return mrand.Intn(max)
-	}
-	return int(n.Int64())
 }
