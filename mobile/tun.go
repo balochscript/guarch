@@ -733,9 +733,7 @@ func relayUDP(local *gonet.UDPConn, remote net.Conn) {
 		buf := tunBufferPool.Get().([]byte)
 		defer tunBufferPool.Put(buf)
 		for {
-			if rc, ok := local.(interface{ SetReadDeadline(time.Time) error }); ok {
-				_ = rc.SetReadDeadline(time.Now().Add(2 * time.Minute))
-			}
+			_ = local.SetReadDeadline(time.Now().Add(2 * time.Minute))
 			n, err := local.Read(buf)
 			if n > 0 {
 				_ = remote.SetWriteDeadline(time.Now().Add(30 * time.Second))
@@ -756,9 +754,7 @@ func relayUDP(local *gonet.UDPConn, remote net.Conn) {
 			_ = remote.SetReadDeadline(time.Now().Add(2 * time.Minute))
 			n, err := remote.Read(buf)
 			if n > 0 {
-				if wc, ok := local.(interface{ SetWriteDeadline(time.Time) error }); ok {
-					_ = wc.SetWriteDeadline(time.Now().Add(30 * time.Second))
-				}
+				_ = local.SetWriteDeadline(time.Now().Add(30 * time.Second))
 				_, _ = local.Write(buf[:n])
 				tunStats.RecordRX(int64(n))
 			}
