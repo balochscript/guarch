@@ -40,6 +40,10 @@ func NewConfig() *Config {
 	}
 }
 
+func DefaultConfig() *Config {
+	return ConfigForMode(ModeBalanced)
+}
+
 func (c *Config) Validate() error {
 	if !c.Enabled {
 		return nil
