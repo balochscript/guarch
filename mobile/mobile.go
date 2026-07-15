@@ -1213,9 +1213,8 @@ func (e *Engine) isConnectionHealthy() bool {
 			return false
 		}
 
-		zhipConn := *e.zhipConn
 		select {
-		case <-zhipConn.Context().Done():
+		case <-e.zhipConn.Context().Done():
 			log.Println("[Engine] Health: zhip context done ❌")
 			return false
 		default:
