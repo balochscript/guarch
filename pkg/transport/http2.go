@@ -148,10 +148,12 @@ func (h *HTTP2Transport) Dial(ctx context.Context) (net.Conn, error) {
 			Port: h.config.Port,
 		},
 	}
-	if conn.remoteAddr.IP == nil {
-		conn.remoteAddr = &net.TCPAddr{
-			IP:   net.IPv4zero,
-			Port: h.config.Port,
+	if conn.remoteAddr != nil {
+		if tcpAddr, ok := conn.remoteAddr.(*net.TCPAddr); ok && tcpAddr.IP == nil {
+			conn.remoteAddr = &net.TCPAddr{
+				IP:   net.IPv4zero,
+				Port: h.config.Port,
+			}
 		}
 	}
 	return conn, nil
