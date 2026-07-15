@@ -2,10 +2,11 @@ package sni
 
 import (
 	"context"
-	"crypto/rand"
+	cryptorand "crypto/rand"
 	"fmt"
 	"log"
 	"math/big"
+	mrand "math/rand"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -50,15 +51,22 @@ const (
 	ModeSingle     SelectionMode = "single"
 )
 
-func cryptoRandInt(n int) int {
-	if n <= 0 {
+func cryptoRandInt(max int) int {
+	if max <= 0 {
 		return 0
 	}
-	val, err := rand.Int(rand.Reader, big.NewInt(int64(n)))
+	if max == 1 {
+		return 0
+	}
+	if max > 1000000 {
+		max = 1000000
+	}
+	n, err := cryptorand.Int(cryptorand.Reader, big.NewInt(int64(max)))
 	if err != nil {
-		return 0
+		mrand.Seed(time.Now().UnixNano())
+		return mrand.Intn(max)
 	}
-	return int(val.Int64())
+	return int(n.Int64())
 }
 
 func jitteredDuration(base time.Duration) time.Duration {
