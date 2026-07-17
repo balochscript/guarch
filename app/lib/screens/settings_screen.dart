@@ -8,6 +8,7 @@ import 'package:guarch/screens/advanced_settings_screen.dart';
 import 'package:guarch/screens/sni_settings_screen.dart';
 import 'package:guarch/screens/cover_settings_screen.dart';
 import 'package:guarch/screens/dns_settings_screen.dart';
+import 'package:guarch/screens/split_tunnel_screen.dart';
 import 'package:guarch/models/connection_state.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -519,43 +520,25 @@ class _SettingsScreenState extends State<SettingsScreen> {
               const SizedBox(height: 24),
               _sectionTitle(context, 'App Split Tunneling'),
               Card(
-                child: Column(
-                  children: [
-                    ListTile(
-                      leading: Icon(Icons.apps, color: accentColor(context)),
-                      title: Text(
-                        'Allowed Apps (Whitelist)',
-                        style: TextStyle(color: textSecondary(context)),
+                child: ListTile(
+                  leading: Icon(Icons.call_split, color: accentColor(context)),
+                  title: Text(
+                    'Configure Split Tunneling',
+                    style: TextStyle(color: textSecondary(context)),
+                  ),
+                  subtitle: Text(
+                    _getSplitTunnelSummary(provider),
+                    style: TextStyle(color: textMuted(context), fontSize: 12),
+                  ),
+                  trailing: Icon(Icons.arrow_forward_ios, size: 16, color: accentColor(context)),
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => const SplitTunnelScreen(),
                       ),
-                      subtitle: Text(
-                        provider.allowedApps.isEmpty
-                            ? 'All apps are allowed (default)'
-                            : '${provider.allowedApps.length} apps selected: ${provider.allowedApps.join(", ")}',
-                        style: TextStyle(color: textMuted(context), fontSize: 12),
-                      ),
-                      trailing: Icon(Icons.edit, size: 20, color: accentColor(context)),
-                      onTap: () => _showAppListDialog(context, provider, true),
-                    ),
-                    Divider(
-                      height: 1,
-                      color: accentColor(context).withOpacity(0.1),
-                    ),
-                    ListTile(
-                      leading: Icon(Icons.block, color: accentColor(context)),
-                      title: Text(
-                        'Disallowed Apps (Blacklist)',
-                        style: TextStyle(color: textSecondary(context)),
-                      ),
-                      subtitle: Text(
-                        provider.disallowedApps.isEmpty
-                            ? 'No apps excluded'
-                            : '${provider.disallowedApps.length} apps excluded: ${provider.disallowedApps.join(", ")}',
-                        style: TextStyle(color: textMuted(context), fontSize: 12),
-                      ),
-                      trailing: Icon(Icons.edit, size: 20, color: accentColor(context)),
-                      onTap: () => _showAppListDialog(context, provider, false),
-                    ),
-                  ],
+                    );
+                  },
                 ),
               ),
 
@@ -689,6 +672,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
         );
       },
     );
+  }
+
+  String _getSplitTunnelSummary(AppProvider provider) {
+    if (provider.allowedApps.isNotEmpty) {
+      return 'Whitelist: ${provider.allowedApps.length} apps selected';
+    } else if (provider.disallowedApps.isNotEmpty) {
+      return 'Blacklist: ${provider.disallowedApps.length} apps excluded';
+    } else {
+      return 'All apps use VPN (default)';
+    }
   }
 
   Widget _sectionTitle(BuildContext context, String title) {
