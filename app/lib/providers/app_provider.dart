@@ -105,12 +105,20 @@ class AppProvider extends ChangeNotifier {
 
   Future<void> setAllowedApps(List<String> apps) async {
     _allowedApps = apps;
+    if (apps.isNotEmpty) {
+      _disallowedApps = [];
+      await _prefs.setStringList('disallowed_apps', []);
+    }
     await _prefs.setStringList('allowed_apps', apps);
     notifyListeners();
   }
 
   Future<void> setDisallowedApps(List<String> apps) async {
     _disallowedApps = apps;
+    if (apps.isNotEmpty) {
+      _allowedApps = [];
+      await _prefs.setStringList('allowed_apps', []);
+    }
     await _prefs.setStringList('disallowed_apps', apps);
     notifyListeners();
   }
