@@ -10,26 +10,33 @@ class SNISettingsScreen extends StatelessWidget {
 
   void _onToggleSni(bool value, AppProvider provider, BuildContext context) {
     if (value && provider.globalSniDomains.isEmpty) {
-      _showNoDomainsDialog(context, provider);
+      _showDefaultDomainsDialog(context, provider);
     } else {
       provider.toggleGlobalSni();
     }
   }
 
-  void _showNoDomainsDialog(BuildContext context, AppProvider provider) {
+  void _showDefaultDomainsDialog(BuildContext context, AppProvider provider) {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
         title: Row(
           children: [
-            Icon(Icons.warning_amber, color: Colors.orange, size: 28),
+            Icon(Icons.info_outline, color: Colors.blue, size: 28),
             const SizedBox(width: 12),
-            const Expanded(child: Text('No SNI Domains')),
+            const Expanded(child: Text('No SNI Domains'))
           ],
         ),
         content: const Text(
-          'SNI Protection requires at least one domain to work.\n\n'
-          'Add a domain first before enabling this feature.',
+          'No custom domains configured.\n\n'
+          'Default trusted domains will be used:\n'
+          '• www.google.com\n'
+          '• www.microsoft.com\n'
+          '• github.com\n'
+          '• stackoverflow.com\n'
+          '• www.cloudflare.com\n'
+          '• learn.microsoft.com\n\n'
+          'You can add custom domains later.',
           style: TextStyle(height: 1.4),
         ),
         actions: [
@@ -40,10 +47,18 @@ class SNISettingsScreen extends StatelessWidget {
           FilledButton.icon(
             onPressed: () {
               Navigator.pop(ctx);
-              _showAddDomainDialog(context, provider);
+              provider.setGlobalSniDomains([
+                SNIDomain(domain: 'www.google.com', weight: 30, checkHealth: true, fallback: false, priority: 1),
+                SNIDomain(domain: 'www.microsoft.com', weight: 20, checkHealth: true, fallback: false, priority: 2),
+                SNIDomain(domain: 'github.com', weight: 15, checkHealth: true, fallback: false, priority: 3),
+                SNIDomain(domain: 'stackoverflow.com', weight: 15, checkHealth: true, fallback: true, priority: 4),
+                SNIDomain(domain: 'www.cloudflare.com', weight: 10, checkHealth: true, fallback: true, priority: 5),
+                SNIDomain(domain: 'learn.microsoft.com', weight: 10, checkHealth: true, fallback: true, priority: 6),
+              ]);
+              provider.toggleGlobalSni();
             },
-            icon: const Icon(Icons.add, size: 18),
-            label: const Text('Add Domain'),
+            icon: const Icon(Icons.check, size: 18),
+            label: const Text('Use Defaults'),
           ),
         ],
       ),
@@ -79,11 +94,11 @@ class SNISettingsScreen extends StatelessWidget {
                 ),
                 subtitle: Text(
                   provider.globalSniDomains.isEmpty && !provider.globalSniEnabled
-                      ? 'Add at least one SNI domain to enable this feature'
+                      ? 'Default trusted domains will be used if enabled'
                       : 'Bypass SNI-based censorship and filtering',
                   style: TextStyle(
                     color: provider.globalSniDomains.isEmpty && !provider.globalSniEnabled
-                        ? Colors.orange
+                        ? Colors.blue
                         : textMuted(context),
                     fontSize: 13,
                   ),
@@ -97,17 +112,17 @@ class SNISettingsScreen extends StatelessWidget {
                 Container(
                   padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(
-                    color: Colors.orange.withOpacity(0.1),
+                    color: Colors.blue.withOpacity(0.1),
                     borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: Colors.orange.withOpacity(0.3)),
+                    border: Border.all(color: Colors.blue.withOpacity(0.3)),
                   ),
                   child: Row(
                     children: [
-                      const Icon(Icons.info_outline, color: Colors.orange, size: 24),
+                      const Icon(Icons.info_outline, color: Colors.blue, size: 24),
                       const SizedBox(width: 16),
                       Expanded(
                         child: Text(
-                          'SNI Protection is disabled because no domains are configured. Add at least one domain below to enable.',
+                          'You can enable SNI Protection without adding domains. Default trusted domains will be used automatically.',
                           style: TextStyle(
                             color: textSecondary(context),
                             fontSize: 13,
@@ -140,10 +155,10 @@ class SNISettingsScreen extends StatelessWidget {
                     child: Center(
                       child: Column(
                         children: [
-                          Icon(Icons.warning_amber, size: 48, color: Colors.orange),
+                          Icon(Icons.info_outline, size: 48, color: Colors.blue),
                           const SizedBox(height: 12),
                           Text(
-                            'No domains configured',
+                            'No custom domains configured',
                             style: TextStyle(
                               color: textSecondary(context),
                               fontWeight: FontWeight.w600,
@@ -152,10 +167,10 @@ class SNISettingsScreen extends StatelessWidget {
                           const SizedBox(height: 4),
                           Text(
                             provider.globalSniEnabled
-                                ? 'SNI protection is enabled but has no targets!'
-                                : 'Add at least one domain to enable SNI protection',
+                                ? 'Using default trusted domains'
+                                : 'Default domains will be used when enabled',
                             style: TextStyle(
-                              color: provider.globalSniEnabled ? Colors.red : textMuted(context),
+                              color: provider.globalSniEnabled ? Colors.blue : textMuted(context),
                               fontSize: 12,
                             ),
                           ),
