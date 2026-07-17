@@ -10,29 +10,30 @@ class CoverSettingsScreen extends StatelessWidget {
 
   void _onToggleCover(bool value, AppProvider provider, BuildContext context) {
     if (value && provider.globalCoverDomains.isEmpty) {
-      provider.setGlobalCoverDomains([
-        CoverDomain(domain: 'www.google.com', weight: 30, paths: ['/', '/search']),
-        CoverDomain(domain: 'www.microsoft.com', weight: 20, paths: ['/', '/windows']),
-        CoverDomain(domain: 'github.com', weight: 15, paths: ['/', '/explore']),
-      ]);
+      _showDefaultDomainsDialog(context, provider);
+    } else {
+      provider.toggleGlobalCover();
     }
-    provider.toggleGlobalCover();
   }
 
-  void _showNoDomainsDialog(BuildContext context, AppProvider provider) {
+  void _showDefaultDomainsDialog(BuildContext context, AppProvider provider) {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
         title: Row(
           children: [
-            Icon(Icons.warning_amber, color: Colors.orange, size: 28),
+            Icon(Icons.info_outline, color: Colors.blue, size: 28),
             const SizedBox(width: 12),
-            const Expanded(child: Text('No Cover Domains')),
+            const Expanded(child: Text('No Cover Domains'))
           ],
         ),
         content: const Text(
-          'Cover Traffic requires at least one domain to work.\n\n'
-          'Add a domain first before enabling this feature.',
+          'No custom domains configured.\n\n'
+          'Default trusted domains will be used:\n'
+          '• www.google.com\n'
+          '• www.microsoft.com\n'
+          '• github.com\n\n'
+          'You can add custom domains later.',
           style: TextStyle(height: 1.4),
         ),
         actions: [
@@ -43,10 +44,15 @@ class CoverSettingsScreen extends StatelessWidget {
           FilledButton.icon(
             onPressed: () {
               Navigator.pop(ctx);
-              _showAddDomainDialog(context, provider);
+              provider.setGlobalCoverDomains([
+                CoverDomain(domain: 'www.google.com', weight: 30, paths: ['/', '/search']),
+                CoverDomain(domain: 'www.microsoft.com', weight: 20, paths: ['/', '/windows']),
+                CoverDomain(domain: 'github.com', weight: 15, paths: ['/', '/explore']),
+              ]);
+              provider.toggleGlobalCover();
             },
-            icon: const Icon(Icons.add, size: 18),
-            label: const Text('Add Domain'),
+            icon: const Icon(Icons.check, size: 18),
+            label: const Text('Use Defaults'),
           ),
         ],
       ),
@@ -82,11 +88,11 @@ class CoverSettingsScreen extends StatelessWidget {
                 ),
                 subtitle: Text(
                   provider.globalCoverDomains.isEmpty && !provider.globalCoverEnabled
-                      ? 'Add at least one cover domain to enable this feature'
+                      ? 'Default trusted domains will be used if enabled'
                       : 'Hide real traffic patterns with decoy requests',
                   style: TextStyle(
                     color: provider.globalCoverDomains.isEmpty && !provider.globalCoverEnabled
-                        ? Colors.orange
+                        ? Colors.blue
                         : textMuted(context),
                     fontSize: 13,
                   ),
@@ -95,22 +101,22 @@ class CoverSettingsScreen extends StatelessWidget {
                 onChanged: (value) => _onToggleCover(value, provider, context),
               ),
 
-              if (provider.globalCoverEnabled && provider.globalCoverDomains.isEmpty) ...[
+              if (!provider.globalCoverEnabled && provider.globalCoverDomains.isEmpty) ...[
                 const SizedBox(height: 16),
                 Container(
                   padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(
-                    color: Colors.red.withOpacity(0.1),
+                    color: Colors.blue.withOpacity(0.1),
                     borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: Colors.red.withOpacity(0.3)),
+                    border: Border.all(color: Colors.blue.withOpacity(0.3)),
                   ),
                   child: Row(
                     children: [
-                      const Icon(Icons.warning, color: Colors.red, size: 24),
+                      const Icon(Icons.info_outline, color: Colors.blue, size: 24),
                       const SizedBox(width: 16),
                       Expanded(
                         child: Text(
-                          'Warning: Default hard-coded websites (Google, Microsoft, GitHub) will be used because no custom domains are configured.',
+                          'You can enable Cover Traffic without adding domains. Default trusted domains (Google, Microsoft, GitHub) will be used automatically.',
                           style: TextStyle(
                             color: textSecondary(context),
                             fontSize: 13,
@@ -143,10 +149,10 @@ class CoverSettingsScreen extends StatelessWidget {
                     child: Center(
                       child: Column(
                         children: [
-                          Icon(Icons.warning_amber, size: 48, color: Colors.orange),
+                          Icon(Icons.info_outline, size: 48, color: Colors.blue),
                           const SizedBox(height: 12),
                           Text(
-                            'No domains configured',
+                            'No custom domains configured',
                             style: TextStyle(
                               color: textSecondary(context),
                               fontWeight: FontWeight.w600,
@@ -155,10 +161,10 @@ class CoverSettingsScreen extends StatelessWidget {
                           const SizedBox(height: 4),
                           Text(
                             provider.globalCoverEnabled
-                                ? 'Cover traffic is enabled but has no targets!'
-                                : 'Add at least one domain to enable cover traffic',
+                                ? 'Using default trusted domains'
+                                : 'Default domains will be used when enabled',
                             style: TextStyle(
-                              color: provider.globalCoverEnabled ? Colors.red : textMuted(context),
+                              color: provider.globalCoverEnabled ? Colors.blue : textMuted(context),
                               fontSize: 12,
                             ),
                           ),
