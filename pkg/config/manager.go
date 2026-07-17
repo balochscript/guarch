@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"sync"
 	"time"
+
+	"guarch/pkg/cover"
 )
 
 type Manager struct {
@@ -329,10 +331,13 @@ func resolveCover(cfgCover *CoverConfig, userSettings *UserSettings) (*CoverConf
 		if cfgCover.Mode == "" {
 			return nil, fmt.Errorf("cover enabled but mode not specified")
 		}
-		if len(cfgCover.Domains) == 0 {
-			return nil, fmt.Errorf("cover enabled but no domains specified")
-		}
+		
 		resolved := *cfgCover
+		
+		if len(resolved.Domains) == 0 {
+			resolved.Domains = convertCoverDomainConfigs(cover.GetDefaultCoverDomains(resolved.Mode))
+		}
+		
 		for i := range resolved.Domains {
 			if resolved.Domains[i].Weight == 0 {
 				resolved.Domains[i].Weight = 10
@@ -355,15 +360,21 @@ func resolveCover(cfgCover *CoverConfig, userSettings *UserSettings) (*CoverConf
 		}
 		return &resolved, nil
 	}
-	if userSettings != nil && userSettings.GlobalCoverEnabled && len(userSettings.GlobalCoverDomains) > 0 {
+	if userSettings != nil && userSettings.GlobalCoverEnabled {
 		mode := userSettings.GlobalCoverMode
 		if mode == "" {
 			mode = "balanced"
 		}
+		
+		domains := userSettings.GlobalCoverDomains
+		if len(domains) == 0 {
+			domains = convertCoverDomainConfigs(cover.GetDefaultCoverDomains(mode))
+		}
+		
 		return &CoverConfig{
 			Enabled: true,
 			Mode:    mode,
-			Domains: userSettings.GlobalCoverDomains,
+			Domains: domains,
 			Adaptive: AdaptiveConfig{
 				Enabled:         true,
 				BatteryAware:    userSettings.GlobalBatteryAware,
@@ -374,6 +385,20 @@ func resolveCover(cfgCover *CoverConfig, userSettings *UserSettings) (*CoverConf
 		}, nil
 	}
 	return nil, nil
+}
+
+func convertCoverDomainConfigs(domains []cover.DomainConfig) []CoverDomain {
+	result := make([]CoverDomain, len(domains))
+	for i, d := range domains {
+		result[i] = CoverDomain{
+			Domain:      d.Domain,
+			Paths:       d.Paths,
+			Weight:      d.Weight,
+			IntervalMin: Duration{d.MinInterval},
+			IntervalMax: Duration{d.MaxInterval},
+		}
+	}
+	return result
 }
 
 func resolveDNS(cfgDNS *DNSConfig, userSettings *UserSettings) (*DNSConfig, error) {
