@@ -424,22 +424,46 @@ class AppSettings {
   }
 
   ServerConfig applyToServer(ServerConfig server) {
-    if (server.sniEnabled && server.sniDomains.isEmpty && globalSniEnabled && globalSniDomains.isNotEmpty) {
-      server = server.copyWith(
-        sniEnabled: true,
-        sniMode: globalSniMode,
-        sniDomains: globalSniDomains,
-      );
+    if (server.hasSniInConfig) {
+      // کانفیگ SNI section داره، از همون استفاده کن
+      if (server.sniEnabled && server.sniDomains.isEmpty && globalSniDomains.isNotEmpty) {
+        server = server.copyWith(
+          sniDomains: globalSniDomains,
+          sniMode: globalSniMode,
+        );
+      }
+    } else {
+      // کانفیگ SNI section نداره، از Global settings استفاده کن
+      if (globalSniEnabled && globalSniDomains.isNotEmpty) {
+        server = server.copyWith(
+          sniEnabled: true,
+          sniMode: globalSniMode,
+          sniDomains: globalSniDomains,
+        );
+      }
     }
 
-    if (server.coverEnabled && server.coverDomains.isEmpty && globalCoverEnabled && globalCoverDomains.isNotEmpty) {
-      server = server.copyWith(
-        coverEnabled: true,
-        coverDomains: globalCoverDomains,
-        batteryAwareEnabled: globalBatteryAware,
-        dataSaverEnabled: globalDataSaver,
-        shapingPattern: globalCoverMode,
-      );
+    if (server.hasCoverInConfig) {
+      // کانفیگ cover section داره، از همون استفاده کن
+      if (server.coverEnabled && server.coverDomains.isEmpty && globalCoverDomains.isNotEmpty) {
+        server = server.copyWith(
+          coverDomains: globalCoverDomains,
+          batteryAwareEnabled: globalBatteryAware,
+          dataSaverEnabled: globalDataSaver,
+          shapingPattern: globalCoverMode,
+        );
+      }
+    } else {
+      // کانفیگ cover section نداره، از Global settings استفاده کن
+      if (globalCoverEnabled && globalCoverDomains.isNotEmpty) {
+        server = server.copyWith(
+          coverEnabled: true,
+          coverDomains: globalCoverDomains,
+          batteryAwareEnabled: globalBatteryAware,
+          dataSaverEnabled: globalDataSaver,
+          shapingPattern: globalCoverMode,
+        );
+      }
     }
 
     if (!server.paddingEnabled && globalPaddingEnabled) {
