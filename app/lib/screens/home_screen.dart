@@ -110,7 +110,8 @@ class _HomeTab extends StatelessWidget {
                 if (status == VpnStatus.connected) ...[
                   StatsCard(stats: stats),
                   const SizedBox(height: 16),
-                  _buildEnhancedStats(context, stats, provider),
+                  if (provider.activeServer?.coverEnabled == true || stats.coverRequests > 0)
+                    _buildEnhancedStats(context, stats, provider),
                 ] else
                   const SizedBox(height: 120),
                 const SizedBox(height: 20),
