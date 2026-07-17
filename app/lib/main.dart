@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import 'package:guarch/app.dart';
 import 'package:guarch/providers/app_provider.dart';
 import 'package:guarch/services/guarch_engine.dart';
+import 'package:guarch/services/notification_service.dart';
 
 void main() {
   runZonedGuarded(() async {
@@ -19,7 +20,9 @@ void main() {
       }
     };
 
-    // ساخت Provider
+    await NotificationService().initialize();
+    FlutterLog.d('Main', 'Notification service initialized ✅');
+
     final provider = AppProvider();
 
     FlutterLog.d('Main', 'Calling provider.init()...');
@@ -39,7 +42,6 @@ void main() {
     );
     FlutterLog.d('Main', 'App running ✅');
   }, (error, stackTrace) {
-    // هر exception که catch نشه اینجا گیر میافته
     FlutterLog.e('UNCAUGHT', '$error');
     FlutterLog.e('UNCAUGHT', '$stackTrace');
   });
