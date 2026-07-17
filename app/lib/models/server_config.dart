@@ -10,9 +10,11 @@ class ServerConfig {
   String psk;
   String? certPin;
   String protocol;
+  bool hasCoverInConfig;
   bool coverEnabled;
   List<CoverDomain> coverDomains;
   
+  bool hasSniInConfig;
   bool sniEnabled;
   String sniMode;
   List<SNIDomain> sniDomains;
@@ -60,8 +62,10 @@ class ServerConfig {
     this.psk = '',
     this.certPin,
     this.protocol = 'guarch',
+    this.hasCoverInConfig = false,
     this.coverEnabled = false,
     List<CoverDomain>? coverDomains,
+    this.hasSniInConfig = false,
     this.sniEnabled = false,
     this.sniMode = 'weighted',
     List<SNIDomain>? sniDomains,
@@ -293,11 +297,13 @@ class ServerConfig {
       grouk: groukData != null ? GroukConfig.fromJson(groukData) : null,
       zhip: zhipData != null ? ZhipConfig.fromJson(zhipData) : null,
       
+      hasCoverInConfig: json.containsKey('cover') || json.containsKey('cover_traffic'),
       coverEnabled: cover['enabled'] == true,
       coverDomains: cover['enabled'] == true 
           ? _parseCoverDomains(cover['domains'] ?? json['cover_domains'])
           : [],
       
+      hasSniInConfig: json.containsKey('sni'),
       sniEnabled: sni['enabled'] == true,
       sniMode: sni['mode'] ?? 'weighted',
       sniDomains: sni['enabled'] == true
@@ -404,8 +410,10 @@ class ServerConfig {
     TransportConfig? transport,
     GroukConfig? grouk,
     ZhipConfig? zhip,
+    bool? hasCoverInConfig,
     bool? coverEnabled,
     List<CoverDomain>? coverDomains,
+    bool? hasSniInConfig,
     bool? sniEnabled,
     String? sniMode,
     List<SNIDomain>? sniDomains,
@@ -445,8 +453,10 @@ class ServerConfig {
       transport: transport ?? this.transport,
       grouk: grouk ?? this.grouk,
       zhip: zhip ?? this.zhip,
+      hasCoverInConfig: hasCoverInConfig ?? this.hasCoverInConfig,
       coverEnabled: coverEnabled ?? this.coverEnabled,
       coverDomains: coverDomains ?? this.coverDomains,
+      hasSniInConfig: hasSniInConfig ?? this.hasSniInConfig,
       sniEnabled: sniEnabled ?? this.sniEnabled,
       sniMode: sniMode ?? this.sniMode,
       sniDomains: sniDomains ?? this.sniDomains,
