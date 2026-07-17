@@ -40,9 +40,19 @@ var (
 	tunStats       *TUNStats
 	splitTunnelCfg *SplitTunnelConfig
 
-	globalDialer proxy.Dialer
-	preferIPv6   bool = false
+	globalDialerMu sync.RWMutex
+	globalDialer   proxy.Dialer
+	preferIPv6     atomic.Bool
+
+	allowedDNSServersMu sync.RWMutex
+	allowedDNSServers   []string
 )
+
+func getGlobalDialer() proxy.Dialer {
+	globalDialerMu.RLock()
+	defer globalDialerMu.RUnlock()
+	return globalDialer
+}
 
 type TUNStats struct {
 	mu                sync.RWMutex
@@ -58,34 +68,58 @@ type TUNStats struct {
 }
 
 func (s *TUNStats) RecordTCPConn() {
+	if s == nil {
+		return
+	}
 	atomic.AddInt64(&s.tcpConnections, 1)
 }
 
 func (s *TUNStats) RecordUDPConn() {
+	if s == nil {
+		return
+	}
 	atomic.AddInt64(&s.udpConnections, 1)
 }
 
 func (s *TUNStats) RecordRX(bytes int64) {
+	if s == nil {
+		return
+	}
 	atomic.AddInt64(&s.bytesReceived, bytes)
 }
 
 func (s *TUNStats) RecordTX(bytes int64) {
+	if s == nil {
+		return
+	}
 	atomic.AddInt64(&s.bytesSent, bytes)
 }
 
 func (s *TUNStats) RecordDNSBlocked() {
+	if s == nil {
+		return
+	}
 	atomic.AddInt64(&s.dnsQueriesBlocked, 1)
 }
 
 func (s *TUNStats) RecordDNSAllowed() {
+	if s == nil {
+		return
+	}
 	atomic.AddInt64(&s.dnsQueriesAllowed, 1)
 }
 
 func (s *TUNStats) RecordSplitBypass() {
+	if s == nil {
+		return
+	}
 	atomic.AddInt64(&s.splitBypass, 1)
 }
 
 func (s *TUNStats) RecordSplitTunneled() {
+	if s == nil {
+		return
+	}
 	atomic.AddInt64(&s.splitTunneled, 1)
 }
 
@@ -219,6 +253,21 @@ func (e *Engine) StartTun(fd int32, socksPort int32) (retErr error) {
 	splitTunnelCfg = NewSplitTunnelConfig()
 	tunCtx, tunCancel = context.WithCancel(context.Background())
 
+	e.mu.RLock()
+	if e.config != nil && e.config.DNS != nil && len(e.config.DNS.Servers) > 0 {
+		allowedDNSServersMu.Lock()
+		allowedDNSServers = make([]string, len(e.config.DNS.Servers))
+		copy(allowedDNSServers, e.config.DNS.Servers)
+		allowedDNSServersMu.Unlock()
+		log.Printf("[TUN] DNS servers from config: %v", e.config.DNS.Servers)
+	} else {
+		allowedDNSServersMu.Lock()
+		allowedDNSServers = nil
+		allowedDNSServersMu.Unlock()
+		log.Println("[TUN] Using default DNS servers (fallback)")
+	}
+	e.mu.RUnlock()
+
 	socksAddr := fmt.Sprintf("127.0.0.1:%d", socksPort)
 	log.Println("[TUN] Step 1: Waiting for SOCKS5 on " + socksAddr)
 
@@ -231,11 +280,14 @@ func (e *Engine) StartTun(fd int32, socksPort int32) (retErr error) {
 
 	log.Println("[TUN] Step 2: Creating SOCKS5 dialer...")
 	var err error
-	globalDialer, err = proxy.SOCKS5("tcp", socksAddr, nil, proxy.Direct)
+	dialer, err := proxy.SOCKS5("tcp", socksAddr, nil, proxy.Direct)
 	if err != nil {
 		log.Printf("[TUN] Step 2: FAILED: %v", err)
 		return fmt.Errorf("SOCKS5 dialer: %w", err)
 	}
+	globalDialerMu.Lock()
+	globalDialer = dialer
+	globalDialerMu.Unlock()
 	log.Println("[TUN] Step 2: SOCKS5 dialer ✅")
 
 	log.Println("[TUN] Step 3: Creating gVisor stack...")
@@ -331,7 +383,7 @@ func handleTCPConnection(r *tcp.ForwarderRequest, e *Engine) {
 
 	tunStats.RecordSplitTunneled()
 
-	if globalDialer != nil {
+	if getGlobalDialer() != nil {
 		handleTCPWithSOCKS(r, dst)
 	} else {
 		r.Complete(true)
@@ -369,7 +421,14 @@ func handleTCPWithSOCKS(r *tcp.ForwarderRequest, dst string) {
 
 	tunConn := gonet.NewTCPConn(&wq, ep)
 
-	remoteConn, err := globalDialer.Dial("tcp", dst)
+	dialer := getGlobalDialer()
+	if dialer == nil {
+		tunConn.Close()
+		log.Printf("[TUN] TCP dial failed: dialer is nil -> %s", dst)
+		return
+	}
+
+	remoteConn, err := dialer.Dial("tcp", dst)
 	if err != nil {
 		tunConn.Close()
 		log.Printf("[TUN] TCP dial failed: %s -> %v", dst, err)
@@ -411,7 +470,7 @@ func handleUDPConnection(r *udp.ForwarderRequest, e *Engine) {
 
 	tunStats.RecordSplitTunneled()
 
-	if globalDialer != nil {
+	if getGlobalDialer() != nil {
 		handleUDPWithSOCKS(r, dst)
 	}
 }
@@ -442,7 +501,14 @@ func handleUDPWithSOCKS(r *udp.ForwarderRequest, dst string) {
 
 	tunConn := gonet.NewUDPConn(&wq, ep)
 
-	remoteConn, err := globalDialer.Dial("udp", dst)
+	dialer := getGlobalDialer()
+	if dialer == nil {
+		tunConn.Close()
+		log.Printf("[TUN] UDP dial failed: dialer is nil -> %s", dst)
+		return
+	}
+
+	remoteConn, err := dialer.Dial("udp", dst)
 	if err != nil {
 		tunConn.Close()
 		log.Printf("[TUN] UDP dial failed: %s -> %v", dst, err)
@@ -481,14 +547,14 @@ func handleDNSQuery(r *udp.ForwarderRequest, e *Engine) {
 
 	isAAAA := isDNSQueryAAAA(query)
 
-	if isAAAA && !preferIPv6 {
+	if isAAAA && !preferIPv6.Load() {
 		log.Printf("[TUN] 🚫 Blocking AAAA query (IPv4 preferred)")
 		emptyResponse := createEmptyDNSResponse(query)
 		tunConn.Write(emptyResponse)
 		return
 	}
 
-	if globalDialer != nil {
+	if getGlobalDialer() != nil {
 		if response := queryDNSOverTCP(query, dnsServer); response != nil {
 			tunConn.Write(response)
 			return
@@ -502,7 +568,20 @@ func handleDNSQuery(r *udp.ForwarderRequest, e *Engine) {
 func queryDNSOverTCP(query []byte, dnsServer string) []byte {
 	log.Printf("[TUN] 🔒 Forwarding DNS query over VPN (DNS-over-TCP to %s)", dnsServer)
 
-	dnsServers := []string{dnsServer, "8.8.8.8:53", "1.1.1.1:53"}
+	allowedDNSServersMu.RLock()
+	configServers := allowedDNSServers
+	allowedDNSServersMu.RUnlock()
+
+	dnsServers := []string{dnsServer}
+	if len(configServers) > 0 {
+		for _, s := range configServers {
+			if s != dnsServer {
+				dnsServers = append(dnsServers, s)
+			}
+		}
+	} else {
+		dnsServers = append(dnsServers, "8.8.8.8:53", "1.1.1.1:53")
+	}
 	
 	for i, server := range dnsServers {
 		if i > 0 {
@@ -510,7 +589,12 @@ func queryDNSOverTCP(query []byte, dnsServer string) []byte {
 		}
 		
 		response := func() []byte {
-			dnsConn, dialErr := globalDialer.Dial("tcp", server)
+			dialer := getGlobalDialer()
+			if dialer == nil {
+				log.Printf("[TUN] DNS TCP dial to %s failed: dialer is nil", server)
+				return nil
+			}
+			dnsConn, dialErr := dialer.Dial("tcp", server)
 			if dialErr != nil {
 				log.Printf("[TUN] DNS TCP dial to %s failed: %v", server, dialErr)
 				return nil
@@ -636,7 +720,24 @@ func createEmptyDNSResponse(query []byte) []byte {
 }
 
 func isAllowedDNSServer(ip string) bool {
-	allowedDNS := map[string]bool{
+	allowedDNSServersMu.RLock()
+	servers := allowedDNSServers
+	allowedDNSServersMu.RUnlock()
+
+	if len(servers) > 0 {
+		for _, server := range servers {
+			host, _, err := net.SplitHostPort(server)
+			if err != nil {
+				host = server
+			}
+			if host == ip {
+				return true
+			}
+		}
+		return false
+	}
+
+	defaultDNS := map[string]bool{
 		"8.8.8.8":         true,
 		"8.8.4.4":         true,
 		"1.1.1.1":         true,
@@ -647,7 +748,7 @@ func isAllowedDNSServer(ip string) bool {
 		"149.112.112.112": true,
 	}
 
-	return allowedDNS[ip]
+	return defaultDNS[ip]
 }
 
 func relayTCP(local, remote io.ReadWriteCloser) {
@@ -792,7 +893,9 @@ func (e *Engine) StopTun() {
 
 	tunStack.Close()
 	tunStack = nil
+	globalDialerMu.Lock()
 	globalDialer = nil
+	globalDialerMu.Unlock()
 
 	log.Println("[TUN] Resetting TUN stats...")
 	tunStats = nil
@@ -887,6 +990,6 @@ func waitForSOCKS5(addr string, timeout time.Duration) error {
 }
 
 func SetPreferIPv6(prefer bool) {
-	preferIPv6 = prefer
+	preferIPv6.Store(prefer)
 	log.Printf("[TUN] Prefer IPv6: %v", prefer)
 }
