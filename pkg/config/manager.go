@@ -282,10 +282,13 @@ func resolveSNI(cfgSNI *SNIConfig, userSettings *UserSettings) (*SNIConfig, erro
 		if cfgSNI.Mode == "" {
 			return nil, fmt.Errorf("sni enabled but mode not specified")
 		}
-		if len(cfgSNI.Domains) == 0 {
-			return nil, fmt.Errorf("sni enabled but no domains specified")
-		}
+		
 		resolved := *cfgSNI
+		
+		if len(resolved.Domains) == 0 {
+			resolved.Domains = GetDefaultSNIDomains()
+		}
+		
 		if resolved.RotationInterval.Duration == 0 {
 			resolved.RotationInterval.Duration = 5 * time.Minute
 		}
@@ -302,11 +305,17 @@ func resolveSNI(cfgSNI *SNIConfig, userSettings *UserSettings) (*SNIConfig, erro
 		}
 		return &resolved, nil
 	}
-	if userSettings != nil && userSettings.GlobalSNIEnabled && len(userSettings.GlobalSNIDomains) > 0 {
+	if userSettings != nil && userSettings.GlobalSNIEnabled {
 		mode := userSettings.GlobalSNIMode
 		if mode == "" {
 			mode = "weighted"
 		}
+		
+		domains := userSettings.GlobalSNIDomains
+		if len(domains) == 0 {
+			domains = GetDefaultSNIDomains()
+		}
+		
 		rotMin := userSettings.GlobalSNIRotationMinutes
 		if rotMin <= 0 {
 			rotMin = 5
@@ -314,13 +323,24 @@ func resolveSNI(cfgSNI *SNIConfig, userSettings *UserSettings) (*SNIConfig, erro
 		return &SNIConfig{
 			Enabled:             true,
 			Mode:                mode,
-			Domains:             userSettings.GlobalSNIDomains,
+			Domains:             domains,
 			RotationInterval:    Duration{time.Duration(rotMin) * time.Minute},
 			HealthCheckInterval: Duration{30 * time.Second},
 			HealthCheckTimeout:  Duration{5 * time.Second},
 		}, nil
 	}
 	return nil, nil
+}
+
+func GetDefaultSNIDomains() []SNIDomain {
+	return []SNIDomain{
+		{Domain: "www.google.com", Weight: 30, CheckHealth: true, Fallback: false, Priority: 1},
+		{Domain: "www.microsoft.com", Weight: 20, CheckHealth: true, Fallback: false, Priority: 2},
+		{Domain: "github.com", Weight: 15, CheckHealth: true, Fallback: false, Priority: 3},
+		{Domain: "stackoverflow.com", Weight: 15, CheckHealth: true, Fallback: true, Priority: 4},
+		{Domain: "www.cloudflare.com", Weight: 10, CheckHealth: true, Fallback: true, Priority: 5},
+		{Domain: "learn.microsoft.com", Weight: 10, CheckHealth: true, Fallback: true, Priority: 6},
+	}
 }
 
 func resolveCover(cfgCover *CoverConfig, userSettings *UserSettings) (*CoverConfig, error) {
