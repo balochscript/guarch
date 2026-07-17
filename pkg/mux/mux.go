@@ -28,9 +28,9 @@ const (
 	DefaultMaxStreams     = 2000
 	DefaultStreamBuffer   = 1024
 	DefaultAcceptTimeout  = 5 * time.Minute
-	DefaultOpenTimeout    = 10 * time.Second
-	DefaultReadTimeout    = 30 * time.Second
-	DefaultWriteTimeout   = 15 * time.Second
+	DefaultOpenTimeout    = 30 * time.Second
+	DefaultReadTimeout    = 0
+	DefaultWriteTimeout   = 0
 	DefaultMaxChunkSize   = 65536
 )
 
@@ -374,6 +374,26 @@ func (s *Stream) Read(p []byte) (int, error) {
 		return n, nil
 	}
 	s.readMu.Unlock()
+
+	if s.readTimeout <= 0 {
+		select {
+		case data, ok := <-s.readCh:
+			if !ok {
+				return 0, io.EOF
+			}
+			n := copy(p, data)
+			if n < len(data) {
+				s.readMu.Lock()
+				s.readBuf = make([]byte, len(data)-n)
+				copy(s.readBuf, data[n:])
+				s.readMu.Unlock()
+			}
+			return n, nil
+		case <-s.doneCh:
+			return 0, io.EOF
+		}
+	}
+
 	timeout := time.NewTimer(s.readTimeout)
 	defer timeout.Stop()
 	select {
