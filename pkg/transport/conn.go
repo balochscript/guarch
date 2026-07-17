@@ -27,8 +27,8 @@ const (
 	keyRotationByteThreshold uint64 = 64 << 30
 	
 	defaultHandshakeTimeout = 30 * time.Second
-	defaultReadTimeout      = 60 * time.Second
-	defaultWriteTimeout     = 30 * time.Second
+	defaultReadTimeout      = 0
+	defaultWriteTimeout     = 0
 	
 	defaultReplayWindowSize = 64
 )
