@@ -9,6 +9,7 @@ import 'package:guarch/screens/logs_screen.dart';
 import 'package:guarch/screens/log_viewer_screen.dart';
 import 'package:guarch/widgets/connection_button.dart';
 import 'package:guarch/widgets/stats_card.dart';
+import 'package:guarch/widgets/sponsor_banner.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -112,6 +113,8 @@ class _HomeTab extends StatelessWidget {
                   const SizedBox(height: 16),
                   if (provider.activeServer?.coverEnabled == true || stats.coverRequests > 0)
                     _buildEnhancedStats(context, stats, provider),
+                  const SizedBox(height: 16),
+                  const SponsorBanner(),
                 ] else
                   const SizedBox(height: 120),
                 const SizedBox(height: 20),
