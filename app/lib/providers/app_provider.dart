@@ -6,6 +6,7 @@ import 'package:guarch/models/server_config.dart';
 import 'package:guarch/models/connection_state.dart';
 import 'package:guarch/models/app_settings.dart';
 import 'package:guarch/services/guarch_engine.dart';
+import 'package:guarch/services/notification_service.dart';
 
 class AppProvider extends ChangeNotifier {
   late SharedPreferences _prefs;
@@ -237,6 +238,10 @@ class AppProvider extends ChangeNotifier {
         currentSNI: newSNI,
         sniSwitches: _stats.sniSwitches + 1,
       );
+      NotificationService().showEventNotification(
+        title: '🏹 SNI Rotated',
+        body: 'Switched to: $newSNI',
+      );
       notifyListeners();
     });
 
@@ -244,8 +249,16 @@ class AppProvider extends ChangeNotifier {
       FlutterLog.d('Provider', 'DNS fallback: $enabled');
       if (enabled) {
         _addLog('DNS Fallback Mode Active (Reduced Speed)');
+        NotificationService().showEventNotification(
+          title: '🏹 DNS Fallback Active',
+          body: 'Using DNS tunnel (reduced speed)',
+        );
       } else {
         _addLog('TLS Mode Restored');
+        NotificationService().showEventNotification(
+          title: '🏹 TLS Mode Restored',
+          body: 'Back to normal speed',
+        );
       }
       _stats = _stats.copyWith(dnsFallbackUsed: enabled);
       notifyListeners();
@@ -383,6 +396,11 @@ class AppProvider extends ChangeNotifier {
     _status = VpnStatus.connecting;
     _addLog('Connecting to ${server.name} ($mode mode)...');
     _addLog('Protocol: ${server.protocolLabel}');
+    NotificationService().showStatusNotification(
+      title: '🏹 Guarch VPN',
+      body: 'Connecting to ${server.name}...',
+      ongoing: true,
+    );
 
     if (!_vpnModeEnabled) {
       _addLog('Proxy Mode: SOCKS5 on 127.0.0.1:7070');
@@ -451,9 +469,17 @@ class AppProvider extends ChangeNotifier {
         _connectTime = DateTime.now();
         _startStatsTimer();
         _addLog('Connected successfully!');
+        NotificationService().showStatusNotification(
+          title: '🏹 Guarch VPN',
+          body: 'Connected to ${activeServer?.name ?? "server"}',
+        );
       } else {
         _status = VpnStatus.error;
         _addLog('Connection failed');
+        NotificationService().showErrorNotification(
+          title: '🏹 Guarch VPN',
+          body: 'Connection failed',
+        );
 
         if (!_engine.isNativeAvailable) {
           _addLog('Native engine not available');
@@ -489,6 +515,10 @@ class AppProvider extends ChangeNotifier {
     }
 
     _status = VpnStatus.disconnected;
+    NotificationService().showStatusNotification(
+      title: '🏹 Guarch VPN',
+      body: 'Disconnected',
+    );
     _stats = const ConnectionStats();
     _connectTime = null;
     _stopStatsTimer();
