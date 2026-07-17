@@ -256,3 +256,7 @@ func getDefaultDomainsForMode(mode Mode) []DomainConfig {
 		return getDefaultDomainsForMode(ModeBalanced)
 	}
 }
+
+func GetDefaultCoverDomains(mode string) []DomainConfig {
+	return getDefaultDomainsForMode(ParseMode(mode))
+}
