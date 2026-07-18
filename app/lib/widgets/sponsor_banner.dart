@@ -23,13 +23,13 @@ class SponsorBanner extends StatelessWidget {
           children: [
             Row(
               children: [
-                Icon(Icons.favorite, color: Colors.red, size: 18),
+                Icon(Icons.favorite, color: Colors.red[400], size: 18),
                 const SizedBox(width: 8),
                 Text(
                   'Support Guarch VPN',
                   style: TextStyle(
                     fontWeight: FontWeight.w600,
-                    color: Colors.amber[800],
+                    color: Theme.of(context).textTheme.bodyLarge?.color,
                     fontSize: 14,
                   ),
                 ),
@@ -49,7 +49,7 @@ class SponsorBanner extends StatelessWidget {
             Text(
               'Help us keep Guarch free and open-source',
               style: TextStyle(
-                color: Colors.grey[600],
+                color: Theme.of(context).textTheme.bodySmall?.color,
                 fontSize: 12,
               ),
             ),
@@ -153,7 +153,7 @@ class SponsorBanner extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: Colors.grey[100],
+        color: Theme.of(context).colorScheme.surfaceVariant.withOpacity(0.3),
         borderRadius: BorderRadius.circular(8),
       ),
       child: Column(
@@ -190,7 +190,7 @@ class SponsorBanner extends StatelessWidget {
             address,
             style: TextStyle(
               fontSize: 11,
-              color: Colors.grey[700],
+              color: Theme.of(context).textTheme.bodySmall?.color,
               fontFamily: 'monospace',
             ),
           ),
