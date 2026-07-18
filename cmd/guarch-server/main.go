@@ -120,7 +120,13 @@ func main() {
 	}
 	log.Printf("   Transport: Multi-Protocol (%s)", transports)
 	
-	log.Printf("   Cover Traffic: %v (%d domains)", cfg.Cover.Enabled, len(cfg.Cover.Domains))
+	coverEnabled := false
+	coverDomains := 0
+	if cfg.Cover != nil {
+		coverEnabled = cfg.Cover.Enabled
+		coverDomains = len(cfg.Cover.Domains)
+	}
+	log.Printf("   Cover Traffic: %v (%d domains)", coverEnabled, coverDomains)
 	log.Printf("   Probe Detection: %v", *enableProbe)
 	log.Printf("   Decoy Server: %s", *decoyAddr)
 	log.Printf("   Health Check: %s", *healthAddr)
@@ -175,7 +181,7 @@ func main() {
 		}
 	}
 
-	if cfg.Cover.Enabled {
+	if cfg.Cover != nil && cfg.Cover.Enabled {
 		coverCfg := &cover.Config{
 			Enabled:       cfg.Cover.Enabled,
 			Domains:       convertCoverDomains(cfg.Cover.Domains),
@@ -642,11 +648,18 @@ func serveHTTPDecoy(conn net.Conn) {
 func handleGuarchHandshake(raw net.Conn, cfg *config.ServerConfig, remoteAddr string) {
 	raw.SetDeadline(time.Now().Add(30 * time.Second))
 
-	maxPadding := config.GetMaxPaddingForMode(cfg.Cover.Mode)
+	coverMode := ""
+	coverEnabled := false
+	if cfg.Cover != nil {
+		coverMode = cfg.Cover.Mode
+		coverEnabled = cfg.Cover.Enabled
+	}
+
+	maxPadding := config.GetMaxPaddingForMode(coverMode)
 	hsCfg := &transport.HandshakeConfig{
 		PSK:            serverPSK,
 		MaxPadding:     maxPadding,
-		PaddingEnabled: cfg.Cover.Enabled,
+		PaddingEnabled: coverEnabled,
 	}
 	
 	sc, err := transport.Handshake(raw, true, hsCfg)
