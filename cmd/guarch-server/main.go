@@ -94,7 +94,7 @@ func main() {
 	}
 
 	if *configFile == "" {
-		if !*enableCover {
+		if !*enableCover && cfg.Cover != nil {
 			cfg.Cover.Enabled = false
 		}
 	}
@@ -241,7 +241,7 @@ func main() {
 	}
 	log.Println(supportMsg)
 
-	if cfg.DNS.Enabled {
+	if cfg.DNS != nil && cfg.DNS.Enabled {
 		log.Printf("[dns] Starting DNS fallback listener...")
 		
 		dnsListenAddr := cfg.DNS.ListenAddr
