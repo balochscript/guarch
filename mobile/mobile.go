@@ -2111,3 +2111,95 @@ func parsePort(s string) uint16 {
 	}
 	return p
 }
+
+func (e *Engine) PingWithPolicy(address string, psk string) string {
+	defer e.recoverPanic("PingWithPolicy")
+
+	log.Printf("[Engine] === PingWithPolicy %s ===", address)
+
+	sw := time.Now()
+
+	conn, err := net.DialTimeout("tcp", address, 5*time.Second)
+	if err != nil {
+		log.Printf("[Engine] PingWithPolicy dial failed: %v", err)
+		return fmt.Sprintf(`{"error":"dial failed: %v","ping_ms":-1}`, err)
+	}
+	defer conn.Close()
+
+	pingMs := time.Since(sw).Milliseconds()
+
+	hsCfg := &transport.HandshakeConfig{
+		PSK:        []byte(psk),
+		ReadTimeout: 10 * time.Second,
+		WriteTimeout: 10 * time.Second,
+	}
+
+	sc, err := transport.Handshake(conn, false, hsCfg)
+	if err != nil {
+		log.Printf("[Engine] PingWithPolicy handshake failed: %v", err)
+		return fmt.Sprintf(`{"error":"handshake failed: %v","ping_ms":%d}`, err, pingMs)
+	}
+
+	policyJSON, err := sc.Recv()
+	if err != nil {
+		log.Printf("[Engine] PingWithPolicy recv policy failed: %v", err)
+		return fmt.Sprintf(`{"error":"recv policy failed: %v","ping_ms":%d}`, err, pingMs)
+	}
+
+	var policy config.ServerPolicy
+	if err := json.Unmarshal(policyJSON, &policy); err != nil {
+		log.Printf("[Engine] PingWithPolicy unmarshal failed: %v", err)
+		return fmt.Sprintf(`{"error":"unmarshal failed: %v","ping_ms":%d}`, err, pingMs)
+	}
+
+	result := map[string]interface{}{
+		"ping_ms":       pingMs,
+		"cover_enabled": false,
+		"sni_enabled":   false,
+		"dns_enabled":   false,
+		"utls_enabled":  false,
+		"fragment_enabled": false,
+		"padding_enabled": false,
+		"max_padding":     0,
+	}
+
+	if policy.Cover != nil {
+		result["cover_enabled"] = policy.Cover.Enabled
+		if policy.Cover.Enabled {
+			result["cover_mode"] = policy.Cover.Mode
+			result["cover_domains_count"] = len(policy.Cover.Domains)
+		}
+	}
+
+	if policy.SNI != nil {
+		result["sni_enabled"] = policy.SNI.Enabled
+		if policy.SNI.Enabled {
+			result["sni_mode"] = policy.SNI.Mode
+			result["sni_domains_count"] = len(policy.SNI.Domains)
+		}
+	}
+
+	if policy.DNS != nil {
+		result["dns_enabled"] = policy.DNS.Enabled
+	}
+
+	if policy.UTLS != nil {
+		result["utls_enabled"] = policy.UTLS.Enabled
+	}
+
+	if policy.Fragment != nil {
+		result["fragment_enabled"] = policy.Fragment.Enabled
+	}
+
+	if policy.PaddingEnabled != nil {
+		result["padding_enabled"] = *policy.PaddingEnabled
+	}
+
+	if policy.MaxPadding != nil {
+		result["max_padding"] = *policy.MaxPadding
+	}
+
+	resultJSON, _ := json.Marshal(result)
+	log.Printf("[Engine] PingWithPolicy success: %s", string(resultJSON))
+	return string(resultJSON)
+}
