@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:guarch/models/server_policy.dart';
 
 class ServerConfig {
   final int version;
@@ -47,6 +48,7 @@ class ServerConfig {
   int? ping;
   int? realDelay;
   DateTime? lastTested;
+  ServerPolicy? serverPolicy;
   
   bool isActive;
   DateTime createdAt;
@@ -93,6 +95,7 @@ class ServerConfig {
     this.ping,
     this.realDelay,
     this.lastTested,
+    this.serverPolicy,
     this.isActive = false,
     DateTime? createdAt,
     this.metadata,
@@ -439,6 +442,7 @@ class ServerConfig {
     int? ping,
     int? realDelay,
     DateTime? lastTested,
+    ServerPolicy? serverPolicy,
     Metadata? metadata,
   }) {
     return ServerConfig(
@@ -481,6 +485,7 @@ class ServerConfig {
       ping: ping ?? this.ping,
       realDelay: realDelay ?? this.realDelay,
       lastTested: lastTested ?? this.lastTested,
+      serverPolicy: serverPolicy ?? this.serverPolicy,
       isActive: isActive ?? this.isActive,
       createdAt: createdAt,
       metadata: metadata ?? this.metadata,
