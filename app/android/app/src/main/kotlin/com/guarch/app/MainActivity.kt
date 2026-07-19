@@ -110,6 +110,7 @@ class MainActivity : FlutterActivity() {
                     "requestVpnPermission" -> requestVpnPermission(result)
                     "testRealDelay" -> handleTestRealDelay(call.arguments, result)
                     "testConnection" -> handleTestConnection(call.arguments, result)
+                    "pingWithPolicy" -> handlePingWithPolicy(call.arguments, result)
                     "readGoLog" -> handleReadGoLog(result)
                     else -> result.notImplemented()
                 }
@@ -1125,6 +1126,50 @@ class MainActivity : FlutterActivity() {
 
             runOnUiThread {
                 result.success(testSuccess)
+            }
+        }.start()
+    }
+
+    private fun handlePingWithPolicy(arguments: Any?, result: MethodChannel.Result) {
+        CrashLogger.d(TAG, "=== pingWithPolicy ===")
+
+        val params = arguments as? Map<*, *>
+        if (params == null) {
+            CrashLogger.w(TAG, "  Params is null")
+            result.success("{}")
+            return
+        }
+
+        val address = params["address"] as? String
+        val psk = params["psk"] as? String
+
+        if (address == null || psk == null) {
+            CrashLogger.w(TAG, "  Address or PSK is null")
+            result.success("""{"error":"address or psk is null","ping_ms":-1}""")
+            return
+        }
+
+        if (goEngine == null) {
+            CrashLogger.w(TAG, "  Go engine not available")
+            result.success("""{"error":"go engine not available","ping_ms":-1}""")
+            return
+        }
+
+        Thread {
+            try {
+                CrashLogger.d(TAG, "  Calling PingWithPolicy($address)...")
+                val pingResult = goEngine!!.javaClass.getMethod("pingWithPolicy", String::class.java, String::class.java)
+                    .invoke(goEngine, address, psk) as? String
+
+                CrashLogger.d(TAG, "  PingWithPolicy result: $pingResult")
+                runOnUiThread {
+                    result.success(pingResult ?: """{"error":"ping failed","ping_ms":-1}""")
+                }
+            } catch (e: Throwable) {
+                CrashLogger.e(TAG, "  PingWithPolicy failed", unwrapException(e))
+                runOnUiThread {
+                    result.success("""{"error":"${e.message}","ping_ms":-1}""")
+                }
             }
         }.start()
     }
