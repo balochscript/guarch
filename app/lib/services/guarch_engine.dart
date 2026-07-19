@@ -760,6 +760,29 @@ class GuarchEngine {
     }
   }
 
+  Future<Map<String, dynamic>?> pingWithPolicy(String address, int port, String psk) async {
+    FlutterLog.d('Engine', 'PingWithPolicy $address:$port');
+
+    try {
+      final result = await _channel.invokeMethod('pingWithPolicy', {
+        'address': '$address:$port',
+        'psk': psk,
+      });
+
+      if (result == null || result.isEmpty) {
+        FlutterLog.w('Engine', 'PingWithPolicy returned empty');
+        return null;
+      }
+
+      final decoded = jsonDecode(result) as Map<String, dynamic>;
+      FlutterLog.d('Engine', 'PingWithPolicy result: $decoded');
+      return decoded;
+    } catch (e) {
+      FlutterLog.e('Engine', 'PingWithPolicy failed', e);
+      return null;
+    }
+  }
+
   Future<int> testRealDelayViaHTTP(ServerConfig server) async {
     FlutterLog.d('Engine', '=== testRealDelayViaHTTP ===');
 
