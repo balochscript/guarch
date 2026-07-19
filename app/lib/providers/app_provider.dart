@@ -385,6 +385,29 @@ class AppProvider extends ChangeNotifier {
 
     var server = activeServer!;
 
+    if (server.serverPolicy == null) {
+      _addLog('Loading server policy...');
+      final policyResult = await _engine.pingWithPolicy(server.address, server.port, server.psk);
+      
+      if (policyResult != null && policyResult['ping_ms'] != null) {
+        final pingMs = policyResult['ping_ms'] as int;
+        if (pingMs > 0) {
+          final policy = ServerPolicy.fromJson(policyResult);
+          final index = _servers.indexWhere((s) => s.id == server.id);
+          if (index >= 0) {
+            _servers[index] = _servers[index].copyWith(
+              ping: pingMs,
+              serverPolicy: policy,
+            );
+            server = _servers[index];
+            _addLog('✓ Server policy loaded (${policy.lockedSettingsCount} locked settings)');
+          }
+        }
+      } else {
+        _addLog('⚠️ Could not load server policy, using client config');
+      }
+    }
+
     if (_appSettings != null) {
       server = _appSettings!.applyToServer(server);
     }
@@ -1090,15 +1113,25 @@ class AppProvider extends ChangeNotifier {
   Future<void> pingAllServers({bool includeRealDelay = false}) async {
     _isTesting = true;
     
-    final testType = includeRealDelay ? 'TCP + Real Delay' : 'TCP Ping';
+    final testType = includeRealDelay ? 'TCP + Real Delay + Policy' : 'TCP Ping + Policy';
     _addLog('Testing ${_servers.length} servers ($testType)...');
     notifyListeners();
 
     for (var i = 0; i < _servers.length; i++) {
-      final ping = await _engine.ping(_servers[i].address, _servers[i].port);
+      final result = await _engine.pingWithPolicy(_servers[i].address, _servers[i].port, _servers[i].psk);
+      
+      int? ping;
+      ServerPolicy? policy;
+      
+      if (result != null && result['ping_ms'] != null) {
+        ping = result['ping_ms'] as int;
+        if (ping > 0) {
+          policy = ServerPolicy.fromJson(result);
+        }
+      }
 
       int? realDelay;
-      if (includeRealDelay && ping > 0) {
+      if (includeRealDelay && ping != null && ping > 0) {
         realDelay = await _engine.testRealDelayViaHTTP(_servers[i]);
       }
 
@@ -1106,6 +1139,7 @@ class AppProvider extends ChangeNotifier {
         ping: ping,
         realDelay: realDelay,
         lastTested: DateTime.now(),
+        serverPolicy: policy,
       );
       notifyListeners();
 
@@ -1127,10 +1161,20 @@ class AppProvider extends ChangeNotifier {
     _addLog('Full test: ${server.name}...');
     notifyListeners();
 
-    final ping = await _engine.ping(server.address, server.port);
+    final result = await _engine.pingWithPolicy(server.address, server.port, server.psk);
+    
+    int? ping;
+    ServerPolicy? policy;
+    
+    if (result != null && result['ping_ms'] != null) {
+      ping = result['ping_ms'] as int;
+      if (ping > 0) {
+        policy = ServerPolicy.fromJson(result);
+      }
+    }
 
     int? realDelay;
-    if (ping > 0) {
+    if (ping != null && ping > 0) {
       realDelay = await _engine.testRealDelayViaHTTP(server);
     }
 
@@ -1140,12 +1184,13 @@ class AppProvider extends ChangeNotifier {
         ping: ping,
         realDelay: realDelay,
         lastTested: DateTime.now(),
+        serverPolicy: policy,
       );
       _saveServers();
       notifyListeners();
     }
 
-    if (ping > 0 && realDelay != null && realDelay > 0) {
+    if (ping != null && ping > 0 && realDelay != null && realDelay > 0) {
       _addLog('${server.name}: TCP=${ping}ms, Real=${realDelay}ms');
     } else {
       _addLog('${server.name}: Test failed');
