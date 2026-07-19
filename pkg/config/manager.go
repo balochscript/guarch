@@ -238,7 +238,7 @@ type UserSettings struct {
 	GlobalFragmentMaxSize int  `json:"global_fragment_max_size"`
 }
 
-func ResolveAll(cfg *ServerConfig, userSettings *UserSettings) (*ServerConfig, error) {
+func ResolveAll(cfg *ServerConfig, userSettings *UserSettings, serverPolicy *ServerPolicy) (*ServerConfig, error) {
 	if cfg == nil {
 		return nil, fmt.Errorf("config is nil")
 	}
@@ -251,30 +251,66 @@ func ResolveAll(cfg *ServerConfig, userSettings *UserSettings) (*ServerConfig, e
 		Modes:     cfg.Modes,
 	}
 	var err error
-	resolved.SNI, err = resolveSNI(cfg.SNI, userSettings)
+	resolved.SNI, err = resolveSNI(cfg.SNI, userSettings, serverPolicy)
 	if err != nil {
 		return nil, fmt.Errorf("SNI resolve failed: %w", err)
 	}
-	resolved.Cover, err = resolveCover(cfg.Cover, userSettings)
+	resolved.Cover, err = resolveCover(cfg.Cover, userSettings, serverPolicy)
 	if err != nil {
 		return nil, fmt.Errorf("Cover resolve failed: %w", err)
 	}
-	resolved.DNS, err = resolveDNS(cfg.DNS, userSettings)
+	resolved.DNS, err = resolveDNS(cfg.DNS, userSettings, serverPolicy)
 	if err != nil {
 		return nil, fmt.Errorf("DNS resolve failed: %w", err)
 	}
-	resolved.UTLS, err = resolveUTLS(cfg.UTLS, userSettings)
+	resolved.UTLS, err = resolveUTLS(cfg.UTLS, userSettings, serverPolicy)
 	if err != nil {
 		return nil, fmt.Errorf("UTLS resolve failed: %w", err)
 	}
-	resolved.Fragment, err = resolveFragment(cfg.Fragment, userSettings)
+	resolved.Fragment, err = resolveFragment(cfg.Fragment, userSettings, serverPolicy)
 	if err != nil {
 		return nil, fmt.Errorf("Fragment resolve failed: %w", err)
 	}
+
+	if serverPolicy != nil && serverPolicy.PaddingEnabled != nil {
+		resolved.PaddingEnabled = *serverPolicy.PaddingEnabled
+	}
+	if serverPolicy != nil && serverPolicy.MaxPadding != nil {
+		resolved.MaxPadding = *serverPolicy.MaxPadding
+	}
+
 	return resolved, nil
 }
 
-func resolveSNI(cfgSNI *SNIConfig, userSettings *UserSettings) (*SNIConfig, error) {
+func resolveSNI(cfgSNI *SNIConfig, userSettings *UserSettings, serverPolicy *ServerPolicy) (*SNIConfig, error) {
+	if serverPolicy != nil && serverPolicy.SNI != nil {
+		resolved := *serverPolicy.SNI
+		if !resolved.Enabled {
+			return nil, nil
+		}
+		if resolved.Mode == "" {
+			resolved.Mode = "weighted"
+		}
+		if len(resolved.Domains) == 0 {
+			resolved.Domains = GetDefaultSNIDomains()
+		}
+		if resolved.RotationInterval.Duration == 0 {
+			resolved.RotationInterval.Duration = 5 * time.Minute
+		}
+		if resolved.HealthCheckInterval.Duration == 0 {
+			resolved.HealthCheckInterval.Duration = 30 * time.Second
+		}
+		if resolved.HealthCheckTimeout.Duration == 0 {
+			resolved.HealthCheckTimeout.Duration = 5 * time.Second
+		}
+		for i := range resolved.Domains {
+			if resolved.Domains[i].Weight == 0 {
+				resolved.Domains[i].Weight = 10
+			}
+		}
+		return &resolved, nil
+	}
+
 	if cfgSNI != nil {
 		if !cfgSNI.Enabled {
 			return nil, nil
@@ -343,7 +379,41 @@ func GetDefaultSNIDomains() []SNIDomain {
 	}
 }
 
-func resolveCover(cfgCover *CoverConfig, userSettings *UserSettings) (*CoverConfig, error) {
+func resolveCover(cfgCover *CoverConfig, userSettings *UserSettings, serverPolicy *ServerPolicy) (*CoverConfig, error) {
+	if serverPolicy != nil && serverPolicy.Cover != nil {
+		resolved := *serverPolicy.Cover
+		if !resolved.Enabled {
+			return nil, nil
+		}
+		if resolved.Mode == "" {
+			resolved.Mode = "balanced"
+		}
+		if len(resolved.Domains) == 0 {
+			resolved.Domains = convertCoverDomainConfigs(cover.GetDefaultCoverDomains(resolved.Mode))
+		}
+		for i := range resolved.Domains {
+			if resolved.Domains[i].Weight == 0 {
+				resolved.Domains[i].Weight = 10
+			}
+			if resolved.Domains[i].IntervalMin.Duration == 0 {
+				resolved.Domains[i].IntervalMin.Duration = 2 * time.Second
+			}
+			if resolved.Domains[i].IntervalMax.Duration == 0 {
+				resolved.Domains[i].IntervalMax.Duration = 8 * time.Second
+			}
+		}
+		if resolved.Adaptive.IdleThreshold == "" {
+			resolved.Adaptive.IdleThreshold = "50KB/min"
+		}
+		if resolved.Adaptive.LightThreshold == "" {
+			resolved.Adaptive.LightThreshold = "500KB/min"
+		}
+		if resolved.Adaptive.MediumThreshold == "" {
+			resolved.Adaptive.MediumThreshold = "5MB/min"
+		}
+		return &resolved, nil
+	}
+
 	if cfgCover != nil {
 		if !cfgCover.Enabled {
 			return nil, nil
@@ -421,7 +491,24 @@ func convertCoverDomainConfigs(domains []cover.DomainConfig) []CoverDomain {
 	return result
 }
 
-func resolveDNS(cfgDNS *DNSConfig, userSettings *UserSettings) (*DNSConfig, error) {
+func resolveDNS(cfgDNS *DNSConfig, userSettings *UserSettings, serverPolicy *ServerPolicy) (*DNSConfig, error) {
+	if serverPolicy != nil && serverPolicy.DNS != nil {
+		resolved := *serverPolicy.DNS
+		if !resolved.Enabled {
+			return nil, nil
+		}
+		if resolved.Domain == "" {
+			return nil, fmt.Errorf("dns enabled but domain not specified")
+		}
+		if resolved.Timeout.Duration == 0 {
+			resolved.Timeout.Duration = 5 * time.Second
+		}
+		if resolved.SwitchThreshold == 0 {
+			resolved.SwitchThreshold = 3
+		}
+		return &resolved, nil
+	}
+
 	if cfgDNS != nil {
 		if !cfgDNS.Enabled {
 			return nil, nil
@@ -459,7 +546,18 @@ func resolveDNS(cfgDNS *DNSConfig, userSettings *UserSettings) (*DNSConfig, erro
 	return nil, nil
 }
 
-func resolveUTLS(cfgUTLS *UTLSConfig, userSettings *UserSettings) (*UTLSConfig, error) {
+func resolveUTLS(cfgUTLS *UTLSConfig, userSettings *UserSettings, serverPolicy *ServerPolicy) (*UTLSConfig, error) {
+	if serverPolicy != nil && serverPolicy.UTLS != nil {
+		resolved := *serverPolicy.UTLS
+		if !resolved.Enabled {
+			return nil, nil
+		}
+		if resolved.Fingerprint == "" {
+			return nil, fmt.Errorf("utls enabled but fingerprint not specified")
+		}
+		return &resolved, nil
+	}
+
 	if cfgUTLS != nil {
 		if !cfgUTLS.Enabled {
 			return nil, nil
@@ -478,7 +576,18 @@ func resolveUTLS(cfgUTLS *UTLSConfig, userSettings *UserSettings) (*UTLSConfig, 
 	return nil, nil
 }
 
-func resolveFragment(cfgFragment *FragmentConfig, userSettings *UserSettings) (*FragmentConfig, error) {
+func resolveFragment(cfgFragment *FragmentConfig, userSettings *UserSettings, serverPolicy *ServerPolicy) (*FragmentConfig, error) {
+	if serverPolicy != nil && serverPolicy.Fragment != nil {
+		resolved := *serverPolicy.Fragment
+		if !resolved.Enabled {
+			return nil, nil
+		}
+		if resolved.MinSize == 0 || resolved.MaxSize == 0 {
+			return nil, fmt.Errorf("fragment enabled but sizes not specified")
+		}
+		return &resolved, nil
+	}
+
 	if cfgFragment != nil {
 		if !cfgFragment.Enabled {
 			return nil, nil
