@@ -9,6 +9,7 @@ import 'package:share_plus/share_plus.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:guarch/app.dart';
 import 'package:guarch/models/server_config.dart';
+import 'package:guarch/models/server_policy.dart';
 import 'package:guarch/providers/app_provider.dart';
 import 'package:guarch/screens/add_server_screen.dart';
 
@@ -521,7 +522,7 @@ class _ServerDetailScreenState extends State<ServerDetailScreen> {
               ),
               const SizedBox(width: 12),
               Expanded(
-                child: FilledButton.icon(
+                child: OutlinedButton.icon(
                   onPressed: _isTesting ? null : () => _runRealDelay(context),
                   icon: _isTesting
                       ? const SizedBox(
@@ -529,7 +530,6 @@ class _ServerDetailScreenState extends State<ServerDetailScreen> {
                           height: 14,
                           child: CircularProgressIndicator(
                             strokeWidth: 2,
-                            color: Colors.white,
                           ),
                         )
                       : const Icon(Icons.auto_graph, size: 18),
@@ -537,6 +537,24 @@ class _ServerDetailScreenState extends State<ServerDetailScreen> {
                 ),
               ),
             ],
+          ),
+          const SizedBox(height: 12),
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton.icon(
+              onPressed: _isTesting ? null : () => _runPolicyTest(context),
+              icon: _isTesting
+                  ? const SizedBox(
+                      width: 14,
+                      height: 14,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Colors.white,
+                      ),
+                    )
+                  : const Icon(Icons.admin_panel_settings, size: 18),
+              label: const Text('Test Server Policy'),
+            ),
           ),
 
           const SizedBox(height: 24),
@@ -621,6 +639,93 @@ class _ServerDetailScreenState extends State<ServerDetailScreen> {
             ),
 
           const SizedBox(height: 24),
+          if (server.serverPolicy != null && server.serverPolicy!.hasLockedSettings) ...[
+            _sectionTitle(context, 'Server Policy', Icons.admin_panel_settings),
+            Card(
+              child: Column(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.orange.withOpacity(0.1),
+                      borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(Icons.info_outline, size: 20, color: Colors.orange),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'This server has ${server.serverPolicy!.lockedSettingsCount} locked settings that cannot be changed',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Colors.orange[900],
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  if (server.serverPolicy!.coverEnabled) ...[
+                    Divider(height: 1, color: accentColor(context).withOpacity(0.1)),
+                    _lockedFeatureTile(
+                      context,
+                      Icons.theater_comedy,
+                      'Cover Traffic',
+                      'Enabled (${server.serverPolicy!.coverMode ?? "default"}, ${server.serverPolicy!.coverDomainsCount ?? 0} domains)',
+                    ),
+                  ],
+                  if (server.serverPolicy!.sniEnabled) ...[
+                    Divider(height: 1, color: accentColor(context).withOpacity(0.1)),
+                    _lockedFeatureTile(
+                      context,
+                      Icons.shield_outlined,
+                      'SNI Rotation',
+                      'Enabled (${server.serverPolicy!.sniMode ?? "default"}, ${server.serverPolicy!.sniDomainsCount ?? 0} domains)',
+                    ),
+                  ],
+                  if (server.serverPolicy!.dnsEnabled) ...[
+                    Divider(height: 1, color: accentColor(context).withOpacity(0.1)),
+                    _lockedFeatureTile(
+                      context,
+                      Icons.dns,
+                      'DNS Fallback',
+                      'Enabled',
+                    ),
+                  ],
+                  if (server.serverPolicy!.utlsEnabled) ...[
+                    Divider(height: 1, color: accentColor(context).withOpacity(0.1)),
+                    _lockedFeatureTile(
+                      context,
+                      Icons.fingerprint,
+                      'uTLS',
+                      'Enabled',
+                    ),
+                  ],
+                  if (server.serverPolicy!.fragmentEnabled) ...[
+                    Divider(height: 1, color: accentColor(context).withOpacity(0.1)),
+                    _lockedFeatureTile(
+                      context,
+                      Icons.view_agenda,
+                      'Fragment',
+                      'Enabled',
+                    ),
+                  ],
+                  if (server.serverPolicy!.paddingEnabled) ...[
+                    Divider(height: 1, color: accentColor(context).withOpacity(0.1)),
+                    _lockedFeatureTile(
+                      context,
+                      Icons.padding,
+                      'Padding',
+                      'Enabled (max ${server.serverPolicy!.maxPadding ?? 1024} bytes)',
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            const SizedBox(height: 24),
+          ],
           _sectionTitle(context, 'Advanced Features', Icons.tune),
 
           Card(
@@ -1124,6 +1229,54 @@ class _ServerDetailScreenState extends State<ServerDetailScreen> {
     );
   }
 
+  Widget _lockedFeatureTile(
+    BuildContext context,
+    IconData icon,
+    String title,
+    String subtitle,
+  ) {
+    return ListTile(
+      leading: Icon(icon, size: 20, color: Colors.orange),
+      title: Text(
+        title,
+        style: TextStyle(
+          fontSize: 14,
+          color: textSecondary(context),
+          fontWeight: FontWeight.w500,
+        ),
+      ),
+      subtitle: Text(
+        subtitle,
+        style: TextStyle(
+          fontSize: 12,
+          color: textMuted(context),
+        ),
+      ),
+      trailing: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        decoration: BoxDecoration(
+          color: Colors.orange.withOpacity(0.2),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.lock, size: 12, color: Colors.orange),
+            const SizedBox(width: 4),
+            Text(
+              'Locked',
+              style: TextStyle(
+                fontSize: 11,
+                color: Colors.orange[900],
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   IconData _getProtocolIcon(String protocol) {
     switch (protocol.toLowerCase()) {
       case 'guarch':
@@ -1261,6 +1414,159 @@ class _ServerDetailScreenState extends State<ServerDetailScreen> {
         ),
       );
     }
+  }
+
+  Future<void> _runPolicyTest(BuildContext context) async {
+    setState(() => _isTesting = true);
+
+    final provider = context.read<AppProvider>();
+    final result = await provider.pingServerWithPolicy(widget.server);
+
+    setState(() => _isTesting = false);
+
+    if (context.mounted) {
+      if (result != null && result['ping_ms'] != null) {
+        final pingMs = result['ping_ms'] as int;
+        
+        if (pingMs > 0) {
+          final policy = ServerPolicy.fromJson(result);
+          
+          showDialog(
+            context: context,
+            builder: (ctx) => AlertDialog(
+              title: Row(
+                children: [
+                  Icon(Icons.admin_panel_settings, color: Colors.orange),
+                  const SizedBox(width: 8),
+                  const Text('Server Policy'),
+                ],
+              ),
+              content: SingleChildScrollView(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      'Ping: ${pingMs}ms',
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    if (policy.hasLockedSettings) ...[
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: Colors.orange.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(Icons.info_outline, size: 20, color: Colors.orange),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                '${policy.lockedSettingsCount} locked settings from server',
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  color: Colors.orange[900],
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                    ],
+                    _policyItem('Cover Traffic', policy.coverEnabled, policy.coverMode),
+                    _policyItem('SNI Rotation', policy.sniEnabled, policy.sniMode),
+                    _policyItem('DNS Fallback', policy.dnsEnabled, null),
+                    _policyItem('uTLS', policy.utlsEnabled, null),
+                    _policyItem('Fragment', policy.fragmentEnabled, null),
+                    _policyItem('Padding', policy.paddingEnabled, policy.maxPadding?.toString()),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  child: const Text('Close'),
+                ),
+              ],
+            ),
+          );
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Server unreachable'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Policy test failed'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  Widget _policyItem(String name, bool enabled, String? detail) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        children: [
+          Icon(
+            enabled ? Icons.check_circle : Icons.cancel,
+            size: 18,
+            color: enabled ? Colors.green : Colors.grey,
+          ),
+          const SizedBox(width: 8),
+          Text(
+            name,
+            style: const TextStyle(fontSize: 14),
+          ),
+          const Spacer(),
+          if (detail != null && detail.isNotEmpty)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+              decoration: BoxDecoration(
+                color: Colors.grey.withOpacity(0.2),
+                borderRadius: BorderRadius.circular(4),
+              ),
+              child: Text(
+                detail,
+                style: const TextStyle(fontSize: 11),
+              ),
+            ),
+          if (enabled)
+            Container(
+              margin: const EdgeInsets.only(left: 4),
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+              decoration: BoxDecoration(
+                color: Colors.orange.withOpacity(0.2),
+                borderRadius: BorderRadius.circular(4),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.lock, size: 10, color: Colors.orange),
+                  const SizedBox(width: 2),
+                  Text(
+                    'Locked',
+                    style: TextStyle(fontSize: 10, color: Colors.orange[900]),
+                  ),
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
   }
 
   void _showExportDialog(BuildContext context, ServerConfig server) {
