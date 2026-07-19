@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:guarch/models/server_config.dart';
+import 'package:guarch/models/server_policy.dart';
 import 'package:guarch/models/connection_state.dart';
 import 'package:guarch/models/app_settings.dart';
 import 'package:guarch/services/guarch_engine.dart';
@@ -1028,6 +1029,44 @@ class AppProvider extends ChangeNotifier {
     _isTesting = false;
     notifyListeners();
     return ping;
+  }
+
+  Future<Map<String, dynamic>?> pingServerWithPolicy(ServerConfig server) async {
+    _isTesting = true;
+    _addLog('Testing ${server.name} with policy...');
+    notifyListeners();
+
+    final result = await _engine.pingWithPolicy(server.address, server.port, server.psk);
+
+    if (result != null && result['ping_ms'] != null) {
+      final pingMs = result['ping_ms'] as int;
+      
+      if (pingMs > 0) {
+        final index = _servers.indexWhere((s) => s.id == server.id);
+        if (index != -1) {
+          final policy = ServerPolicy.fromJson(result);
+          _servers[index] = _servers[index].copyWith(
+            ping: pingMs,
+            lastTested: DateTime.now(),
+            serverPolicy: policy,
+          );
+          
+          _addLog('${_servers[index].pingEmoji} ${server.name}: ${pingMs}ms');
+          
+          if (policy.hasLockedSettings) {
+            _addLog('🔒 ${policy.lockedSettingsCount} locked settings from server');
+          }
+        }
+      } else {
+        _addLog('${server.name}: unreachable');
+      }
+    } else {
+      _addLog('${server.name}: test failed');
+    }
+
+    _isTesting = false;
+    notifyListeners();
+    return result;
   }
 
   Future<int> testRealDelay(ServerConfig server) async {
