@@ -823,13 +823,13 @@ class _AddServerScreenState extends State<AddServerScreen> {
                       trailing: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          if (isEditing && widget.server!.serverPolicy != null && widget.server!.serverPolicy!.dnsFallbackEnabled) ...[
+                          if (isEditing && widget.server!.serverPolicy != null && widget.server!.serverPolicy!.dnsEnabled) ...[
                             Icon(Icons.lock, size: 16, color: Colors.orange),
                             const SizedBox(width: 8),
                           ],
                           Switch(
                             value: _dnsFallbackEnabled, 
-                            onChanged: (isEditing && widget.server!.serverPolicy != null && widget.server!.serverPolicy!.dnsFallbackEnabled)
+                            onChanged: (isEditing && widget.server!.serverPolicy != null && widget.server!.serverPolicy!.dnsEnabled)
                                 ? null
                                 : (v) => setState(() => _dnsFallbackEnabled = v),
                           ),
@@ -837,7 +837,7 @@ class _AddServerScreenState extends State<AddServerScreen> {
                           Icon(Icons.arrow_forward_ios, size: 16, color: textMuted(context)),
                         ],
                       ),
-                      onTap: (isEditing && widget.server!.serverPolicy != null && widget.server!.serverPolicy!.dnsFallbackEnabled)
+                      onTap: (isEditing && widget.server!.serverPolicy != null && widget.server!.serverPolicy!.dnsEnabled)
                           ? null
                           : () => setState(() => _dnsFallbackEnabled = !_dnsFallbackEnabled),
                     ),
