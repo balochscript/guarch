@@ -273,3 +273,48 @@ func GetMaxPaddingForMode(mode string) int {
 		return 256
 	}
 }
+
+type ServerPolicy struct {
+	Cover     *CoverConfig    `json:"cover,omitempty"`
+	SNI       *SNIConfig      `json:"sni,omitempty"`
+	DNS       *DNSConfig      `json:"dns,omitempty"`
+	UTLS      *UTLSConfig     `json:"utls,omitempty"`
+	Fragment  *FragmentConfig `json:"fragmentation,omitempty"`
+
+	PaddingEnabled *bool `json:"padding_enabled,omitempty"`
+	MaxPadding     *int  `json:"max_padding,omitempty"`
+}
+
+func (cfg *ServerConfig) ToServerPolicy() *ServerPolicy {
+	policy := &ServerPolicy{}
+
+	if cfg.Cover != nil {
+		policy.Cover = cfg.Cover
+	}
+
+	if cfg.SNI != nil {
+		policy.SNI = cfg.SNI
+	}
+
+	if cfg.DNS != nil {
+		policy.DNS = cfg.DNS
+	}
+
+	if cfg.UTLS != nil {
+		policy.UTLS = cfg.UTLS
+	}
+
+	if cfg.Fragment != nil {
+		policy.Fragment = cfg.Fragment
+	}
+
+	paddingEnabled := cfg.PaddingEnabled
+	policy.PaddingEnabled = &paddingEnabled
+
+	if cfg.MaxPadding > 0 {
+		maxPadding := cfg.MaxPadding
+		policy.MaxPadding = &maxPadding
+	}
+
+	return policy
+}
