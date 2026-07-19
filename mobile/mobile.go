@@ -90,6 +90,7 @@ type Engine struct {
 	adaptiveCover *cover.AdaptiveCover
 	dnsClient     *dns.Client
 	connector     *engine.Connector
+	serverPolicy  *config.ServerPolicy
 
 	listener net.Listener
 
@@ -558,7 +559,7 @@ func (e *Engine) connectInternal() error {
 
 	var userSettings *config.UserSettings = nil
 	
-	resolvedCfg, err := config.ResolveAll(cfg, userSettings)
+	resolvedCfg, err := config.ResolveAll(cfg, userSettings, nil)
 	if err != nil {
 		log.Printf("[Engine] Config resolve failed: %v", err)
 		return fmt.Errorf("config resolve: %w", err)
@@ -779,6 +780,133 @@ func (e *Engine) connectGuarch(cfg *config.ServerConfig, coverMgr *cover.Manager
 		return fmt.Errorf("handshake failed: %w", err)
 	}
 	log.Println("[Engine] Handshake complete ✅")
+
+	policyJSON, err := sc.Recv()
+	if err != nil {
+		rawConn.Close()
+		log.Printf("[Engine] Failed to receive server policy: %v", err)
+		return fmt.Errorf("receive server policy: %w", err)
+	}
+
+	var serverPolicy config.ServerPolicy
+	if err := json.Unmarshal(policyJSON, &serverPolicy); err != nil {
+		rawConn.Close()
+		log.Printf("[Engine] Failed to unmarshal server policy: %v", err)
+		return fmt.Errorf("unmarshal server policy: %w", err)
+	}
+
+	e.mu.Lock()
+	e.serverPolicy = &serverPolicy
+	e.mu.Unlock()
+
+	log.Println("[Engine] Server policy received ✅")
+
+	e.mu.RLock()
+	cfgForResolve := e.config
+	e.mu.RUnlock()
+
+	resolvedCfgWithPolicy, err := config.ResolveAll(cfgForResolve, nil, &serverPolicy)
+	if err != nil {
+		log.Printf("[Engine] Config resolve with policy failed: %v", err)
+	} else {
+		if e.sniManager != nil {
+			e.sniManager.Stop()
+		}
+		if e.coverManager != nil {
+			e.coverManager.Stop()
+		}
+
+		if resolvedCfgWithPolicy.SNI != nil {
+			log.Println("[Engine] Re-initializing SNI manager with server policy...")
+			sniMgr, err := sni.NewManagerFromConfig(resolvedCfgWithPolicy.SNI)
+			if err != nil {
+				log.Printf("[Engine] SNI manager re-init failed: %v", err)
+			} else {
+				e.mu.Lock()
+				e.sniManager = sniMgr
+				e.mu.Unlock()
+
+				currentSNI := sniMgr.Get()
+				e.stats.mu.Lock()
+				e.stats.currentSNI = currentSNI
+				e.stats.mu.Unlock()
+
+				connector.SetSNI(currentSNI)
+				log.Printf("[Engine] SNI rotation re-enabled (%s mode, current: %s)", 
+					resolvedCfgWithPolicy.SNI.Mode, currentSNI)
+			}
+		}
+
+		if resolvedCfgWithPolicy.Cover != nil {
+			log.Println("[Engine] Re-initializing cover manager with server policy...")
+			coverCfg := e.buildCoverConfig(resolvedCfgWithPolicy.Cover)
+			
+			maxPadding := config.GetMaxPaddingForMode(resolvedCfgWithPolicy.Cover.Mode)
+			if resolvedCfgWithPolicy.MaxPadding > 0 {
+				maxPadding = resolvedCfgWithPolicy.MaxPadding
+			}
+			
+			batteryThreshold := resolvedCfgWithPolicy.BatteryThreshold
+			if batteryThreshold == 0 {
+				batteryThreshold = 20
+			}
+			
+			hysteresisDelay := time.Duration(resolvedCfgWithPolicy.HysteresisDelay) * time.Second
+			if hysteresisDelay == 0 {
+				hysteresisDelay = 30 * time.Second
+			}
+			
+			idleThresh := cover.ParseBytesPerMin(resolvedCfgWithPolicy.Cover.Adaptive.IdleThreshold)
+			lightThresh := cover.ParseBytesPerMin(resolvedCfgWithPolicy.Cover.Adaptive.LightThreshold)
+			mediumThresh := cover.ParseBytesPerMin(resolvedCfgWithPolicy.Cover.Adaptive.MediumThreshold)
+			if lightThresh == 0 {
+				lightThresh = 50_000
+			}
+			if mediumThresh == 0 {
+				mediumThresh = 500_000
+			}
+			
+			modeCfg := &cover.ModeConfig{
+				MaxPadding:       maxPadding,
+				BatteryThreshold: batteryThreshold,
+				HysteresisDelay:  hysteresisDelay,
+				IdleThreshold:    idleThresh,
+				LightThreshold:   lightThresh,
+				MediumThreshold:  mediumThresh,
+				HeavyThreshold:   5_000_000,
+			}
+			
+			adaptiveCover := cover.NewAdaptiveCover(modeCfg)
+			
+			e.mu.RLock()
+			currentBattery := e.batteryLevel
+			currentDataSaver := e.dataSaverMode
+			e.mu.RUnlock()
+			
+			adaptiveCover.SetBatteryLevel(currentBattery)
+			
+			if resolvedCfgWithPolicy.Cover.Adaptive.BatteryAware {
+				adaptiveCover.SetBatteryAware(true)
+			}
+			
+			if resolvedCfgWithPolicy.Cover.Adaptive.DataSaverMode || currentDataSaver {
+				adaptiveCover.SetDataSaverMode(true)
+			}
+			
+			newCoverMgr := cover.NewManager(coverCfg, adaptiveCover)
+			newCoverMgr.Start(e.ctx)
+			
+			e.mu.Lock()
+			e.coverManager = newCoverMgr
+			e.adaptiveCover = adaptiveCover
+			e.mu.Unlock()
+			
+			coverMgr = newCoverMgr
+			
+			log.Printf("[Engine] Cover manager re-initialized (%s mode, %d domains)", 
+				resolvedCfgWithPolicy.Cover.Mode, len(resolvedCfgWithPolicy.Cover.Domains))
+		}
+	}
 
 	if coverMgr != nil && coverMgr.IsRunning() {
 		coverMgr.SendOne()
