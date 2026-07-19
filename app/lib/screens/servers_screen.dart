@@ -295,6 +295,27 @@ class ServersScreen extends StatelessWidget {
                               ],
                             ),
                           ],
+                          if (server.serverPolicy != null && server.serverPolicy!.hasLockedSettings) ...[
+                            const SizedBox(height: 2),
+                            Row(
+                              children: [
+                                Icon(
+                                  Icons.lock,
+                                  size: 10,
+                                  color: Colors.orange,
+                                ),
+                                const SizedBox(width: 2),
+                                Text(
+                                  '${server.serverPolicy!.lockedSettingsCount} locked',
+                                  style: TextStyle(
+                                    fontSize: 10,
+                                    color: Colors.orange,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
                           if (server.lastTested != null) ...[
                             const SizedBox(height: 2),
                             Text(
