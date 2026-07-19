@@ -9,6 +9,7 @@ import (
 	"encoding/base64"
 	"encoding/binary"
 	"encoding/hex"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
@@ -673,6 +674,20 @@ func handleGuarchHandshake(raw net.Conn, cfg *config.ServerConfig, remoteAddr st
 
 	raw.SetDeadline(time.Time{})
 	log.Printf("[guarch] authenticated: %s ✅", remoteAddr)
+
+	policy := cfg.ToServerPolicy()
+	policyJSON, err := json.Marshal(policy)
+	if err != nil {
+		log.Printf("[guarch] failed to marshal server policy: %v", err)
+		return
+	}
+
+	if err := sc.Send(policyJSON); err != nil {
+		log.Printf("[guarch] failed to send server policy: %v", err)
+		return
+	}
+
+	log.Printf("[guarch] server policy sent to %s ✅", remoteAddr)
 
 	m := mux.NewMux(sc, true)
 	defer m.Close()
