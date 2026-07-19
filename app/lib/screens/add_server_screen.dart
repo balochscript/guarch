@@ -132,6 +132,75 @@ class _AddServerScreenState extends State<AddServerScreen> {
         child: ListView(
           padding: const EdgeInsets.all(16),
           children: [
+            if (isEditing && widget.server!.serverPolicy != null && widget.server!.serverPolicy!.hasLockedSettings) ...[
+              Container(
+                margin: const EdgeInsets.only(bottom: 16),
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.orange.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.orange.withOpacity(0.3)),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(Icons.warning_amber_rounded, color: Colors.orange, size: 24),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Text(
+                            'Server Policy Active',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.orange[900],
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
+                      'This server has ${widget.server!.serverPolicy!.lockedSettingsCount} locked settings from the server configuration. These settings cannot be changed:',
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: Colors.orange[900],
+                        height: 1.4,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 4,
+                      children: [
+                        if (widget.server!.serverPolicy!.coverEnabled)
+                          _lockedChip('Cover Traffic'),
+                        if (widget.server!.serverPolicy!.sniEnabled)
+                          _lockedChip('SNI Rotation'),
+                        if (widget.server!.serverPolicy!.dnsEnabled)
+                          _lockedChip('DNS Fallback'),
+                        if (widget.server!.serverPolicy!.utlsEnabled)
+                          _lockedChip('uTLS'),
+                        if (widget.server!.serverPolicy!.fragmentEnabled)
+                          _lockedChip('Fragment'),
+                        if (widget.server!.serverPolicy!.paddingEnabled)
+                          _lockedChip('Padding'),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
+                      'Note: Server name, address, port, PSK, and certificate pin can still be edited.',
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: Colors.orange[800],
+                        fontStyle: FontStyle.italic,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
             _sectionTitle(context, 'Server Information'),
             Card(
               child: Padding(
@@ -718,12 +787,23 @@ class _AddServerScreenState extends State<AddServerScreen> {
                       trailing: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Switch(value: _sniEnabled, onChanged: (v) => setState(() => _sniEnabled = v)),
+                          if (isEditing && widget.server!.serverPolicy != null && widget.server!.serverPolicy!.sniEnabled) ...[
+                            Icon(Icons.lock, size: 16, color: Colors.orange),
+                            const SizedBox(width: 8),
+                          ],
+                          Switch(
+                            value: _sniEnabled, 
+                            onChanged: (isEditing && widget.server!.serverPolicy != null && widget.server!.serverPolicy!.sniEnabled) 
+                                ? null 
+                                : (v) => setState(() => _sniEnabled = v),
+                          ),
                           const SizedBox(width: 8),
                           Icon(Icons.arrow_forward_ios, size: 16, color: textMuted(context)),
                         ],
                       ),
-                      onTap: () => setState(() => _sniEnabled = !_sniEnabled),
+                      onTap: (isEditing && widget.server!.serverPolicy != null && widget.server!.serverPolicy!.sniEnabled)
+                          ? null
+                          : () => setState(() => _sniEnabled = !_sniEnabled),
                     ),
                     
                     if (_sniEnabled) ...[
@@ -743,12 +823,23 @@ class _AddServerScreenState extends State<AddServerScreen> {
                       trailing: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Switch(value: _dnsFallbackEnabled, onChanged: (v) => setState(() => _dnsFallbackEnabled = v)),
+                          if (isEditing && widget.server!.serverPolicy != null && widget.server!.serverPolicy!.dnsFallbackEnabled) ...[
+                            Icon(Icons.lock, size: 16, color: Colors.orange),
+                            const SizedBox(width: 8),
+                          ],
+                          Switch(
+                            value: _dnsFallbackEnabled, 
+                            onChanged: (isEditing && widget.server!.serverPolicy != null && widget.server!.serverPolicy!.dnsFallbackEnabled)
+                                ? null
+                                : (v) => setState(() => _dnsFallbackEnabled = v),
+                          ),
                           const SizedBox(width: 8),
                           Icon(Icons.arrow_forward_ios, size: 16, color: textMuted(context)),
                         ],
                       ),
-                      onTap: () => setState(() => _dnsFallbackEnabled = !_dnsFallbackEnabled),
+                      onTap: (isEditing && widget.server!.serverPolicy != null && widget.server!.serverPolicy!.dnsFallbackEnabled)
+                          ? null
+                          : () => setState(() => _dnsFallbackEnabled = !_dnsFallbackEnabled),
                     ),
                     
                     if (_dnsFallbackEnabled) ...[
@@ -777,12 +868,23 @@ class _AddServerScreenState extends State<AddServerScreen> {
                       trailing: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Switch(value: _coverEnabled, onChanged: (v) => setState(() => _coverEnabled = v)),
+                          if (isEditing && widget.server!.serverPolicy != null && widget.server!.serverPolicy!.coverEnabled) ...[
+                            Icon(Icons.lock, size: 16, color: Colors.orange),
+                            const SizedBox(width: 8),
+                          ],
+                          Switch(
+                            value: _coverEnabled, 
+                            onChanged: (isEditing && widget.server!.serverPolicy != null && widget.server!.serverPolicy!.coverEnabled)
+                                ? null
+                                : (v) => setState(() => _coverEnabled = v),
+                          ),
                           const SizedBox(width: 8),
                           Icon(Icons.arrow_forward_ios, size: 16, color: textMuted(context)),
                         ],
                       ),
-                      onTap: () => setState(() => _coverEnabled = !_coverEnabled),
+                      onTap: (isEditing && widget.server!.serverPolicy != null && widget.server!.serverPolicy!.coverEnabled)
+                          ? null
+                          : () => setState(() => _coverEnabled = !_coverEnabled),
                     ),
                     
                     if (_coverEnabled) ...[
@@ -1323,5 +1425,31 @@ class _AddServerScreenState extends State<AddServerScreen> {
     }
 
     Navigator.pop(context);
+  }
+
+  Widget _lockedChip(String label) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: Colors.orange.withOpacity(0.2),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.orange.withOpacity(0.4)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.lock, size: 14, color: Colors.orange[900]),
+          const SizedBox(width: 4),
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              color: Colors.orange[900],
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }
