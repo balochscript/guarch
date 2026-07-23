@@ -36,21 +36,17 @@ const (
 var (
 	lenBufPool = &sync.Pool{
 		New: func() any {
-			b := make([]byte, 4)
-			return &b
+			return new([4]byte)
 		},
 	}
 )
 
-func getLenBuf() []byte {
-	bp := lenBufPool.Get().(*[]byte)
-	return *bp
+func getLenBuf() *[4]byte {
+	return lenBufPool.Get().(*[4]byte)
 }
 
-func putLenBuf(b []byte) {
-	if len(b) == 4 {
-		lenBufPool.Put(&b)
-	}
+func putLenBuf(b *[4]byte) {
+	lenBufPool.Put(b)
 }
 
 type SecureConn struct {
@@ -415,11 +411,11 @@ func (sc *SecureConn) sendRaw(pkt *protocol.Packet) error {
 	expectedLen := uint32(crypto.EncryptOverhead + len(data))
 
 	lenBuf := getLenBuf()
-	binary.BigEndian.PutUint32(lenBuf, expectedLen)
+	defer putLenBuf(lenBuf)
+	binary.BigEndian.PutUint32(lenBuf[:], expectedLen)
 
-	encrypted, err := sc.sendCipher.SealWithAAD(data, lenBuf)
+	encrypted, err := sc.sendCipher.SealWithAAD(data, lenBuf[:])
 	if err != nil {
-		putLenBuf(lenBuf)
 		return err
 	}
 
@@ -428,11 +424,9 @@ func (sc *SecureConn) sendRaw(pkt *protocol.Packet) error {
 		defer sc.raw.SetWriteDeadline(time.Time{})
 	}
 
-	if _, err := sc.raw.Write(lenBuf); err != nil {
-		putLenBuf(lenBuf)
+	if _, err := sc.raw.Write(lenBuf[:]); err != nil {
 		return err
 	}
-	putLenBuf(lenBuf)
 
 	_, err = sc.raw.Write(encrypted)
 	return err
@@ -480,30 +474,26 @@ func (sc *SecureConn) RecvPacket() (*protocol.Packet, error) {
 	}
 
 	lenBuf := getLenBuf()
-	if _, err := io.ReadFull(sc.raw, lenBuf); err != nil {
-		putLenBuf(lenBuf)
+	defer putLenBuf(lenBuf)
+	if _, err := io.ReadFull(sc.raw, lenBuf[:]); err != nil {
 		return nil, err
 	}
-	length := binary.BigEndian.Uint32(lenBuf)
+	length := binary.BigEndian.Uint32(lenBuf[:])
 
 	if length > maxEncryptedSize {
-		putLenBuf(lenBuf)
 		return nil, fmt.Errorf("guarch: packet too large: %d", length)
 	}
 
 	encrypted := make([]byte, length)
 	if _, err := io.ReadFull(sc.raw, encrypted); err != nil {
-		putLenBuf(lenBuf)
 		return nil, err
 	}
 
 	if err := sc.checkRecvKeyUsage(len(encrypted)); err != nil {
-		putLenBuf(lenBuf)
 		return nil, err
 	}
 
-	data, err := sc.recvCipher.OpenWithAAD(encrypted, lenBuf)
-	putLenBuf(lenBuf)
+	data, err := sc.recvCipher.OpenWithAAD(encrypted, lenBuf[:])
 	if err != nil {
 		return nil, err
 	}
